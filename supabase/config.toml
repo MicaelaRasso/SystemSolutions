@@ -1,0 +1,7 @@
+project_id = "system-solutions"
+
+[api]
+enabled = true
+
+[functions.service-access]
+verify_jwt = false
