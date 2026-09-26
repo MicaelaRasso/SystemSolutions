@@ -6,8 +6,14 @@ El plan de implementación y su avance están en [`planning.md`](planning.md).
 > La app frontend funciona actualmente contra datos simulados guardados en el
 > `localStorage` del navegador (`NEXT_PUBLIC_DATA_SOURCE=mock`). El backend
 > Supabase ya dispone de la migración PostgreSQL y la Edge Function
-> `service-access`; la implementación `src/lib/services/supabase/` todavía debe
-> conectarse a esos contratos sin modificar las pantallas.
+> `service-access`. Para usar la integración autenticada desde el navegador,
+> configura `NEXT_PUBLIC_DATA_SOURCE=supabase`, `NEXT_PUBLIC_SUPABASE_URL`,
+> `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (o el alias compatible
+> `NEXT_PUBLIC_SUPABASE_ANON_KEY`) y opcionalmente
+> `NEXT_PUBLIC_SERVICE_ACCESS_URL`. El adaptador usa exclusivamente la Edge
+> Function para operaciones de negocio y archivos; el navegador solo se
+> comunica directamente con Supabase Auth para la sesión. El modo `mock` sigue
+> siendo el valor predeterminado para la demo.
 
 ## Stack
 
@@ -57,11 +63,12 @@ src/
     domain/            Tipos, esquemas Zod, catálogos y reglas de negocio (con tests)
     services/          Contratos + implementación mock (datos semilla ficticios)
     hooks/queries.ts   Hooks de TanStack Query sobre los servicios
-    auth/              Sesión simulada (cookie) y AuthProvider
+  auth/              AuthProvider; cookie mock sólo para demo/tests
+  supabase/          Clientes SSR de Auth y contexto autorizado por Edge
 ```
 
 Variables opcionales: `NEXT_PUBLIC_MOCK_ERROR_RATE` (0–1) simula errores de red para probar estados de error.
 
 ## Backend Supabase
 
-La API autenticada está documentada en [`supabase/README.md`](supabase/README.md). Todas las operaciones de negocio pasan por la Edge Function `service-access`, que delega en RPCs PostgreSQL con las reglas de autorización del dominio. El acceso directo a las tablas está bloqueado por RLS y privilegios de base de datos.
+La API autenticada está documentada en [`supabase/README.md`](supabase/README.md). Todas las operaciones de negocio y archivos pasan por la Edge Function `service-access`, que delega en PostgreSQL con las reglas de autorización del dominio. El navegador no llama tablas, RPCs, Data API ni Storage directamente; Supabase Auth es la única excepción para gestionar la sesión. RLS y privilegios de base de datos conservan la autorización final.

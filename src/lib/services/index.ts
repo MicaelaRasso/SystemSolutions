@@ -1,4 +1,5 @@
 import type { Services } from "./contracts"
+import { edgeServices } from "./edge"
 import { mockServices } from "./mock"
 
 export * from "./contracts"
@@ -9,7 +10,8 @@ function elegir(): Services {
   switch (fuente) {
     case "mock":
       return mockServices
-    // case "supabase": return supabaseServices  (etapa de integración)
+    case "supabase":
+      return edgeServices
     default:
       throw new Error(`NEXT_PUBLIC_DATA_SOURCE desconocido: ${fuente}`)
   }

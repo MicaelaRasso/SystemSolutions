@@ -1,15 +1,10 @@
 import type { Metadata } from "next"
 
-import { EnConstruccion } from "@/components/common/states"
+import { PageHeader } from "@/components/common/page-header"
+import { SincronizacionPanel } from "@/components/talleres/sincronizacion-panel"
 
 export const metadata: Metadata = { title: "Sincronización" }
 
 export default function Page() {
-  return (
-    <EnConstruccion
-      titulo="Sincronización"
-      fase={6}
-      detalle="Cola de certificados cargados sin conexión y estado de sincronización."
-    />
-  )
+  return <><PageHeader titulo="Sincronización" descripcion="Estado local y sincronización de trabajo de campo." /><SincronizacionPanel /></>
 }

@@ -40,8 +40,9 @@ export class ServiceError extends Error {
 }
 
 export interface AuthService {
-  /** Futuro: supabase.auth.signInWithPassword */
+  /** En modo Supabase usa Auth; en modo mock usa las credenciales de demostración. */
   login(email: string, password: string): Promise<Usuario>
+  logout?(): Promise<void> | void
 }
 
 export interface EmpresasRepo {

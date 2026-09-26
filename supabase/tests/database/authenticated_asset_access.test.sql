@@ -1,6 +1,6 @@
 begin;
 
-select plan(27);
+select plan(28);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000000101', 'owner@example.test'),
@@ -30,6 +30,21 @@ insert into public.taller_cuentas (taller_movil_id, cuenta_id) values
   ('00000000-0000-0000-0000-000000000201', '00000000-0000-0000-0000-000000000103'),
   ('00000000-0000-0000-0000-000000000202', '00000000-0000-0000-0000-000000000104');
 
+create function public.test_set_gateway_actor(target uuid)
+returns void
+language plpgsql
+as $$
+begin
+  perform set_config(
+    'request.headers',
+    jsonb_build_object('x-systemsolutions-actor-id', target)::text,
+    true
+  );
+  perform public.require_systemsolutions_edge_gateway();
+end;
+$$;
+grant execute on function public.test_set_gateway_actor(uuid) to service_role;
+
 select is(
   has_function_privilege('anon', 'public.api_context()', 'execute'),
   false,
@@ -37,22 +52,37 @@ select is(
 );
 
 select is(
-  has_function_privilege('authenticated', 'public.require_authenticated_cuenta()', 'execute'),
+  has_function_privilege('authenticated', 'public.api_context()', 'execute'),
   false,
-  'authenticated callers cannot execute internal authorization helpers directly'
+  'authenticated callers cannot execute business RPCs directly'
+);
+
+select is(
+  has_function_privilege('service_role', 'public.api_context()', 'execute'),
+  true,
+  'only the server-side service role can execute business RPCs'
 );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', '', true);
 
 select throws_ok(
   $$select public.api_context()$$,
   '42501',
-  'Authentication required',
-  'an authenticated database role without a valid session is rejected'
+  'permission denied for function api_context',
+  'an authenticated database role cannot call a business RPC directly'
 );
 
-select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000101', true);
+select throws_ok(
+  $$select * from public.yacimientos$$,
+  '42501',
+  'permission denied for table yacimientos',
+  'direct table reads are denied to authenticated accounts'
+);
+
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+
+select public.test_set_gateway_actor('00000000-0000-0000-0000-000000000101');
 
 select lives_ok(
   $$select public.api_create_yacimiento('Yacimiento 01', 'Neuquen', 'Operadora Norte', 'Contratista Sur')$$,
@@ -83,13 +113,6 @@ select throws_ok(
   '22023',
   'Provincia is required',
   'blank required Yacimiento attributes are rejected'
-);
-
-select throws_ok(
-  $$select * from public.yacimientos$$,
-  '42501',
-  'permission denied for table yacimientos',
-  'direct table reads are denied to authenticated accounts'
 );
 
 select is(
@@ -145,7 +168,7 @@ select lives_ok(
   'the owning Cliente can update all Yacimiento attributes'
 );
 
-select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000102', true);
+select public.test_set_gateway_actor('00000000-0000-0000-0000-000000000102');
 
 select is(
   (select count(*) from public.api_yacimientos()),
@@ -163,21 +186,21 @@ select throws_ok(
   'another Cliente cannot update an unrelated Yacimiento'
 );
 
-select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000101', true);
+select public.test_set_gateway_actor('00000000-0000-0000-0000-000000000101');
 select set_config(
   'app.test_request_id',
-  (select (public.api_create_service_request(
+  (public.api_create_service_request(
     current_setting('app.test_yacimiento_id')::uuid,
     jsonb_build_array(jsonb_build_object('kind', 'valvula', 'id', current_setting('app.test_valvula_id')))
   )->'request'->>'id'),
   true
 );
 
-select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000105', true);
+select public.test_set_gateway_actor('00000000-0000-0000-0000-000000000105');
 
 select set_config(
   'app.test_visit_id',
-  (select (public.api_schedule_visit(
+  (public.api_schedule_visit(
     current_setting('app.test_request_id')::uuid,
     '00000000-0000-0000-0000-000000000201'::uuid,
     '2099-01-01 09:00:00+00'::timestamptz,
@@ -191,7 +214,7 @@ select ok(
   'an Administrador schedules a one-Yacimiento visit from the frozen request scope'
 );
 
-select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000103', true);
+select public.test_set_gateway_actor('00000000-0000-0000-0000-000000000103');
 
 select lives_ok(
   $$select public.api_accept_visit(current_setting('app.test_visit_id')::uuid)$$,
@@ -216,7 +239,7 @@ select throws_ok(
   'a Taller Móvil cannot edit the Cliente asset hierarchy'
 );
 
-select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000104', true);
+select public.test_set_gateway_actor('00000000-0000-0000-0000-000000000104');
 
 select is(
   (select count(*) from public.api_yacimientos()),
@@ -224,20 +247,20 @@ select is(
   'an unassigned Taller Móvil cannot list the Yacimiento'
 );
 
-select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000101', true);
+select public.test_set_gateway_actor('00000000-0000-0000-0000-000000000101');
 select set_config(
   'app.test_reassignment_request_id',
-  (select (public.api_create_service_request(
+  (public.api_create_service_request(
     current_setting('app.test_yacimiento_id')::uuid,
     jsonb_build_array(jsonb_build_object('kind', 'valvula', 'id', current_setting('app.test_valvula_id')))
   )->'request'->>'id'),
   true
 );
 
-select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000105', true);
+select public.test_set_gateway_actor('00000000-0000-0000-0000-000000000105');
 select set_config(
   'app.test_reassignment_visit_id',
-  (select (public.api_schedule_visit(
+  (public.api_schedule_visit(
     current_setting('app.test_reassignment_request_id')::uuid,
     '00000000-0000-0000-0000-000000000202'::uuid,
     '2099-01-02 09:00:00+00'::timestamptz,
@@ -251,14 +274,14 @@ select ok(
   'an Administrador can schedule the reassignment visit'
 );
 
-select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000104', true);
+select public.test_set_gateway_actor('00000000-0000-0000-0000-000000000104');
 
 select lives_ok(
   $$select public.api_accept_visit(current_setting('app.test_reassignment_visit_id')::uuid)$$,
   'a newly assigned Taller Móvil can accept a replacement visit'
 );
 
-select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000103', true);
+select public.test_set_gateway_actor('00000000-0000-0000-0000-000000000103');
 
 select is(
   (select count(*) from public.api_yacimientos()),
@@ -266,7 +289,7 @@ select is(
   'the replaced Taller Móvil loses Yacimiento access'
 );
 
-select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000105', true);
+select public.test_set_gateway_actor('00000000-0000-0000-0000-000000000105');
 
 select is(
   (select count(*) from public.api_yacimientos()),
@@ -274,7 +297,7 @@ select is(
   'an Administrador regular can list every Yacimiento'
 );
 
-select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000106', true);
+select public.test_set_gateway_actor('00000000-0000-0000-0000-000000000106');
 
 select is(
   (select count(*) from public.api_yacimientos()),
@@ -282,13 +305,10 @@ select is(
   'a Super administrador can list every Yacimiento'
 );
 
-reset role;
-
 select is(
-  (select count(*) from public.historial_relaciones where yacimiento_id = current_setting('app.test_yacimiento_id')::uuid),
+  jsonb_array_length((public.api_relationship_history(current_setting('app.test_yacimiento_id')::uuid)->'history'))::bigint,
   12::bigint,
   'asset changes, service requests, scheduling, acceptance, and reassignment preserve relationship history'
 );
 
-select * from finish();
-rollback;
+select * from extensions.finish(true);

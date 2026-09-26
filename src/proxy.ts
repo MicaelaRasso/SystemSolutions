@@ -2,13 +2,47 @@ import { NextResponse, type NextRequest } from "next/server"
 
 import { decodificarSesion, SESSION_COOKIE, sesionExpirada } from "@/lib/auth/session"
 import { rolesPermitidos, RUTA_INICIO } from "@/lib/domain/rules"
+import { usesSupabaseDataSource } from "@/lib/supabase/config"
+import {
+  redirectWithSessionCookies,
+  rewriteWithSessionCookies,
+  updateSupabaseSession,
+} from "@/lib/supabase/proxy"
 
 /**
  * Chequeo optimista de sesión y rol (Next 16: `proxy` reemplaza a `middleware`).
  * No es la barrera de seguridad: con Supabase la autorización real la dan RLS y las Edge Functions.
  */
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl
+
+  if (usesSupabaseDataSource()) {
+    const { response, sesion } = await updateSupabaseSession(request)
+    const redirigir = (ruta: string) => redirectWithSessionCookies(ruta, request, response)
+
+    if (pathname === "/login") {
+      return sesion ? redirigir(RUTA_INICIO[sesion.rol]) : response
+    }
+
+    if (pathname === "/") {
+      return redirigir(sesion ? RUTA_INICIO[sesion.rol] : "/login")
+    }
+
+    const roles = rolesPermitidos(pathname)
+    if (!roles) return response
+
+    if (!sesion) {
+      const params = new URLSearchParams({ next: pathname + search })
+      return redirigir(`/login?${params}`)
+    }
+
+    if (!roles.includes(sesion.rol)) {
+      return rewriteWithSessionCookies("/sin-acceso", request, response)
+    }
+
+    return response
+  }
+
   const sesion = decodificarSesion(request.cookies.get(SESSION_COOKIE)?.value)
   const valida = sesion && !sesionExpirada(sesion) ? sesion : null
 

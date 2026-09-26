@@ -2,7 +2,11 @@
 
 **Proyecto:** System Solutions · Sistema de gestión de calibración de válvulas de seguridad
 **Base documental:** DRF v1.1 (Magne Studios) · Certificado modelo SYS (con anotaciones) · Referencias de listas desplegables
-**Alcance de este plan:** solo interfaces. No hay base de datos ni backend todavía: todo funciona contra datos simulados (mocks) detrás de una capa de servicios que después se reemplaza por Supabase + Edge Functions sin tocar las pantallas.
+**Alcance de este plan:** este documento registra la implementación inicial de
+interfaces con datos simulados (mocks). La integración en curso está en
+[`integration.md`](integration.md): Supabase Auth establece la sesión y todas
+las operaciones de datos y archivos del navegador pasan por Edge Functions,
+nunca directamente por PostgreSQL, la Data API, RPCs ni Storage.
 
 ---
 
@@ -13,12 +17,12 @@
 | Framework | **Next.js (App Router) + TypeScript** | Definido en el DRF. Una sola app para admin, portal cliente y campo. |
 | Estilos | **Tailwind CSS** + **shadcn/ui** | Definido en el DRF. shadcn da tablas, diálogos, formularios y calendario accesibles y editables en el repo. |
 | Formularios | **React Hook Form + Zod** | Los esquemas Zod se reutilizan para validar en Edge Functions (Deno) más adelante. |
-| Datos en cliente | **TanStack Query** | Misma API para mocks hoy y Supabase mañana; cache y reintentos. |
+| Datos en cliente | **TanStack Query** | Misma API para mocks y para el adaptador de Edge Functions; cache y reintentos. |
 | Offline (campo) | **Serwist** (service worker / PWA) + **Dexie** (IndexedDB) | Carga de certificados sin conexión y cola de sincronización. |
 | Firma | **signature_pad** | Captura de firma en tablet (técnico y cliente). |
 | Fechas | **date-fns** con locale `es` | Calendarios, vigencias, ventana de 24 h. |
 | Íconos | **lucide-react** | Viene con shadcn. |
-| Backend futuro | **Supabase** (Postgres + Auth + Storage + RLS) y **Edge Functions** | Se conecta en una etapa posterior (ver §8). |
+| Backend | **Supabase** (Postgres + Auth + Storage + RLS) y **Edge Functions** | Auth puede establecer la sesión desde el navegador; datos y archivos usan exclusivamente Edge Functions (ver §8). |
 
 Convención de nombres: entidades de dominio en español, tal como el DRF (`Tarea`, `Certificado`, `Yacimiento`, `Valvula`…); código técnico (hooks, utils, componentes genéricos) en inglés.
 
@@ -26,7 +30,8 @@ Convención de nombres: entidades de dominio en español, tal como el DRF (`Tare
 
 ## 2. Principio de arquitectura: capa de servicios intercambiable
 
-Las pantallas **nunca** leen mocks ni Supabase directamente. Todo pasa por interfaces de repositorio:
+Las pantallas **nunca** leen mocks ni servicios Supabase directamente. Todo
+pasa por interfaces de repositorio:
 
 ```
 src/
@@ -35,14 +40,14 @@ src/
     services/
       contracts/     # Interfaces: ClientesRepo, TareasRepo, CertificadosRepo, AuthService…
       mock/          # Implementación con datos semilla (persistidos en localStorage)
-      supabase/      # (vacío por ahora) implementación real futura
+      edge.ts        # adaptador real: llamadas a Edge Functions autenticadas
       index.ts       # Elige implementación según NEXT_PUBLIC_DATA_SOURCE=mock|supabase
     hooks/           # useTareas(), useCertificado(id)… (TanStack Query sobre los repos)
 ```
 
 - Los mocks simulan latencia (200–600 ms) y errores configurables para diseñar estados de carga y error reales.
 - Los mocks respetan las reglas de negocio que después hará el backend (filtrado por cliente, numeración, firma), para que el front ya se comporte como el sistema final.
-- Cambiar a Supabase = implementar `services/supabase/*` con las mismas interfaces.
+- Cambiar a la integración real = implementar rutas Edge y el adaptador con las mismas interfaces.
 
 ---
 
@@ -255,24 +260,27 @@ Cada fase termina con algo navegable y revisable por el cliente.
 
 ---
 
-## 8. Puntos de conexión futuros (Supabase + Edge Functions)
+## 8. Modelo de conexión (Supabase + Edge Functions)
 
-Para que la conexión posterior sea directa, cada operación del front ya queda identificada con su destino:
+El navegador usa Supabase Auth únicamente para la sesión. Cada operación de
+negocio y archivos se envía a una Edge Function autenticada; la función aplica
+el contrato de API y PostgreSQL conserva RLS y autorización de dominio. Véase
+[`integration.md`](integration.md) y ADR-0013.
 
 | Operación en el front | Destino futuro |
 |---|---|
-| Login, sesión, rol | Supabase Auth (+ rol en `app_metadata`) |
-| CRUD de clientes, estructura, catálogos, tareas, cronograma | Consultas directas a Postgres con RLS |
-| Filtrado de datos por cliente (RN-09, RNF-01) | Políticas RLS (el front no confía en su propio filtro) |
+| Login y sesión | Supabase Auth con cookies SSR; rol y Cuenta desde `GET /context` de `service-access` |
+| CRUD de clientes, estructura, catálogos, tareas, cronograma | Edge Function autenticada; PostgreSQL aplica RLS y autorización de dominio |
+| Filtrado de datos por cliente (RN-09, RNF-01) | Edge Function + políticas RLS (el front no confía en su propio filtro) |
 | Alta de usuarios (admin, taller, cliente) | Edge Function `crear-usuario` (usa service role) |
-| Nro de solicitud | Secuencia / trigger en Postgres |
+| Nro de solicitud | Edge Function; secuencia / trigger en Postgres |
 | Sincronización de certificados | Edge Function `sync-certificado`: idempotente por `localId`, asigna nro correlativo en transacción, sube fotos/firmas a Storage |
 | Generación de PDF + nombre normalizado | Edge Function `generar-certificado-pdf` (disparada por el sync y por correcciones) |
-| Descarga de PDF | URL firmada de Storage emitida solo si `puedeDescargar` |
+| Descarga de PDF | Edge Function autorizada entrega o transmite el archivo; no hay URL de Storage para el navegador |
 | Corrección 24 h + auditoría | Edge Function `corregir-certificado` |
 | Aviso de vencimiento 30 días | Edge Function `avisos-vencimiento` programada (cron), email desde systemsrl.com.ar |
 | Backups | Edge Function `backup` (export filtrado por fecha) |
-| Logos, fotos, adjuntos | Supabase Storage (buckets por tipo) |
+| Logos, fotos, adjuntos | Edge Function autorizada gestiona Supabase Storage (buckets por tipo) |
 
 ---
 
