@@ -32,6 +32,107 @@ describe("EdgeAccessClient", () => {
     )
   })
 
+  it("selects a named function URL without changing the route contract", async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            cuenta_id: "account-1",
+            rol: "administrador_regular",
+            taller_movil_id: null,
+            cliente: false,
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }))
+    const client = new EdgeAccessClient({
+      serviceAccessUrl: "https://example.test/service-access",
+      functionUrls: {
+        "identity-admin": "https://identity.test/identity-admin",
+        "asset-access": "https://assets.test/asset-access",
+      },
+      request,
+    })
+
+    await client.context()
+    await client.listYacimientos()
+
+    expect(request).toHaveBeenNthCalledWith(
+      1,
+      "https://identity.test/identity-admin/context",
+      expect.anything(),
+    )
+    expect(request).toHaveBeenNthCalledWith(
+      2,
+      "https://assets.test/asset-access/yacimientos",
+      expect.anything(),
+    )
+  })
+
+  it("routes certificate history to certificate-field", async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(JSON.stringify({ certificates: [] }), { status: 200 }))
+    const client = new EdgeAccessClient({
+      serviceAccessUrl: "https://example.test/service-access",
+      functionUrls: { "certificate-field": "https://certificates.test/certificate-field" },
+      request,
+    })
+
+    await client.certificatesForValve("valve-1")
+
+    expect(request).toHaveBeenCalledWith(
+      "https://certificates.test/certificate-field/valves/valve-1/certificates",
+      expect.anything(),
+    )
+  })
+
+  it("routes certificate draft creation to certificate-field", async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(JSON.stringify({ certificate: {} }), { status: 200 }))
+    const client = new EdgeAccessClient({
+      serviceAccessUrl: "https://example.test/service-access",
+      functionUrls: { "certificate-field": "https://certificates.test/certificate-field" },
+      request,
+    })
+
+    await client.request(
+      "work-orders/order-1/certificate-draft",
+      z.object({ certificate: z.object({}) }),
+      {
+        method: "POST",
+        body: "{}",
+      },
+    )
+
+    expect(request).toHaveBeenCalledWith(
+      "https://certificates.test/certificate-field/work-orders/order-1/certificate-draft",
+      expect.anything(),
+    )
+  })
+
+  it("unwraps the table-shaped context returned by PostgreSQL", async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify([
+          {
+            cuenta_id: "account-1",
+            rol: "administrador_regular",
+            taller_movil_id: null,
+            cliente: false,
+          },
+        ]),
+        { status: 200 },
+      ),
+    )
+    const client = new EdgeAccessClient({ baseUrl: "https://example.test", request })
+
+    await expect(client.context()).resolves.toMatchObject({ cuenta_id: "account-1" })
+  })
+
   it("translates Edge Function authorization failures into ServiceError", async () => {
     const request = vi
       .fn<typeof fetch>()
@@ -92,16 +193,26 @@ describe("EdgeAccessClient", () => {
     })
   })
 
-  it("forwards the Auth cookie session token to service-access", async () => {
+  it("forwards the Auth token, apikey, and correlation ID to the selected function", async () => {
     const getSession = vi.fn().mockResolvedValue({
       data: { session: { access_token: "session-token" } },
       error: null,
     })
-    const request = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(new Response(JSON.stringify({ cuenta_id: "account-1" }), { status: 200 }))
+    const request = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          cuenta_id: "account-1",
+          rol: "administrador_regular",
+          taller_movil_id: null,
+          cliente: false,
+        }),
+        { status: 200 },
+      ),
+    )
     const client = new EdgeAccessClient({
       baseUrl: "https://example.test",
+      anonKey: "anon-key",
+      correlationId: "correlation-1",
       request,
       auth: () => ({ auth: { getSession } }) as never,
     })
@@ -112,6 +223,15 @@ describe("EdgeAccessClient", () => {
       "https://example.test/context",
       expect.objectContaining({
         headers: expect.objectContaining({ authorization: "Bearer session-token" }),
+      }),
+    )
+    expect(request).toHaveBeenCalledWith(
+      "https://example.test/context",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          apikey: "anon-key",
+          "x-correlation-id": "correlation-1",
+        }),
       }),
     )
   })

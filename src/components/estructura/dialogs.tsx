@@ -27,16 +27,17 @@ import {
   type YacimientoInput,
 } from "@/lib/domain/schemas"
 import type { Equipo, ID, Planta, Valvula, Yacimiento } from "@/lib/domain/types"
-import { qk, useCatalogo, useServiceMutation } from "@/lib/hooks/queries"
-import { services } from "@/lib/services"
+import {
+  estructuraApi,
+  invalidarEstructura,
+  qk,
+  useCatalogo,
+  useServiceMutation,
+} from "@/lib/hooks/queries"
 
 // ---------------------------------------------------------------------------
 // Base
 // ---------------------------------------------------------------------------
-
-function invalidarEstructura(empresaId: ID) {
-  return [qk.arbol(empresaId), ["empresas"]]
-}
 
 // ---------------------------------------------------------------------------
 // Yacimiento
@@ -93,8 +94,8 @@ function YacimientoForm({
   const guardar = useServiceMutation(
     (data: YacimientoInput) =>
       yacimiento
-        ? services.estructura.updateYacimiento(yacimiento.id, data)
-        : services.estructura.createYacimiento({ ...data, empresaId }),
+        ? estructuraApi.updateYacimiento(yacimiento.id, data)
+        : estructuraApi.createYacimiento({ ...data, empresaId }),
     {
       exito: yacimiento ? "Yacimiento actualizado" : "Yacimiento creado",
       invalidar: invalidarEstructura(empresaId),
@@ -205,8 +206,8 @@ function PlantaForm({
   const guardar = useServiceMutation(
     (data: PlantaInput) =>
       planta
-        ? services.estructura.updatePlanta(planta.id, data)
-        : services.estructura.createPlanta({ ...data, yacimientoId }),
+        ? estructuraApi.updatePlanta(planta.id, data)
+        : estructuraApi.createPlanta({ ...data, yacimientoId }),
     {
       exito: planta ? "Planta actualizada" : "Planta creada",
       invalidar: invalidarEstructura(empresaId),
@@ -296,8 +297,8 @@ function EquipoForm({
     (data: EquipoInput) => {
       const payload = { ...data, descripcion: data.descripcion || undefined }
       return equipo
-        ? services.estructura.updateEquipo(equipo.id, payload)
-        : services.estructura.createEquipo({ ...payload, plantaId })
+        ? estructuraApi.updateEquipo(equipo.id, payload)
+        : estructuraApi.createEquipo({ ...payload, plantaId })
     },
     {
       exito: equipo ? "Equipo actualizado" : "Equipo creado",
@@ -440,8 +441,8 @@ function ValvulaForm({
     (data: ValvulaInput) => {
       const payload = valvulaDesdeInput(data)
       return valvula
-        ? services.estructura.updateValvula(valvula.id, payload)
-        : services.estructura.createValvula({ ...payload, equipoId })
+        ? estructuraApi.updateValvula(valvula.id, payload)
+        : estructuraApi.createValvula({ ...payload, equipoId })
     },
     {
       exito: valvula ? "Válvula actualizada" : "Válvula creada",

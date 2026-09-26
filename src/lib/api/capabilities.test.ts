@@ -1,9 +1,17 @@
 import { describe, expect, it, vi } from "vitest"
 
 import { EdgeAccessClient } from "../services/edge"
+import { edgeApi } from "./index"
+import { createCertificatesApi } from "./certificates"
 import { createHierarchyApi } from "./hierarchy"
 import { createOfflineApi } from "./offline"
+import { createServiceRequestsApi } from "./service-requests"
 import { createServiceWorkflowApi } from "./service-workflow"
+import { createSignaturesApi } from "./signatures"
+import { createValvesApi } from "./valves"
+import { createVisitsApi } from "./visits"
+import { createWorkOrdersApi } from "./work-orders"
+import { createYacimientosApi } from "./yacimientos"
 
 const client = (payload: unknown, request = vi.fn<typeof fetch>()) => {
   request.mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 }))
@@ -11,6 +19,96 @@ const client = (payload: unknown, request = vi.fn<typeof fetch>()) => {
 }
 
 describe("capability Edge clients", () => {
+  it("registers focused modules as delegates of the existing typed APIs", async () => {
+    const yacimientos = client([
+      {
+        id: "yac-1",
+        cliente_cuenta_id: "client-1",
+        nombre: "Norte",
+      },
+    ])
+    await createYacimientosApi(yacimientos.edge).listYacimientos()
+
+    const valves = client({
+      valve: {
+        id: "valve-1",
+        equipo_id: "equipment-1",
+        nombre: "V-10",
+        marca: null,
+        numero_serie: null,
+        modelo: null,
+        tipo: null,
+        diametro_entrada: null,
+        clase_entrada: null,
+        diametro_salida: null,
+        clase_salida: null,
+        rosca: null,
+        razon_disponibilidad: null,
+      },
+      revisions: [],
+    })
+    await createValvesApi(valves.edge).valve("valve-1")
+
+    const requests = client([])
+    await createServiceRequestsApi(requests.edge).listRequests()
+
+    const visits = client([])
+    await createVisitsApi(visits.edge).listVisits()
+
+    const workOrders = client({ work_order: { id: "work-order-1" } })
+    await createWorkOrdersApi(workOrders.edge).addWorkOrder("visit-1", "valve-1")
+
+    const signatures = client({ signature_id: "signature-1", finalized_certificates: [] })
+    await createSignaturesApi(signatures.edge).submitVisitSignature("visit-1", {
+      party: "tecnico",
+      signerName: "Ana",
+      bucket: "signatures",
+      objectPath: "visit-1/tecnico.png",
+    })
+
+    const offline = client({ visits: [] })
+    await createOfflineApi(offline.edge).workingSet()
+
+    expect(yacimientos.request).toHaveBeenCalledWith(
+      "https://example.test/yacimientos",
+      expect.anything(),
+    )
+    expect(valves.request).toHaveBeenCalledWith(
+      "https://example.test/valves/valve-1",
+      expect.anything(),
+    )
+    expect(requests.request).toHaveBeenCalledWith(
+      "https://example.test/requests",
+      expect.anything(),
+    )
+    expect(visits.request).toHaveBeenCalledWith("https://example.test/visits", expect.anything())
+    expect(workOrders.request).toHaveBeenCalledWith(
+      "https://example.test/visits/visit-1/work-orders",
+      expect.anything(),
+    )
+    expect(signatures.request).toHaveBeenCalledWith(
+      "https://example.test/visits/visit-1/signatures",
+      expect.anything(),
+    )
+    expect(offline.request).toHaveBeenCalledWith(
+      "https://example.test/offline/working-set",
+      expect.anything(),
+    )
+  })
+
+  it("keeps certificate history in certificates and never adds a Tarea route", async () => {
+    const { edge, request } = client({ visit: { id: "visit-1" }, work_orders: [] })
+
+    await createServiceWorkflowApi(edge).visit("visit-1")
+
+    expect(createValvesApi(edge)).not.toHaveProperty("valveHistory")
+    expect(createCertificatesApi(edge)).toHaveProperty("valveHistory")
+    expect(Object.keys(edgeApi)).not.toContain("tarea")
+    expect(request.mock.calls.map(([url]) => String(url))).toEqual([
+      "https://example.test/visits/visit-1",
+    ])
+  })
+
   it("maps only the supported Yacimiento tree fields to the legacy view model", async () => {
     const { edge } = client({
       yacimiento: {

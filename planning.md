@@ -269,7 +269,7 @@ el contrato de API y PostgreSQL conserva RLS y autorización de dominio. Véase
 
 | Operación en el front | Destino futuro |
 |---|---|
-| Login y sesión | Supabase Auth con cookies SSR; rol y Cuenta desde `GET /context` de `service-access` |
+| Login y sesión | Supabase Auth con cookies SSR; rol y Cuenta desde `GET /context` de `identity-admin` (`service-access` sólo como fallback temporal) |
 | CRUD de clientes, estructura, catálogos, tareas, cronograma | Edge Function autenticada; PostgreSQL aplica RLS y autorización de dominio |
 | Filtrado de datos por cliente (RN-09, RNF-01) | Edge Function + políticas RLS (el front no confía en su propio filtro) |
 | Alta de usuarios (admin, taller, cliente) | Edge Function `crear-usuario` (usa service role) |

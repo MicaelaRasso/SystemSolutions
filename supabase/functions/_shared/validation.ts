@@ -1,3 +1,23 @@
+import { HttpError } from "./errors.ts"
+
+export const MAX_JSON_BODY_BYTES = 1_048_576
+
+export const parseJsonObject = async (request: Request): Promise<Record<string, unknown>> => {
+  const declaredLength = Number(request.headers.get("content-length"))
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_JSON_BODY_BYTES)
+    throw new HttpError(413, "Request body is too large")
+
+  let value: unknown
+  try {
+    value = await request.json()
+  } catch {
+    throw new HttpError(400, "Invalid JSON request body")
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new HttpError(400, "JSON request body must be an object")
+  return value as Record<string, unknown>
+}
+
 const nullableTextFields = [
   "marca",
   "numero_serie",
@@ -20,11 +40,6 @@ export type ValveUpdatePayload = {
 const isNullableText = (value: unknown): value is string | null =>
   typeof value === "string" || value === null
 
-/**
- * Valve updates currently replace the complete technical-data document. Keeping
- * this check at the Edge boundary prevents an omitted field from becoming null
- * through an RPC default value.
- */
 export const isValveUpdatePayload = (value: unknown): value is ValveUpdatePayload => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false
 

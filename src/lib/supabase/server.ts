@@ -31,10 +31,11 @@ export async function getVerifiedSesion(): Promise<Sesion | null> {
   const { data, error } = await supabase.auth.getClaims()
   const claims = data?.claims
 
-  if (error || !claims || typeof claims.sub !== "string" || typeof claims.exp !== "number") return null
+  if (error || !claims || typeof claims.sub !== "string" || typeof claims.exp !== "number")
+    return null
 
   // `getClaims` above is the identity verification step. The raw access token
-  // is forwarded only to service-access, which verifies it again before it
+  // is forwarded only to identity-admin, which verifies it again before it
   // returns the authoritative Cuenta and role context.
   const {
     data: { session },

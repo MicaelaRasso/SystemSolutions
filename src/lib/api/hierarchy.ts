@@ -36,6 +36,7 @@ export function toYacimientoView(
     nombre: dto.nombre,
     provincia: dto.provincia ?? "",
     operadora: dto.operadora ?? "",
+    contratista: dto.contratista ?? undefined,
   }
 }
 

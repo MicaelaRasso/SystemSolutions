@@ -9,6 +9,7 @@ import {
   type UpdateCertificateDraftInput,
   type VisitSignatureInput,
 } from "./contracts"
+import { createServiceWorkflowApi } from "./service-workflow"
 
 export const certificateQueryKeys = {
   all: ["edge", "certificates"] as const,
@@ -22,6 +23,8 @@ export const certificateQueryKeys = {
 export const certificateInvalidations = [certificateQueryKeys.all] as const
 
 export function createCertificatesApi(edge: EdgeAccessClient) {
+  const serviceWorkflow = createServiceWorkflowApi(edge)
+
   return {
     draft: (certificateId: string) =>
       edge.request(`certificates/${certificateId}`, certificateDraftDtoSchema),
@@ -29,6 +32,7 @@ export function createCertificatesApi(edge: EdgeAccessClient) {
       edge.request(`certificates/${certificateId}/finalized`, finalizedCertificateDtoSchema),
     valveHistory: (valvulaId: string) =>
       edge.request(`valves/${valvulaId}/certificates`, valveCertificateHistoryDtoSchema),
+    startCertificateDraft: serviceWorkflow.startCertificateDraft,
 
     async updateDraft(certificateId: string, input: UpdateCertificateDraftInput) {
       const data = updateCertificateDraftInputSchema.parse(input)

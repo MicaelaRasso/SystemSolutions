@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { isValveUpdatePayload } from "./valve.ts"
+import { isValveUpdatePayload } from "../_shared/validation.ts"
 
 const validPayload = {
   name: "PSV-101",

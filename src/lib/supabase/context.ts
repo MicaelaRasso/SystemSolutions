@@ -36,7 +36,7 @@ export async function getAuthenticatedContext(accessToken: string): Promise<Edge
   const config = getSupabaseConfig()
   let response: Response
   try {
-    response = await fetch(`${config.serviceAccessUrl}/context`, {
+    response = await fetch(`${config.edgeFunctions["identity-admin"]}/context`, {
       cache: "no-store",
       headers: {
         apikey: config.publishableKey,

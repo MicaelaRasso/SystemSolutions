@@ -10,8 +10,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { ID, NivelEstructura } from "@/lib/domain/types"
 import { plural } from "@/lib/format"
-import { useServiceMutation, qk } from "@/lib/hooks/queries"
-import { services } from "@/lib/services"
+import {
+  estructuraApi,
+  invalidarEstructura,
+  usaSupabase,
+  useServiceMutation,
+} from "@/lib/hooks/queries"
 
 import { NIVEL, type Seleccion, type Ubicacion } from "./arbol-utils"
 import { EquipoDialog, PlantaDialog, ValvulaDialog, YacimientoDialog } from "./dialogs"
@@ -151,6 +155,24 @@ const botonEliminar = (
     Eliminar
   </Button>
 )
+
+function BotonEliminarNoDisponible() {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span tabIndex={0}>
+          <Button variant="destructive" size="sm" disabled>
+            <Trash2 />
+            Eliminar
+          </Button>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>
+        La política de eliminación de activos todavía no está definida
+      </TooltipContent>
+    </Tooltip>
+  )
+}
 const botonAgregar = (label: string) => (
   <Button size="sm" variant="secondary">
     <Plus />
@@ -159,18 +181,19 @@ const botonAgregar = (label: string) => (
 )
 
 export function NodoDetalle({ empresaId, nivel, ubicacion, onSeleccionar }: Props) {
-  const invalidar = [qk.arbol(empresaId), ["empresas"]]
+  const invalidar = invalidarEstructura(empresaId)
+  const eliminacionNoDisponible = usaSupabase()
   const eliminar = useServiceMutation(
     (s: Seleccion) => {
       switch (s.nivel) {
         case "yacimiento":
-          return services.estructura.deleteYacimiento(s.id)
+          return estructuraApi.deleteYacimiento(s.id)
         case "planta":
-          return services.estructura.deletePlanta(s.id)
+          return estructuraApi.deletePlanta(s.id)
         case "equipo":
-          return services.estructura.deleteEquipo(s.id)
+          return estructuraApi.deleteEquipo(s.id)
         case "valvula":
-          return services.estructura.deleteValvula(s.id)
+          return estructuraApi.deleteValvula(s.id)
       }
     },
     { exito: "Eliminado", invalidar },
@@ -215,6 +238,8 @@ export function NodoDetalle({ empresaId, nivel, ubicacion, onSeleccionar }: Prop
                     Tiene certificados emitidos: se conserva por el histórico
                   </TooltipContent>
                 </Tooltip>
+              ) : eliminacionNoDisponible ? (
+                <BotonEliminarNoDisponible />
               ) : (
                 <ConfirmDialog
                   trigger={botonEliminar}
@@ -252,17 +277,21 @@ export function NodoDetalle({ empresaId, nivel, ubicacion, onSeleccionar }: Prop
                 equipo={equipo}
                 trigger={botonEditar}
               />
-              <ConfirmDialog
-                trigger={botonEliminar}
-                titulo={`¿Eliminar el equipo ${equipo.nombre}?`}
-                descripcion="Solo se pueden eliminar equipos sin válvulas cargadas."
-                onConfirm={() =>
-                  confirmarEliminar(
-                    { nivel: "equipo", id: equipo.id },
-                    { nivel: "planta", id: planta.id },
-                  )
-                }
-              />
+              {eliminacionNoDisponible ? (
+                <BotonEliminarNoDisponible />
+              ) : (
+                <ConfirmDialog
+                  trigger={botonEliminar}
+                  titulo={`¿Eliminar el equipo ${equipo.nombre}?`}
+                  descripcion="Solo se pueden eliminar equipos sin válvulas cargadas."
+                  onConfirm={() =>
+                    confirmarEliminar(
+                      { nivel: "equipo", id: equipo.id },
+                      { nivel: "planta", id: planta.id },
+                    )
+                  }
+                />
+              )}
             </>
           }
         />
@@ -310,17 +339,21 @@ export function NodoDetalle({ empresaId, nivel, ubicacion, onSeleccionar }: Prop
                 planta={planta}
                 trigger={botonEditar}
               />
-              <ConfirmDialog
-                trigger={botonEliminar}
-                titulo={`¿Eliminar ${planta.nombre}?`}
-                descripcion="Solo se pueden eliminar plantas sin equipos cargados."
-                onConfirm={() =>
-                  confirmarEliminar(
-                    { nivel: "planta", id: planta.id },
-                    { nivel: "yacimiento", id: yacimiento.id },
-                  )
-                }
-              />
+              {eliminacionNoDisponible ? (
+                <BotonEliminarNoDisponible />
+              ) : (
+                <ConfirmDialog
+                  trigger={botonEliminar}
+                  titulo={`¿Eliminar ${planta.nombre}?`}
+                  descripcion="Solo se pueden eliminar plantas sin equipos cargados."
+                  onConfirm={() =>
+                    confirmarEliminar(
+                      { nivel: "planta", id: planta.id },
+                      { nivel: "yacimiento", id: yacimiento.id },
+                    )
+                  }
+                />
+              )}
             </>
           }
         />
@@ -361,14 +394,18 @@ export function NodoDetalle({ empresaId, nivel, ubicacion, onSeleccionar }: Prop
                 yacimiento={yacimiento}
                 trigger={botonEditar}
               />
-              <ConfirmDialog
-                trigger={botonEliminar}
-                titulo={`¿Eliminar ${yacimiento.nombre}?`}
-                descripcion="Solo se pueden eliminar yacimientos sin plantas cargadas. Se quitan también los accesos de usuarios a este yacimiento."
-                onConfirm={() =>
-                  confirmarEliminar({ nivel: "yacimiento", id: yacimiento.id }, null)
-                }
-              />
+              {eliminacionNoDisponible ? (
+                <BotonEliminarNoDisponible />
+              ) : (
+                <ConfirmDialog
+                  trigger={botonEliminar}
+                  titulo={`¿Eliminar ${yacimiento.nombre}?`}
+                  descripcion="Solo se pueden eliminar yacimientos sin plantas cargadas. Se quitan también los accesos de usuarios a este yacimiento."
+                  onConfirm={() =>
+                    confirmarEliminar({ nivel: "yacimiento", id: yacimiento.id }, null)
+                  }
+                />
+              )}
             </>
           }
         />

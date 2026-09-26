@@ -1,5 +1,3 @@
-import { createBrowserClient } from "@supabase/ssr"
-import type { SupabaseClient } from "@supabase/supabase-js"
 import type { z } from "zod"
 
 import type {
@@ -13,6 +11,14 @@ import type {
   Yacimiento,
 } from "@/lib/domain/types"
 import { ServiceError, type NuevoRegistro, type Services } from "./contracts"
+import {
+  browserSupabase,
+  EdgeTransport,
+  type BrowserSupabaseClient,
+  type EdgeFunctionName,
+} from "./edge-transport"
+
+export { browserSupabase } from "./edge-transport"
 
 export type EdgeContext = {
   cuenta_id: string
@@ -21,33 +27,25 @@ export type EdgeContext = {
   cliente: boolean
 }
 
-type EdgeFetch = typeof fetch
-
-type BrowserSupabaseClient = Pick<SupabaseClient, "auth">
-
-let browserSupabaseClient: BrowserSupabaseClient | undefined
-
-/**
- * The sole browser Supabase client. `@supabase/ssr` persists its Auth session
- * in cookies, which keeps it aligned with the server/proxy session.
- */
-export function browserSupabase(): BrowserSupabaseClient {
-  if (browserSupabaseClient) return browserSupabaseClient
-
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key =
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!url || !key) throw new ServiceError("Falta configurar Supabase Auth", "network")
-
-  browserSupabaseClient = createBrowserClient(url, key)
-  return browserSupabaseClient
-}
-
 const roleMap: Record<EdgeContext["rol"], Usuario["rol"]> = {
   cliente: "cliente",
   taller_movil: "taller",
   administrador_regular: "admin",
   super_administrador: "superadmin",
+}
+
+function isEdgeContext(value: unknown): value is EdgeContext {
+  if (!value || typeof value !== "object") return false
+  const context = value as Partial<EdgeContext>
+  return (
+    typeof context.cuenta_id === "string" &&
+    (context.rol === "cliente" ||
+      context.rol === "taller_movil" ||
+      context.rol === "administrador_regular" ||
+      context.rol === "super_administrador") &&
+    (typeof context.taller_movil_id === "string" || context.taller_movil_id === null) &&
+    typeof context.cliente === "boolean"
+  )
 }
 
 type AuthUserDetails = {
@@ -63,42 +61,41 @@ const unsupported = (operation: string): never => {
 }
 
 /**
- * Deep adapter for the authenticated `service-access` Edge Function.
+ * Deep adapter for authenticated Edge Functions.
  * The browser knows only this interface; it never creates a database client
  * or reads a Supabase table directly.
  */
 export class EdgeAccessClient {
-  private readonly baseUrl: string
-  private readonly anonKey: string
-  private readonly fetcher: EdgeFetch
+  private readonly transport: EdgeTransport
   private readonly auth: (() => BrowserSupabaseClient) | undefined
   private currentUser?: Usuario
 
   constructor({
-    baseUrl = process.env.NEXT_PUBLIC_SERVICE_ACCESS_URL ??
-      `${process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""}/functions/v1/service-access`,
-    anonKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
-      "",
+    baseUrl,
+    anonKey,
+    functionUrls,
+    serviceAccessUrl,
     request = fetch,
     auth,
+    correlationId,
   }: {
     baseUrl?: string
     anonKey?: string
-    request?: EdgeFetch
+    functionUrls?: Partial<Record<EdgeFunctionName, string>>
+    serviceAccessUrl?: string
+    request?: typeof fetch
     auth?: () => BrowserSupabaseClient
+    correlationId?: string | (() => string)
   } = {}) {
-    this.baseUrl = baseUrl.replace(/\/$/, "")
-    this.anonKey = anonKey
-    this.fetcher = request
     this.auth = auth ?? (typeof window === "undefined" ? undefined : browserSupabase)
-  }
-
-  private async token() {
-    if (!this.auth) return undefined
-    const { data, error } = await this.auth().auth.getSession()
-    if (error) throw new ServiceError("No se pudo obtener la sesión de Supabase", "unauthorized")
-    return data.session?.access_token
+    this.transport = new EdgeTransport({
+      functionUrls,
+      serviceAccessUrl: baseUrl ?? serviceAccessUrl,
+      anonKey,
+      request,
+      auth: this.auth,
+      correlationId,
+    })
   }
 
   clearSession() {
@@ -141,41 +138,40 @@ export class EdgeAccessClient {
   }
 
   private async call<T>(path: string, init: RequestInit = {}): Promise<T> {
-    if (!this.baseUrl) throw new ServiceError("Falta configurar la URL de Supabase", "network")
-    const token = await this.token()
-    let response: Response
-    try {
-      response = await this.fetcher(`${this.baseUrl}/${path.replace(/^\//, "")}`, {
-        ...init,
-        headers: {
-          apikey: this.anonKey,
-          ...(init.body ? { "content-type": "application/json" } : {}),
-          ...(token ? { authorization: `Bearer ${token}` } : {}),
-          ...init.headers,
-        },
-      })
-    } catch (error) {
-      throw new ServiceError(
-        error instanceof Error ? error.message : "No se pudo conectar con la Edge Function",
-        "network",
-      )
+    return this.transport.request(this.functionForPath(path), path, init) as Promise<T>
+  }
+
+  private functionForPath(path: string): EdgeFunctionName {
+    const route = path.replace(/^\//, "")
+    if (route === "context") return "identity-admin"
+    if (route.startsWith("offline/") || /^(?:visits\/[^/]+\/sync)$/.test(route))
+      return "offline-sync"
+    if (
+      route.startsWith("certificates/") ||
+      /^(?:work-orders\/[^/]+\/certificate-draft)$/.test(route) ||
+      /^(?:valves\/[^/]+\/certificates)$/.test(route) ||
+      /^(?:visits\/[^/]+\/signatures)$/.test(route)
+    ) {
+      return "certificate-field"
     }
-    const data = (await response.json().catch(() => null)) as { error?: string } | T | null
-    if (!response.ok) {
-      const message = data && typeof data === "object" && "error" in data ? data.error : undefined
-      const code =
-        response.status === 401 || response.status === 403
-          ? "unauthorized"
-          : response.status === 404
-            ? "not_found"
-            : response.status === 409
-              ? "conflict"
-              : response.status >= 500
-                ? "network"
-                : "invalid"
-      throw new ServiceError(message ?? "La Edge Function rechazó la solicitud", code)
+    if (
+      route.startsWith("requests/") ||
+      route === "requests" ||
+      route.startsWith("work-orders/") ||
+      route.startsWith("visits/")
+    ) {
+      return "service-workflow"
     }
-    return data as T
+    if (
+      route === "yacimientos" ||
+      route.startsWith("yacimientos/") ||
+      route === "hierarchy" ||
+      route.startsWith("hierarchy/") ||
+      route.startsWith("valves/")
+    ) {
+      return "asset-access"
+    }
+    return "service-access"
   }
 
   /**
@@ -208,7 +204,11 @@ export class EdgeAccessClient {
   }
 
   async context(): Promise<EdgeContext> {
-    return this.call<EdgeContext>("context")
+    const response = await this.call<EdgeContext | EdgeContext[]>("context")
+    const context = Array.isArray(response) ? response[0] : response
+    if (!isEdgeContext(context))
+      throw new ServiceError("La Edge Function devolvió un contexto inválido", "network")
+    return context
   }
 
   async listYacimientos(): Promise<Record<string, unknown>[]> {
@@ -262,7 +262,7 @@ export class EdgeAccessClient {
     }>(`valves/${id}/certificates`)
   }
 
-  async syncVisit(visitId: ID, operations: unknown[], deviceId?: string) {
+  async syncVisit(visitId: ID, operations: unknown[], deviceId: string) {
     return this.call<Record<string, unknown>>(`visits/${visitId}/sync`, {
       method: "POST",
       body: JSON.stringify({ operations, device_id: deviceId }),

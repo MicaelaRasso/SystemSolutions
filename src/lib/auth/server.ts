@@ -10,7 +10,7 @@ import { getVerifiedSesion } from "@/lib/supabase/server"
 import { decodificarSesion, SESSION_COOKIE, sesionExpirada } from "./session"
 
 /**
- * Verifies the production Auth JWT and gets the role from service-access.
+ * Verifies the production Auth JWT and gets the role from identity-admin.
  * The mock source retains its existing demo-cookie behavior.
  */
 export async function requerirSesion(roles: Rol[]): Promise<Sesion> {

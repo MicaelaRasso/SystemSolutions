@@ -1,11 +1,7 @@
 export const OFFLINE_SCHEMA_VERSION = 1
 
 export type EstadoOperacionLocal =
-  | "guardada_local"
-  | "sincronizando"
-  | "sincronizada"
-  | "conflicto"
-  | "fallida"
+  "guardada_local" | "sincronizando" | "sincronizada" | "conflicto" | "fallida"
 
 export type EstadoLocalVisita = "disponible" | "en_curso_local" | "completada_local"
 
@@ -38,7 +34,7 @@ export interface VisitaOffline {
 
 export interface ResultadoOperacionServidor {
   operation_id: string
-  estado: "sincronizada" | "conflicto"
+  estado: "sincronizada" | "conflicto" | "pendiente"
   result?: unknown
   error_message?: string
 }
@@ -53,7 +49,11 @@ export interface OfflineStore {
 }
 
 export interface SyncTransport {
-  syncVisit(visitId: string, operations: unknown[], deviceId: string): Promise<{
+  syncVisit(
+    visitId: string,
+    operations: unknown[],
+    deviceId: string,
+  ): Promise<{
     operations: ResultadoOperacionServidor[]
   }>
 }
@@ -119,7 +119,10 @@ export class OfflineSyncCoordinator {
       (operation) =>
         (operation.estado === "guardada_local" || operation.estado === "fallida") &&
         operation.dependencies.every((dependency) =>
-          operations.some((candidate) => candidate.operationId === dependency && candidate.estado === "sincronizada"),
+          operations.some(
+            (candidate) =>
+              candidate.operationId === dependency && candidate.estado === "sincronizada",
+          ),
         ),
     )
     if (ready.length === 0) return operations
@@ -167,6 +170,12 @@ export class OfflineSyncCoordinator {
         await this.store.saveOperation(operation)
         continue
       }
+      if (result.estado === "pendiente") {
+        operation.estado = "guardada_local"
+        operation.lastError = result.error_message ?? "El servidor dejó la operación pendiente"
+        await this.store.saveOperation(operation)
+        continue
+      }
       operation.estado = "sincronizada"
       operation.receipt = {
         serverStatus: result.estado,
@@ -196,7 +205,8 @@ export class IndexedDbOfflineStore implements OfflineStore {
       const request = indexedDB.open(name, version)
       request.onupgradeneeded = () => {
         const db = request.result
-        if (!db.objectStoreNames.contains("visits")) db.createObjectStore("visits", { keyPath: "id" })
+        if (!db.objectStoreNames.contains("visits"))
+          db.createObjectStore("visits", { keyPath: "id" })
         if (!db.objectStoreNames.contains("operations")) {
           const operations = db.createObjectStore("operations", { keyPath: "operationId" })
           operations.createIndex("visitId", "visitId", { unique: false })
@@ -213,9 +223,9 @@ export class IndexedDbOfflineStore implements OfflineStore {
   }
 
   async getOperation(operationId: string) {
-    return (await requestResult(await this.store("operations", "readonly").then((s) => s.get(operationId)))) as
-      | OperacionOffline
-      | undefined
+    return (await requestResult(
+      await this.store("operations", "readonly").then((s) => s.get(operationId)),
+    )) as OperacionOffline | undefined
   }
 
   async listOperations(visitId: string) {
@@ -234,9 +244,9 @@ export class IndexedDbOfflineStore implements OfflineStore {
   }
 
   async getVisit(visitId: string) {
-    return (await requestResult(await this.store("visits", "readonly").then((s) => s.get(visitId)))) as
-      | VisitaOffline
-      | undefined
+    return (await requestResult(
+      await this.store("visits", "readonly").then((s) => s.get(visitId)),
+    )) as VisitaOffline | undefined
   }
 
   async removeOperationPayload(operationId: string, receipt: OperacionOffline["receipt"]) {

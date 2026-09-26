@@ -18,7 +18,7 @@ import {
 import { formatNroCertificado, vigencia } from "@/lib/domain/rules"
 import type { Valvula } from "@/lib/domain/types"
 import { fmtFecha } from "@/lib/format"
-import { useCertificadosValvula } from "@/lib/hooks/queries"
+import { useCertificadosValvula, useValvula } from "@/lib/hooks/queries"
 
 /** Campos que se relevan en campo si no se conocen al alta (RF-08). */
 const RELEVABLES_EN_CAMPO = new Set<keyof Valvula>(["nroSerie", "modelo", "marca", "precinto"])
@@ -40,6 +40,9 @@ const CAMPOS: { key: keyof Valvula; label: string; unidad?: string }[] = [
 ]
 
 export function ValvulaFicha({ valvula }: { valvula: Valvula }) {
+  const detalle = useValvula(valvula.id)
+  const ficha = detalle.data ?? valvula
+
   return (
     <div className="space-y-4">
       <Card>
@@ -52,7 +55,7 @@ export function ValvulaFicha({ valvula }: { valvula: Valvula }) {
         <CardContent>
           <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2 xl:grid-cols-3">
             {CAMPOS.map(({ key, label, unidad }) => {
-              const valor = valvula[key]
+              const valor = ficha[key]
               const vacio = valor === undefined || valor === ""
               return (
                 <div key={key} className="space-y-0.5">
@@ -75,13 +78,11 @@ export function ValvulaFicha({ valvula }: { valvula: Valvula }) {
               )
             })}
           </dl>
-          {valvula.notas && (
-            <p className="mt-4 rounded-lg bg-muted/60 p-3 text-sm">{valvula.notas}</p>
-          )}
+          {ficha.notas && <p className="mt-4 rounded-lg bg-muted/60 p-3 text-sm">{ficha.notas}</p>}
         </CardContent>
       </Card>
 
-      <HistorialCertificados valvulaId={valvula.id} />
+      <HistorialCertificados valvulaId={ficha.id} />
     </div>
   )
 }
@@ -126,18 +127,30 @@ function HistorialCertificados({ valvulaId }: { valvulaId: string }) {
                 {data.map((c) => (
                   <TableRow key={c.id}>
                     <TableCell className="font-mono text-xs font-medium">
-                      {formatNroCertificado(c.nro, c.fechaEjecucion)}
+                      {c.fechaEjecucion
+                        ? formatNroCertificado(c.nro, c.fechaEjecucion)
+                        : c.nro > 0
+                          ? `Certificado ${c.nro}`
+                          : "Pendiente de numeración"}
                     </TableCell>
-                    <TableCell>{fmtFecha(c.fechaEjecucion)}</TableCell>
-                    <TableCell>{fmtFecha(vigencia(c.fechaEjecucion).vence)}</TableCell>
                     <TableCell>
-                      <VigenciaBadge fechaEjecucion={c.fechaEjecucion} />
+                      {c.fechaEjecucion ? fmtFecha(c.fechaEjecucion) : "Pendiente"}
+                    </TableCell>
+                    <TableCell>
+                      {c.fechaEjecucion ? fmtFecha(vigencia(c.fechaEjecucion).vence) : "Pendiente"}
+                    </TableCell>
+                    <TableCell>
+                      {c.fechaEjecucion ? (
+                        <VigenciaBadge fechaEjecucion={c.fechaEjecucion} />
+                      ) : (
+                        <Badge variant="outline">Pendiente</Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       <FirmaBadge cert={c} />
                     </TableCell>
                     <TableCell className="hidden max-w-64 truncate font-mono text-xs text-muted-foreground xl:table-cell">
-                      {c.nombreArchivo}
+                      {c.nombreArchivo || "—"}
                     </TableCell>
                   </TableRow>
                 ))}

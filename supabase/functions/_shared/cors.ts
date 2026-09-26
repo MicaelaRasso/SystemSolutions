@@ -4,6 +4,7 @@ const DEFAULT_ALLOWED_HEADERS = [
   "apikey",
   "content-type",
   "x-retry-count",
+  "x-correlation-id",
   "traceparent",
   "tracestate",
   "baggage",
@@ -17,11 +18,6 @@ const allowedOrigins = (configuredOrigins: string | undefined) =>
       .filter(Boolean),
   )
 
-/**
- * CORS is opt-in. A deployment must explicitly configure ALLOWED_ORIGINS
- * (comma-separated) or the legacy single ALLOWED_ORIGIN; it never falls back
- * to a wildcard.
- */
 export const isAllowedOrigin = (origin: string | null, configuredOrigins: string | undefined) =>
   !!origin && allowedOrigins(configuredOrigins).has(origin)
 
@@ -34,7 +30,7 @@ export const corsHeaders = (
   return {
     "access-control-allow-origin": origin!,
     "access-control-allow-headers": DEFAULT_ALLOWED_HEADERS,
-    "access-control-allow-methods": "GET, POST, PATCH, OPTIONS",
+    "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
     vary: "Origin",
   }
 }

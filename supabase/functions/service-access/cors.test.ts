@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { corsHeaders, isAllowedOrigin } from "./cors"
+import { corsHeaders, isAllowedOrigin } from "../_shared/cors.ts"
 
 describe("service-access CORS", () => {
   it("does not enable CORS without an explicit allow-list", () => {

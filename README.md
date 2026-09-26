@@ -5,12 +5,15 @@ El plan de implementación y su avance están en [`planning.md`](planning.md).
 
 > La app frontend funciona actualmente contra datos simulados guardados en el
 > `localStorage` del navegador (`NEXT_PUBLIC_DATA_SOURCE=mock`). El backend
-> Supabase ya dispone de la migración PostgreSQL y la Edge Function
-> `service-access`. Para usar la integración autenticada desde el navegador,
+> Supabase dispone de la migración PostgreSQL, cinco Edge Functions por dominio
+> y `service-access` como fallback temporal. Para usar la integración autenticada desde el navegador,
 > configura `NEXT_PUBLIC_DATA_SOURCE=supabase`, `NEXT_PUBLIC_SUPABASE_URL`,
 > `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (o el alias compatible
-> `NEXT_PUBLIC_SUPABASE_ANON_KEY`) y opcionalmente
-> `NEXT_PUBLIC_SERVICE_ACCESS_URL`. El adaptador usa exclusivamente la Edge
+> `NEXT_PUBLIC_SUPABASE_ANON_KEY`) y las URLs directas opcionales
+> `NEXT_PUBLIC_IDENTITY_ADMIN_URL`, `NEXT_PUBLIC_ASSET_ACCESS_URL`,
+> `NEXT_PUBLIC_SERVICE_WORKFLOW_URL`, `NEXT_PUBLIC_CERTIFICATE_FIELD_URL` y
+> `NEXT_PUBLIC_OFFLINE_SYNC_URL` (o `NEXT_PUBLIC_SERVICE_ACCESS_URL` como fallback).
+> El adaptador usa exclusivamente la Edge
 > Function para operaciones de negocio y archivos; el navegador solo se
 > comunica directamente con Supabase Auth para la sesión. El modo `mock` sigue
 > siendo el valor predeterminado para la demo.
@@ -71,4 +74,4 @@ Variables opcionales: `NEXT_PUBLIC_MOCK_ERROR_RATE` (0–1) simula errores de re
 
 ## Backend Supabase
 
-La API autenticada está documentada en [`supabase/README.md`](supabase/README.md). Todas las operaciones de negocio y archivos pasan por la Edge Function `service-access`, que delega en PostgreSQL con las reglas de autorización del dominio. El navegador no llama tablas, RPCs, Data API ni Storage directamente; Supabase Auth es la única excepción para gestionar la sesión. RLS y privilegios de base de datos conservan la autorización final.
+La API autenticada está documentada en [`supabase/README.md`](supabase/README.md). Las operaciones pasan por la Edge Function propietaria de cada capacidad (`identity-admin`, `asset-access`, `service-workflow`, `certificate-field` u `offline-sync`); `service-access` sólo es un fallback temporal. El navegador no llama tablas, RPCs, Data API ni Storage directamente; Supabase Auth es la única excepción para gestionar la sesión. RLS y privilegios de base de datos conservan la autorización final.

@@ -18,6 +18,9 @@ export const edgeContextSchema = z.object({
   cliente: z.boolean(),
 })
 export type EdgeContextDto = z.infer<typeof edgeContextSchema>
+export const edgeContextResponseSchema = z
+  .union([edgeContextSchema, edgeContextSchema.array().min(1)])
+  .transform((value) => (Array.isArray(value) ? value[0] : value))
 
 export const yacimientoDtoSchema = z
   .object({

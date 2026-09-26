@@ -3,8 +3,14 @@
 import { useMutation, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import type { ID, ListaCatalogo, Rol } from "@/lib/domain/types"
+import { edgeApi } from "@/lib/api"
+import { certificateQueryKeys } from "@/lib/api/certificates"
+import { hierarchyInvalidations, hierarchyQueryKeys } from "@/lib/api/hierarchy"
+import type { Certificado, ID, ListaCatalogo, Rol, Valvula, Yacimiento } from "@/lib/domain/types"
 import { services, type FiltroTareas } from "@/lib/services"
+import { usesSupabaseDataSource } from "@/lib/supabase/config"
+
+export const usaSupabase = () => usesSupabaseDataSource()
 
 export const qk = {
   empresas: (filtro?: object) => ["empresas", filtro ?? {}] as const,
@@ -30,8 +36,222 @@ export const INVALIDAR_CATALOGOS = [["catalogo"], ["catalogo-admin"]]
 /** Prefijos a invalidar tras modificar tareas. */
 export const INVALIDAR_TAREAS = [["tareas"], ["tarea"]]
 
+export function invalidarEstructura(empresaId: ID): QueryKey[] {
+  return usaSupabase() ? [...hierarchyInvalidations] : [qk.arbol(empresaId), ["empresas"]]
+}
+
 export function mensajeError(error: unknown) {
   return error instanceof Error ? error.message : "Ocurrió un error inesperado"
+}
+
+function toValvulaView(dto: Awaited<ReturnType<typeof edgeApi.valves.valve>>): Valvula {
+  return {
+    id: dto.valve.id,
+    equipoId: dto.valve.equipo_id,
+    tag: dto.valve.nombre,
+    marca: dto.valve.marca ?? undefined,
+    nroSerie: dto.valve.numero_serie ?? undefined,
+    modelo: dto.valve.modelo ?? undefined,
+    tipo: dto.valve.tipo ?? undefined,
+    diamEntrada: dto.valve.diametro_entrada ?? undefined,
+    diamSalida: dto.valve.diametro_salida ?? undefined,
+    rosca: dto.valve.rosca ?? undefined,
+  }
+}
+
+function toValveUpdateInput(
+  data: Partial<Omit<Valvula, "id">>,
+  current: Awaited<ReturnType<typeof edgeApi.valves.valve>>["valve"],
+) {
+  return {
+    name: data.tag ?? current.nombre,
+    marca: data.marca ?? current.marca,
+    numero_serie: data.nroSerie ?? current.numero_serie,
+    modelo: data.modelo ?? current.modelo,
+    tipo: data.tipo ?? current.tipo,
+    diametro_entrada: data.diamEntrada ?? current.diametro_entrada,
+    clase_entrada: current.clase_entrada,
+    diametro_salida: data.diamSalida ?? current.diametro_salida,
+    clase_salida: current.clase_salida,
+    rosca: data.rosca ?? current.rosca,
+    razon_disponibilidad: current.razon_disponibilidad,
+  }
+}
+
+function hasSupportedValveData(data: Partial<Omit<Valvula, "id">>) {
+  return [
+    data.marca,
+    data.nroSerie,
+    data.modelo,
+    data.tipo,
+    data.diamEntrada,
+    data.diamSalida,
+    data.rosca,
+  ].some((value) => value !== undefined)
+}
+
+type EdgeCertificate = Awaited<
+  ReturnType<typeof edgeApi.certificates.valveHistory>
+>["certificates"][number]
+
+function stringField(record: Record<string, unknown>, ...names: string[]) {
+  const value = names.map((name) => record[name]).find((item) => typeof item === "string")
+  return typeof value === "string" ? value : undefined
+}
+
+function numberField(record: Record<string, unknown>, ...names: string[]) {
+  const value = names.map((name) => record[name]).find((item) => typeof item === "number")
+  return typeof value === "number" ? value : undefined
+}
+
+function deletionUnavailable(): never {
+  throw new Error("La eliminación de activos no está disponible en Supabase")
+}
+
+/** Keeps the history screen's established model while accepting the Edge row shape. */
+function toCertificadoView(entry: EdgeCertificate): Certificado {
+  const row = entry.certificate
+  const fechaEjecucion =
+    stringField(row, "fecha_ejecucion", "fechaEjecucion") ?? entry.validity?.execution_date ?? ""
+  const id = row.id
+  return {
+    id,
+    nro: numberField(row, "numero", "nro") ?? 0,
+    localId: id,
+    tareaId: stringField(row, "orden_trabajo_id", "tareaId") ?? "",
+    tallerId: "",
+    empresaId: "",
+    yacimientoId: stringField(row, "yacimiento_id", "yacimientoId") ?? "",
+    plantaId: stringField(row, "planta_id", "plantaId") ?? "",
+    equipoId: stringField(row, "equipo_id", "equipoId") ?? "",
+    valvulaId: stringField(row, "valvula_id", "valvulaId") ?? "",
+    fechaEjecucion,
+    emitidoEn: stringField(row, "created_at", "emitidoEn") ?? "",
+    emitidoPor: "",
+    valvula: {},
+    alcance: [],
+    repuestos: [],
+    ensayos: {
+      spInicial: { valor: 0, unidad: "" },
+      spApertura: { valor: 0, unidad: "" },
+      presionCierre: { valor: 0, unidad: "" },
+      patronId: "",
+      ejecuto: stringField(row, "tecnico_ejecutor") ?? "",
+    },
+    fotos: [],
+    nomina: [],
+    nombreArchivo: stringField(row, "nombre_archivo", "nombreArchivo") ?? "",
+    revision: 0,
+  }
+}
+
+async function actualizarValvula(id: ID, data: Partial<Omit<Valvula, "id">>) {
+  if (!usaSupabase()) return services.estructura.updateValvula(id, data)
+  const current = await edgeApi.valves.valve(id)
+  return toValvulaView(
+    await edgeApi.valves.updateValve(id, toValveUpdateInput(data, current.valve)),
+  )
+}
+
+export const estructuraApi = {
+  async arbol(empresaId: ID) {
+    if (!usaSupabase()) return services.estructura.arbol(empresaId)
+    const yacimientos = await edgeApi.yacimientos.listYacimientos()
+    const accesibles = yacimientos.filter((yacimiento) => yacimiento.empresaId === empresaId)
+    return Promise.all(accesibles.map((yacimiento) => edgeApi.yacimientos.tree(yacimiento.id)))
+  },
+
+  async createYacimiento(data: Omit<Yacimiento, "id">) {
+    if (!usaSupabase()) return services.estructura.createYacimiento(data)
+    return edgeApi.yacimientos.createYacimiento({
+      name: data.nombre,
+      provincia: data.provincia,
+      operadora: data.operadora,
+      contratista: "No informado",
+    })
+  },
+
+  async updateYacimiento(id: ID, data: Partial<Omit<Yacimiento, "id">>) {
+    if (!usaSupabase()) return services.estructura.updateYacimiento(id, data)
+    const current = await edgeApi.yacimientos.tree(id)
+    return edgeApi.yacimientos.updateYacimiento(id, {
+      name: data.nombre ?? current.nombre,
+      provincia: data.provincia ?? current.provincia,
+      operadora: data.operadora ?? current.operadora,
+      contratista: current.contratista ?? "No informado",
+    })
+  },
+
+  async createPlanta(data: { yacimientoId: ID; nombre: string }) {
+    if (!usaSupabase()) return services.estructura.createPlanta(data)
+    const planta = await edgeApi.yacimientos.createDescendant({
+      kind: "planta",
+      parentId: data.yacimientoId,
+      name: data.nombre,
+    })
+    return { id: planta.id, yacimientoId: planta.yacimiento_id, nombre: planta.nombre }
+  },
+
+  async updatePlanta(id: ID, data: { nombre?: string }) {
+    if (!usaSupabase()) return services.estructura.updatePlanta(id, data)
+    const planta = await edgeApi.yacimientos.updateDescendant(id, {
+      kind: "planta",
+      name: data.nombre ?? "",
+    })
+    return { id: planta.id, yacimientoId: planta.yacimiento_id, nombre: planta.nombre }
+  },
+
+  async createEquipo(data: { plantaId: ID; nombre: string; descripcion?: string }) {
+    if (!usaSupabase()) return services.estructura.createEquipo(data)
+    const equipo = await edgeApi.yacimientos.createDescendant({
+      kind: "equipo",
+      parentId: data.plantaId,
+      name: data.nombre,
+    })
+    return { id: equipo.id, plantaId: equipo.planta_id, nombre: equipo.nombre }
+  },
+
+  async updateEquipo(id: ID, data: { nombre?: string; descripcion?: string }) {
+    if (!usaSupabase()) return services.estructura.updateEquipo(id, data)
+    const equipo = await edgeApi.yacimientos.updateDescendant(id, {
+      kind: "equipo",
+      name: data.nombre ?? "",
+    })
+    return { id: equipo.id, plantaId: equipo.planta_id, nombre: equipo.nombre }
+  },
+
+  async getValvula(id: ID) {
+    if (!usaSupabase()) return services.estructura.getValvula(id)
+    return toValvulaView(await edgeApi.valves.valve(id))
+  },
+
+  async createValvula(data: Omit<Valvula, "id">) {
+    if (!usaSupabase()) return services.estructura.createValvula(data)
+    const valvula = await edgeApi.yacimientos.createDescendant({
+      kind: "valvula",
+      parentId: data.equipoId,
+      name: data.tag,
+    })
+    return hasSupportedValveData(data)
+      ? actualizarValvula(valvula.id, data)
+      : { id: valvula.id, equipoId: valvula.equipo_id, tag: valvula.nombre }
+  },
+
+  updateValvula: actualizarValvula,
+
+  deleteYacimiento: (id: ID) =>
+    usaSupabase() ? deletionUnavailable() : services.estructura.deleteYacimiento(id),
+  deletePlanta: (id: ID) =>
+    usaSupabase() ? deletionUnavailable() : services.estructura.deletePlanta(id),
+  deleteEquipo: (id: ID) =>
+    usaSupabase() ? deletionUnavailable() : services.estructura.deleteEquipo(id),
+  deleteValvula: (id: ID) =>
+    usaSupabase() ? deletionUnavailable() : services.estructura.deleteValvula(id),
+
+  listCertificadosPorValvula: async (id: ID) => {
+    if (!usaSupabase()) return services.certificados.listPorValvula(id)
+    return (await edgeApi.certificates.valveHistory(id)).certificates.map(toCertificadoView)
+  },
 }
 
 /**
@@ -63,9 +283,18 @@ export const useEmpresa = (id: ID) =>
 
 export const useArbol = (empresaId: ID) =>
   useQuery({
-    queryKey: qk.arbol(empresaId),
-    queryFn: () => services.estructura.arbol(empresaId),
+    queryKey: usaSupabase() ? hierarchyQueryKeys.tree(empresaId) : qk.arbol(empresaId),
+    queryFn: () => estructuraApi.arbol(empresaId),
     enabled: !!empresaId,
+  })
+
+export const useValvula = (valvulaId: ID | undefined) =>
+  useQuery({
+    queryKey: usaSupabase()
+      ? hierarchyQueryKeys.valve(valvulaId ?? "")
+      : qk.valvula(valvulaId ?? ""),
+    queryFn: () => estructuraApi.getValvula(valvulaId!),
+    enabled: Boolean(valvulaId) && usaSupabase(),
   })
 
 export const useUsuarios = (filtro: { rol?: Rol; empresaId?: ID } = {}) =>
@@ -80,8 +309,10 @@ export const useAccesos = (usuarioId: ID | undefined) =>
 
 export const useCertificadosValvula = (valvulaId: ID | undefined) =>
   useQuery({
-    queryKey: qk.certificadosValvula(valvulaId ?? ""),
-    queryFn: () => services.certificados.listPorValvula(valvulaId!),
+    queryKey: usaSupabase()
+      ? certificateQueryKeys.valveHistory(valvulaId ?? "")
+      : qk.certificadosValvula(valvulaId ?? ""),
+    queryFn: () => estructuraApi.listCertificadosPorValvula(valvulaId!),
     enabled: !!valvulaId,
   })
 

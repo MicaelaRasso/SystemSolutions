@@ -61,6 +61,7 @@ export interface Yacimiento {
   nombre: string
   provincia: string
   operadora: string
+  contratista?: string
 }
 
 /** Planta / Locación. */
