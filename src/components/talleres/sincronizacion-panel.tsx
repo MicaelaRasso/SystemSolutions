@@ -79,12 +79,6 @@ export function SincronizacionPanel() {
       setConnection("offline")
       return
     }
-    if (process.env.NEXT_PUBLIC_DATA_SOURCE !== "supabase") {
-      setVisits([])
-      setOperationsByVisit({})
-      setConnection("online")
-      return
-    }
     setConnection("actualizando")
     setError(undefined)
     try {
@@ -104,8 +98,10 @@ export function SincronizacionPanel() {
           synchronizationPending: previous?.synchronizationPending ?? false,
         }
         await store.saveVisit(visit)
-        nextOperations[id] = await store.listOperations(id)
-        nextVisits.push(visit)
+        // Reconnect refresh also replays queued work. Stable operation ids make
+        // replay safe when a previous request reached the server but lost its reply.
+        nextOperations[id] = await createCoordinator(store).sync(id, getDeviceId())
+        nextVisits.push((await store.getVisit(id)) ?? visit)
       }
       setVisits(nextVisits)
       setOperationsByVisit(nextOperations)
@@ -286,7 +282,7 @@ export function SincronizacionPanel() {
                             {operation.estado === "sincronizada"
                               ? `Reconocida: ${operation.receipt?.serverStatus ?? "sincronizada"}`
                               : operation.estado === "conflicto"
-                                ? "Conflicto"
+                                ? "Conflicto; datos locales conservados"
                                 : operation.estado === "fallida"
                                   ? "Fallida"
                                   : operation.estado === "sincronizando"
@@ -301,6 +297,11 @@ export function SincronizacionPanel() {
                         ) : null}
                         {operation.lastError ? (
                           <p className="text-destructive">{operation.lastError}</p>
+                        ) : null}
+                        {operation.estado === "conflicto" ? (
+                          <p className="text-muted-foreground">
+                            El contenido local se conserva en este dispositivo y requiere resolución administrativa.
+                          </p>
                         ) : null}
                       </li>
                     ))}

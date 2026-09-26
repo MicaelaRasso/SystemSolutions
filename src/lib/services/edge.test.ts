@@ -4,7 +4,32 @@ import { z } from "zod"
 import { EdgeAccessClient } from "./edge"
 
 describe("EdgeAccessClient", () => {
-  it("sends business operations to service-access with the authenticated seam", async () => {
+  it.each([
+    ["context", "identity-admin"],
+    ["accounts", "identity-admin"],
+    ["yacimientos/y1/tree", "asset-access"],
+    ["hierarchy", "asset-access"],
+    ["valves/v1", "asset-access"],
+    ["valves/v1/certificates", "certificate-field"],
+    ["requests/r1/schedule", "service-workflow"],
+    ["visits/v1", "service-workflow"],
+    ["visits/v1/sync", "offline-sync"],
+    ["work-orders/w1", "service-workflow"],
+    ["work-orders/w1/certificate-draft", "certificate-field"],
+    ["certificates/c1", "certificate-field"],
+    ["operations?from=2026-01-01", "service-workflow"],
+    ["offline/working-set", "offline-sync"],
+  ] as const)("routes %s to %s", (path, owner) => {
+    const client = new EdgeAccessClient({ baseUrl: "https://example.test" })
+    expect(client.functionForPath(path)).toBe(owner)
+  })
+
+  it("fails unknown paths locally", () => {
+    const client = new EdgeAccessClient({ baseUrl: "https://example.test" })
+    expect(() => client.functionForPath("unowned-resource")).toThrow("Ruta Edge sin propietario")
+  })
+
+  it("sends hierarchy writes directly to asset-access", async () => {
     const request = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(JSON.stringify({ id: "plant-1", yacimiento_id: "yac-1", nombre: "Planta 1" }), {
         status: 200,
@@ -12,7 +37,7 @@ describe("EdgeAccessClient", () => {
       }),
     )
     const client = new EdgeAccessClient({
-      baseUrl: "https://example.supabase.co/functions/v1/service-access",
+      baseUrl: "https://example.supabase.co",
       anonKey: "anon-key",
       request,
     })
@@ -20,7 +45,7 @@ describe("EdgeAccessClient", () => {
     await client.createDescendant("planta", "yac-1", "Planta 1")
 
     expect(request).toHaveBeenCalledWith(
-      "https://example.supabase.co/functions/v1/service-access/hierarchy",
+      "https://example.supabase.co/functions/v1/asset-access/hierarchy",
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({
@@ -48,7 +73,7 @@ describe("EdgeAccessClient", () => {
       )
       .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }))
     const client = new EdgeAccessClient({
-      serviceAccessUrl: "https://example.test/service-access",
+      baseUrl: "https://example.test",
       functionUrls: {
         "identity-admin": "https://identity.test/identity-admin",
         "asset-access": "https://assets.test/asset-access",
@@ -76,7 +101,7 @@ describe("EdgeAccessClient", () => {
       .fn<typeof fetch>()
       .mockResolvedValue(new Response(JSON.stringify({ certificates: [] }), { status: 200 }))
     const client = new EdgeAccessClient({
-      serviceAccessUrl: "https://example.test/service-access",
+      baseUrl: "https://example.test",
       functionUrls: { "certificate-field": "https://certificates.test/certificate-field" },
       request,
     })
@@ -94,7 +119,7 @@ describe("EdgeAccessClient", () => {
       .fn<typeof fetch>()
       .mockResolvedValue(new Response(JSON.stringify({ certificate: {} }), { status: 200 }))
     const client = new EdgeAccessClient({
-      serviceAccessUrl: "https://example.test/service-access",
+      baseUrl: "https://example.test",
       functionUrls: { "certificate-field": "https://certificates.test/certificate-field" },
       request,
     })
@@ -220,13 +245,13 @@ describe("EdgeAccessClient", () => {
     await client.context()
 
     expect(request).toHaveBeenCalledWith(
-      "https://example.test/context",
+      "https://example.test/functions/v1/identity-admin/context",
       expect.objectContaining({
         headers: expect.objectContaining({ authorization: "Bearer session-token" }),
       }),
     )
     expect(request).toHaveBeenCalledWith(
-      "https://example.test/context",
+      "https://example.test/functions/v1/identity-admin/context",
       expect.objectContaining({
         headers: expect.objectContaining({
           apikey: "anon-key",

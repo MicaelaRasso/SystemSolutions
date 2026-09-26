@@ -47,7 +47,7 @@ export interface Empresa {
   telefono: string
   email: string
   direccion: string
-  /** Data URL en mock; URL de Supabase Storage en producción. */
+  /** URL for the stored attachment. */
   logoUrl?: string
   /** "Requiere envío de advertencia de vencimiento" (RN-17). */
   avisoVencimiento: boolean
@@ -297,7 +297,7 @@ export interface Patron {
 }
 
 // ---------------------------------------------------------------------------
-// Sesión (mock) — en producción la provee Supabase Auth
+// Supabase Auth session view model
 // ---------------------------------------------------------------------------
 
 export interface Sesion {

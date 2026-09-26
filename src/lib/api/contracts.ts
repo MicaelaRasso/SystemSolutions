@@ -1,7 +1,7 @@
 import { z } from "zod"
 
 /**
- * Browser-facing DTOs for the routes that service-access exposes today.
+ * Browser-facing DTOs for the routes exposed by the direct Edge owners.
  *
  * Table-shaped values are deliberately kept in snake_case and `passthrough`
  * here. They are transport contracts, not view models; each capability owns
@@ -341,74 +341,88 @@ export type OfflineWorkingSetDto = z.infer<typeof offlineWorkingSetDtoSchema>
 // Frontend: Empresa/Usuario/Taller/Persona/Catálogo -> the administrative
 // capability functions. These DTOs intentionally preserve snake_case at the
 // transport boundary; view-model mapping belongs in the adapter below.
-export const clientDtoSchema = z.object({
-  id: edgeIdSchema,
-  razon_social: z.string(),
-  nombre: z.string().optional(),
-  cuit: z.string(),
-  contacto: z.string(),
-  telefono: z.string(),
-  email: z.string(),
-  direccion: z.string(),
-  logo_url: z.unknown().nullable().optional(),
-  aviso_vencimiento: z.boolean(),
-  activo: z.boolean(),
-  creado_en: edgeTimestampSchema,
-  yacimientos: z.number().int().nonnegative(),
-  valvulas: z.number().int().nonnegative(),
-  usuarios: z.number().int().nonnegative(),
-}).passthrough()
+export const clientDtoSchema = z
+  .object({
+    id: edgeIdSchema,
+    razon_social: z.string(),
+    nombre: z.string().optional(),
+    cuit: z.string(),
+    contacto: z.string(),
+    telefono: z.string(),
+    email: z.string(),
+    direccion: z.string(),
+    logo_url: z.unknown().nullable().optional(),
+    aviso_vencimiento: z.boolean(),
+    activo: z.boolean(),
+    creado_en: edgeTimestampSchema,
+    yacimientos: z.number().int().nonnegative(),
+    valvulas: z.number().int().nonnegative(),
+    usuarios: z.number().int().nonnegative(),
+  })
+  .passthrough()
 export type ClientDto = z.infer<typeof clientDtoSchema>
 
-export const accountDtoSchema = z.object({
-  id: edgeIdSchema,
-  email: z.string(),
-  nombre: z.string(),
-  apellido: z.string(),
-  rol: z.enum(["cliente", "taller_movil", "administrador_regular", "super_administrador"]),
-  activo: z.boolean(),
-  creado_en: edgeTimestampSchema,
-}).passthrough()
+export const accountDtoSchema = z
+  .object({
+    id: edgeIdSchema,
+    email: z.string(),
+    nombre: z.string(),
+    apellido: z.string(),
+    rol: z.enum(["cliente", "taller_movil", "administrador_regular", "super_administrador"]),
+    activo: z.boolean(),
+    creado_en: edgeTimestampSchema,
+  })
+  .passthrough()
 export type AccountDto = z.infer<typeof accountDtoSchema>
 
-export const workshopDtoSchema = z.object({
-  id: edgeIdSchema,
-  nombre: z.string(),
-  color: z.string(),
-  activo: z.boolean(),
-  usuario_id: edgeIdSchema.nullable().optional(),
-  email: z.string(),
-}).passthrough()
+export const workshopDtoSchema = z
+  .object({
+    id: edgeIdSchema,
+    nombre: z.string(),
+    color: z.string(),
+    activo: z.boolean(),
+    usuario_id: edgeIdSchema.nullable().optional(),
+    email: z.string(),
+  })
+  .passthrough()
 
-export const personDtoSchema = z.object({
-  id: edgeIdSchema,
-  nombre: z.string(),
-  apellido: z.string(),
-  dni: z.string(),
-  activo: z.boolean(),
-}).passthrough()
+export const personDtoSchema = z
+  .object({
+    id: edgeIdSchema,
+    nombre: z.string(),
+    apellido: z.string(),
+    dni: z.string(),
+    activo: z.boolean(),
+  })
+  .passthrough()
 
-export const catalogOptionDtoSchema = z.object({
-  id: edgeIdSchema,
-  lista: z.string(),
-  valor: z.string(),
-  orden: z.number().int(),
-  activo: z.boolean(),
-}).passthrough()
+export const catalogOptionDtoSchema = z
+  .object({
+    id: edgeIdSchema,
+    lista: z.string(),
+    valor: z.string(),
+    orden: z.number().int(),
+    activo: z.boolean(),
+  })
+  .passthrough()
 
-export const testStandardDtoSchema = z.object({
-  id: edgeIdSchema,
-  nombre: z.string(),
-  nro_serie: z.string(),
-  vencimiento: z.string(),
-  activo: z.boolean(),
-}).passthrough()
+export const testStandardDtoSchema = z
+  .object({
+    id: edgeIdSchema,
+    nombre: z.string(),
+    nro_serie: z.string(),
+    vencimiento: z.string(),
+    activo: z.boolean(),
+  })
+  .passthrough()
 
-export const staffingDtoSchema = z.object({
-  taller_id: edgeIdSchema,
-  fecha: z.string(),
-  persona_ids: z.array(edgeIdSchema),
-}).passthrough()
+export const staffingDtoSchema = z
+  .object({
+    taller_id: edgeIdSchema,
+    fecha: z.string(),
+    persona_ids: z.array(edgeIdSchema),
+  })
+  .passthrough()
 
 /** Canonical operation summary shared by list and detail reads. */
 export const operationSummarySchema = z

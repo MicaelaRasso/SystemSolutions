@@ -15,7 +15,7 @@ import { createOperationsApi } from "./operations"
 
 /**
  * Capability-oriented browser API. Components consume hooks/adapters built on
- * this object; only this layer knows that service-access is an Edge Function.
+ * this object; capability adapters route each path to its owning Edge Function.
  */
 export const edgeApi = {
   identity: createIdentityApi(edgeAccess),

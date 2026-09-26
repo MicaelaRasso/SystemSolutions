@@ -1,7 +1,7 @@
 import type { Adjunto } from "@/lib/domain/types"
 
 /**
- * Abre un adjunto de demo en otra pestaña. Production media must be fetched by
+ * Opens an attachment in a separate tab. Production media must be fetched by
  * an Edge-mediated capability; this helper deliberately rejects remote URLs so
  * browser code cannot turn a Storage URL into an application-data boundary.
  */

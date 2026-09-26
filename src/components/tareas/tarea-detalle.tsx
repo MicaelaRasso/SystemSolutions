@@ -6,8 +6,17 @@ import Link from "next/link"
 import { ConfirmDialog } from "@/components/common/confirm-dialog"
 import { ErrorState } from "@/components/common/states"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Textarea } from "@/components/ui/textarea"
 import { fmtFecha } from "@/lib/format"
+import {
+  useAddEdgeWorkOrder,
+  useEdgeCertificateDraft,
+  useStartEdgeCertificateDraft,
+  useUpdateEdgeCertificateDraft,
+  useUpdateEdgeWorkOrder,
+} from "@/lib/api/hooks"
 import {
   cancelarVisita,
   cambiarEstadoTarea,
@@ -17,6 +26,8 @@ import {
   useOperacion,
   useTarea,
 } from "@/lib/hooks/queries"
+import { useState } from "react"
+import type { OperationRead } from "@/lib/hooks/queries"
 
 import { EstadoTareaBadge, TallerChip } from "./badges"
 import { TareaForm } from "./tarea-form"
@@ -130,6 +141,221 @@ export function TareaDetalle({ id }: { id: string }) {
         tarea={tarea}
         operation={supabase ? operacion.data : undefined}
       />
+      {supabase && operacion.data && <OrdenesTrabajo operation={operacion.data} />}
     </>
+  )
+}
+
+function OrdenesTrabajo({ operation }: { operation: OperationRead }) {
+  const add = useAddEdgeWorkOrder()
+  const update = useUpdateEdgeWorkOrder()
+  const visitId = operation.visit.visit.id
+  const selectedValves = operation.request.selected_valves
+  const orderForValve = (valveId: string) =>
+    operation.work_orders.find((entry) => entry.work_order.valvula_id === valveId)
+
+  return (
+    <section className="max-w-4xl space-y-3 rounded-xl border p-4" aria-labelledby="ordenes-title">
+      <div>
+        <h2 id="ordenes-title" className="font-semibold">
+          Órdenes de trabajo
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Se administran dentro de la visita asociada.
+        </p>
+      </div>
+      {selectedValves.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          La solicitud no tiene válvulas seleccionadas.
+        </p>
+      ) : (
+        <ul className="space-y-3">
+          {selectedValves.map((valve) => {
+            const entry = orderForValve(valve.id)
+            return (
+              <li
+                key={valve.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/40 p-3"
+              >
+                <div>
+                  <p className="text-sm font-medium">{valve.name}</p>
+                  {entry && (
+                    <p className="text-xs text-muted-foreground">
+                      OT {entry.work_order.id} · {entry.work_order.estado ?? "pendiente"}
+                    </p>
+                  )}
+                </div>
+                {entry ? (
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap gap-2">
+                      {entry.work_order.estado !== "evaluada" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={update.isPending}
+                          onClick={() =>
+                            update.mutate({
+                              workOrderId: entry.work_order.id,
+                              input: { outcome: "evaluada" },
+                            })
+                          }
+                        >
+                          Marcar evaluada
+                        </Button>
+                      )}
+                      {entry.work_order.estado !== "no_evaluada" && (
+                        <NoEvaluadaButton
+                          disabled={update.isPending}
+                          onSubmit={(reason) =>
+                            update.mutate({
+                              workOrderId: entry.work_order.id,
+                              input: { outcome: "no_evaluada", notEvaluatedReason: reason },
+                            })
+                          }
+                        />
+                      )}
+                    </div>
+                    <CertificateDraft workOrderId={entry.work_order.id} />
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={add.isPending}
+                    onClick={() => add.mutate({ visitId, valveId: valve.id })}
+                  >
+                    Agregar orden
+                  </Button>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      {add.isError && (
+        <p role="alert" className="text-sm text-destructive">
+          {add.error.message}
+        </p>
+      )}
+      {update.isError && (
+        <p role="alert" className="text-sm text-destructive">
+          {update.error.message}
+        </p>
+      )}
+    </section>
+  )
+}
+
+function CertificateDraft({ workOrderId }: { workOrderId: string }) {
+  const [certificateId, setCertificateId] = useState<string>()
+  const [payload, setPayload] = useState("{}")
+  const [payloadError, setPayloadError] = useState<string>()
+  const start = useStartEdgeCertificateDraft()
+  const draft = useEdgeCertificateDraft(certificateId)
+  const save = useUpdateEdgeCertificateDraft()
+
+  function saveOpaquePayload() {
+    try {
+      const parsed: unknown = JSON.parse(payload)
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("El payload debe ser un objeto JSON")
+      }
+      setPayloadError(undefined)
+      save.mutate({ certificateId: certificateId!, input: parsed as Record<string, unknown> })
+    } catch (error) {
+      setPayloadError(error instanceof Error ? error.message : "JSON inválido")
+    }
+  }
+
+  return (
+    <div className="space-y-1">
+      <Button
+        size="sm"
+        variant="ghost"
+        disabled={start.isPending || draft.isFetching}
+        onClick={() => {
+          if (certificateId) {
+            void draft.refetch()
+          } else {
+            start.mutate(workOrderId, {
+              onSuccess: (result) => setCertificateId(result.certificate.id),
+            })
+          }
+        }}
+      >
+        {certificateId ? "Leer borrador" : "Iniciar borrador de certificado"}
+      </Button>
+      {start.isError && (
+        <p role="alert" className="text-xs text-destructive">
+          {start.error.message}
+        </p>
+      )}
+      {draft.data && (
+        <div className="max-w-xl space-y-2" aria-live="polite">
+          <p className="text-xs text-muted-foreground">
+            {draft.data.validation.complete
+              ? "Borrador completo según la validación del servidor."
+              : `Campos pendientes: ${draft.data.validation.missing_fields.join(", ") || "sin detalle"}`}
+          </p>
+          <label className="block space-y-1 text-xs text-muted-foreground">
+            Payload JSON opaco
+            <Textarea
+              value={payload}
+              onChange={(event) => setPayload(event.target.value)}
+              rows={4}
+              spellCheck={false}
+            />
+          </label>
+          <Button size="sm" variant="outline" disabled={save.isPending} onClick={saveOpaquePayload}>
+            Guardar borrador
+          </Button>
+          {payloadError && (
+            <p role="alert" className="text-xs text-destructive">
+              {payloadError}
+            </p>
+          )}
+          {save.isError && (
+            <p role="alert" className="text-xs text-destructive">
+              {save.error.message}
+            </p>
+          )}
+          {save.isSuccess && <p className="text-xs text-muted-foreground">Borrador guardado.</p>}
+        </div>
+      )}
+      {draft.isError && (
+        <p role="alert" className="text-xs text-destructive">
+          {draft.error.message}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function NoEvaluadaButton({
+  disabled,
+  onSubmit,
+}: {
+  disabled: boolean
+  onSubmit: (reason: string) => void
+}) {
+  const [reason, setReason] = useState("")
+  return (
+    <div className="flex gap-2">
+      <Input
+        aria-label="Motivo de no evaluación"
+        value={reason}
+        onChange={(event) => setReason(event.target.value)}
+        placeholder="Motivo requerido"
+        className="h-8 w-40"
+      />
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={disabled || !reason.trim()}
+        onClick={() => onSubmit(reason.trim())}
+      >
+        No evaluada
+      </Button>
+    </div>
   )
 }

@@ -24,7 +24,6 @@ import {
   useOperaciones,
   useServiceMutation,
   useTalleres,
-  useTareas,
 } from "@/lib/hooks/queries"
 import type { OperationRead } from "@/lib/hooks/queries"
 import { services, type TareaResumen } from "@/lib/services"
@@ -51,10 +50,7 @@ export function Cronograma() {
 
   const supabase = usaSupabase()
   const operaciones = useOperaciones({ desde, hasta })
-  const tareasMock = useTareas({ desde, hasta })
-  const tareas = supabase
-    ? (operaciones.data ?? []).map(convertirOperacionATarea)
-    : (tareasMock.data ?? [])
+  const tareas = (operaciones.data ?? []).map(convertirOperacionATarea)
   const talleres = useTalleres()
   const personas = usePersonas()
   const nominas = useNominas(desde, hasta)
@@ -124,9 +120,9 @@ export function Cronograma() {
     reasignar.mutate({ id, tallerId, fecha })
   }
 
-  const tareasPendientes = supabase ? operaciones.isPending : tareasMock.isPending
-  const tareasError = supabase ? operaciones.error : tareasMock.error
-  const tareasPlaceholder = supabase ? operaciones.isPlaceholderData : tareasMock.isPlaceholderData
+  const tareasPendientes = operaciones.isPending
+  const tareasError = operaciones.error
+  const tareasPlaceholder = operaciones.isPlaceholderData
   const cargando = tareasPendientes || talleres.isPending || nominas.isPending || personas.isPending
   const error = tareasError ?? talleres.error ?? nominas.error ?? personas.error
 
@@ -192,7 +188,7 @@ export function Cronograma() {
         <ErrorState
           error={error}
           onRetry={() => {
-            supabase ? operaciones.refetch() : tareasMock.refetch()
+            operaciones.refetch()
             talleres.refetch()
             nominas.refetch()
             personas.refetch()

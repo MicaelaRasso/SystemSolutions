@@ -44,7 +44,6 @@ import type { ArbolYacimiento, ID, Usuario } from "@/lib/domain/types"
 import { fmtFecha, nombreCompleto } from "@/lib/format"
 import { qk, useAccesos, useArbol, useServiceMutation, useUsuarios } from "@/lib/hooks/queries"
 import { services } from "@/lib/services"
-import { DEMO_PASSWORD } from "@/lib/services/mock/seed"
 
 import {
   AccesosSelector,
@@ -248,7 +247,7 @@ function UsuarioDialog({
           <DialogDescription>
             {usuario
               ? usuario.email
-              : `Recibirá un email para definir su contraseña (en modo demo: ${DEMO_PASSWORD}).`}
+              : "Recibirá un email para definir su contraseña."}
           </DialogDescription>
         </DialogHeader>
         {open && (

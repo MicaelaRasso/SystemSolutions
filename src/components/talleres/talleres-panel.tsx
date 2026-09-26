@@ -23,7 +23,6 @@ import { COLORES_TALLER } from "@/lib/domain/catalogos"
 import { tallerSchema, type TallerInput } from "@/lib/domain/schemas"
 import { qk, useServiceMutation, useTalleres } from "@/lib/hooks/queries"
 import { services, type TallerConCuenta } from "@/lib/services"
-import { DEMO_PASSWORD } from "@/lib/services/mock/seed"
 import { cn } from "@/lib/utils"
 
 /** Invalida talleres y todo lo que muestra su nombre o color. */
@@ -138,7 +137,7 @@ function TallerDialog({
       descripcion={
         taller
           ? undefined
-          : `Se crea la cuenta de acceso para la tablet (en modo demo, contraseña ${DEMO_PASSWORD}).`
+          : "Se crea una cuenta de acceso para la tablet."
       }
     >
       {(cerrar) => <TallerForm taller={taller} usados={usados} cerrar={cerrar} />}

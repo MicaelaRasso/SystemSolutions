@@ -3,22 +3,17 @@
 Front end (Next.js 16 + Tailwind 4 + shadcn/ui) del sistema descrito en `Contexto/DRF_System_Solutions_v1_1`.
 El plan de implementación y su avance están en [`planning.md`](planning.md).
 
-> La app frontend funciona actualmente contra datos simulados guardados en el
-> `localStorage` del navegador (`NEXT_PUBLIC_DATA_SOURCE=mock`). El backend
-> Supabase dispone de la migración PostgreSQL, cinco Edge Functions por dominio
-> y `service-access` como fallback temporal. Para usar la integración autenticada desde el navegador,
-> configura `NEXT_PUBLIC_DATA_SOURCE=supabase`, `NEXT_PUBLIC_SUPABASE_URL`,
+> La app frontend usa Supabase Auth y cinco Edge Functions por dominio. Configura
+> `NEXT_PUBLIC_SUPABASE_URL`,
 > `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (o el alias compatible
 > `NEXT_PUBLIC_SUPABASE_ANON_KEY`) y las URLs directas opcionales
 > `NEXT_PUBLIC_IDENTITY_ADMIN_URL`, `NEXT_PUBLIC_ASSET_ACCESS_URL`,
 > `NEXT_PUBLIC_SERVICE_WORKFLOW_URL`, `NEXT_PUBLIC_CERTIFICATE_FIELD_URL` y
 > `NEXT_PUBLIC_OFFLINE_SYNC_URL`. Si no se especifican URLs directas, se usan
-> automáticamente las cinco rutas propietarias bajo `NEXT_PUBLIC_SUPABASE_URL`;
-> `NEXT_PUBLIC_SERVICE_ACCESS_URL` queda reservado para el fallback legacy explícito.
+> automáticamente las cinco rutas propietarias bajo `NEXT_PUBLIC_SUPABASE_URL`.
 > El adaptador usa exclusivamente la Edge
 > Function para operaciones de negocio y archivos; el navegador solo se
-> comunica directamente con Supabase Auth para la sesión. El modo `mock` sigue
-> siendo el valor predeterminado para la demo.
+> comunica directamente con Supabase Auth para la sesión.
 
 ## Stack
 
@@ -34,16 +29,7 @@ npm install
 npm run dev        # http://localhost:3000
 ```
 
-Cuentas de demostración (contraseña `demo1234`), también disponibles con un clic en el login:
-
-| Rol                 | Email                               |
-| ------------------- | ----------------------------------- |
-| Súper Administrador | superadmin@systemsrl.com.ar         |
-| Administrador       | admin@systemsrl.com.ar              |
-| Taller móvil        | taller1@systemsrl.com.ar            |
-| Cliente             | cliente@compresionpatagonica.com.ar |
-
-Desde el menú de usuario, **Restablecer datos demo** vuelve a la semilla original.
+El acceso requiere una cuenta de Supabase Auth válida.
 
 ## Scripts
 
@@ -66,14 +52,12 @@ src/
   config/navigation.ts Menú de cada rol
   lib/
     domain/            Tipos, esquemas Zod, catálogos y reglas de negocio (con tests)
-    services/          Contratos + implementación mock (datos semilla ficticios)
+    services/          Adaptadores compatibles sobre las capacidades Edge
     hooks/queries.ts   Hooks de TanStack Query sobre los servicios
-  auth/              AuthProvider; cookie mock sólo para demo/tests
+  auth/              AuthProvider y sesión SSR de Supabase
   supabase/          Clientes SSR de Auth y contexto autorizado por Edge
 ```
 
-Variables opcionales: `NEXT_PUBLIC_MOCK_ERROR_RATE` (0–1) simula errores de red para probar estados de error.
-
 ## Backend Supabase
 
-La API autenticada está documentada en [`supabase/README.md`](supabase/README.md). Las operaciones pasan por la Edge Function propietaria de cada capacidad (`identity-admin`, `asset-access`, `service-workflow`, `certificate-field` u `offline-sync`); `service-access` sólo es un fallback temporal. El navegador no llama tablas, RPCs, Data API ni Storage directamente; Supabase Auth es la única excepción para gestionar la sesión. RLS y privilegios de base de datos conservan la autorización final.
+La API autenticada está documentada en [`supabase/README.md`](supabase/README.md). Las operaciones pasan por la Edge Function propietaria de cada capacidad (`identity-admin`, `asset-access`, `service-workflow`, `certificate-field` u `offline-sync`). El navegador no llama tablas, RPCs, Data API ni Storage directamente; Supabase Auth es la única excepción para gestionar la sesión. RLS y privilegios de base de datos conservan la autorización final.

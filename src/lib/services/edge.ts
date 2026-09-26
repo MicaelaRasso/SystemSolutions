@@ -15,7 +15,13 @@ import { createAdminApi } from "../api/admin"
 import { createOperationsApi, type OperationFilters, type OperationStatus } from "../api/operations"
 import type { OperationSummary } from "../api/contracts"
 import type { Adjunto } from "../domain/types"
-import { ServiceError, type FiltroTareas, type NuevoRegistro, type Services, type TareaResumen } from "./contracts"
+import {
+  ServiceError,
+  type FiltroTareas,
+  type NuevoRegistro,
+  type Services,
+  type TareaResumen,
+} from "./contracts"
 import {
   browserSupabase,
   EdgeTransport,
@@ -59,10 +65,7 @@ type AuthUserDetails = {
 }
 
 const unsupported = (operation: string): never => {
-  throw new ServiceError(
-    `${operation} todavía no está expuesto por la Edge Function service-access`,
-    "invalid",
-  )
+  throw new ServiceError(`${operation} todavía no está disponible`, "invalid")
 }
 
 /**
@@ -79,7 +82,6 @@ export class EdgeAccessClient {
     baseUrl,
     anonKey,
     functionUrls,
-    serviceAccessUrl,
     request = fetch,
     auth,
     correlationId,
@@ -87,7 +89,6 @@ export class EdgeAccessClient {
     baseUrl?: string
     anonKey?: string
     functionUrls?: Partial<Record<EdgeFunctionName, string>>
-    serviceAccessUrl?: string
     request?: typeof fetch
     auth?: () => BrowserSupabaseClient
     correlationId?: string | (() => string)
@@ -95,7 +96,7 @@ export class EdgeAccessClient {
     this.auth = auth ?? (typeof window === "undefined" ? undefined : browserSupabase)
     this.transport = new EdgeTransport({
       functionUrls,
-      serviceAccessUrl: baseUrl ?? serviceAccessUrl,
+      baseUrl,
       anonKey,
       request,
       auth: this.auth,
@@ -146,11 +147,16 @@ export class EdgeAccessClient {
     return this.transport.request(this.functionForPath(path), path, init) as Promise<T>
   }
 
-  private functionForPath(path: string): EdgeFunctionName {
+  functionForPath(path: string): EdgeFunctionName {
     const route = path.replace(/^\//, "").split("?", 1)[0]
-    if (route === "context" || route.startsWith("accounts") || route.startsWith("mobile-workshops") || route.startsWith("technicians") || route.startsWith("staffing") || route.startsWith("catalogs") || route.startsWith("catalog-options") || route.startsWith("test-standards")) return "identity-admin"
+    if (
+      /^(context(?:\/|$)|accounts(?:\/|$)|mobile-workshops(?:\/|$)|technicians(?:\/|$)|staffing(?:\/|$)|catalogs(?:\/|$)|catalog-options(?:\/|$)|test-standards(?:\/|$))/.test(
+        route,
+      )
+    )
+      return "identity-admin"
     if (route === "clients" || route.startsWith("clients/")) return "asset-access"
-    if (route === "operations" || route.startsWith("operations/") || route === "attachments") return "service-workflow"
+    if (/^operations(?:\/|$)/.test(route) || route === "attachments") return "service-workflow"
     if (route.startsWith("offline/") || /^(?:visits\/[^/]+\/sync)$/.test(route))
       return "offline-sync"
     if (
@@ -161,12 +167,7 @@ export class EdgeAccessClient {
     ) {
       return "certificate-field"
     }
-    if (
-      route.startsWith("requests/") ||
-      route === "requests" ||
-      route.startsWith("work-orders/") ||
-      route.startsWith("visits/")
-    ) {
+    if (/^(requests(?:\/|$)|work-orders\/[^/]+$|visits(?:\/|$))/.test(route)) {
       return "service-workflow"
     }
     if (
@@ -178,7 +179,7 @@ export class EdgeAccessClient {
     ) {
       return "asset-access"
     }
-    return "service-access"
+    throw new ServiceError(`Ruta Edge sin propietario: ${route}`, "not_found")
   }
 
   /**
@@ -249,7 +250,9 @@ export class EdgeAccessClient {
   }
 
   async valve(id: ID) {
-    return this.call<{ valve: Record<string, unknown>; revisions: Record<string, unknown>[] }>(`valves/${id}`)
+    return this.call<{ valve: Record<string, unknown>; revisions: Record<string, unknown>[] }>(
+      `valves/${id}`,
+    )
   }
 
   async createDescendant(kind: "planta" | "equipo" | "valvula", parentId: ID, name: string) {
@@ -408,7 +411,10 @@ const attachmentDtoSchema = zod.object({
 function uploadAttachment(edge: EdgeAccessClient, file: File) {
   const form = new FormData()
   form.set("file", file)
-  return edge.request("attachments", attachmentDtoSchema, { method: "POST", body: form }) as Promise<Adjunto>
+  return edge.request("attachments", attachmentDtoSchema, {
+    method: "POST",
+    body: form,
+  }) as Promise<Adjunto>
 }
 
 const estructura = {
@@ -484,9 +490,19 @@ export const edgeServices: Services = {
     list: async (filter = {}) => adminApi.accounts.list(filter.empresaId ?? ""),
     get: async (id) => {
       const context = await edge.context()
-      if (context.cuenta_id === id) return edge.user() ?? {
-        id, email: "", nombre: "", apellido: "", rol: roleMap[context.rol], tallerId: context.taller_movil_id ?? undefined, activo: true, creadoEn: "",
-      }
+      if (context.cuenta_id === id)
+        return (
+          edge.user() ?? {
+            id,
+            email: "",
+            nombre: "",
+            apellido: "",
+            rol: roleMap[context.rol],
+            tallerId: context.taller_movil_id ?? undefined,
+            activo: true,
+            creadoEn: "",
+          }
+        )
       const rows = await adminApi.accounts.list("")
       const user = rows.find((row) => row.id === id)
       if (!user) throw new ServiceError("Usuario no encontrado", "not_found")
@@ -495,7 +511,12 @@ export const edgeServices: Services = {
     create: async (data) => adminApi.accounts.create(data.empresaId ?? "", data),
     update: (id, data) => adminApi.accounts.update(id, data),
     delete: (id) => adminApi.accounts.remove(id),
-    getAccesos: async (id) => (await adminApi.accounts.access(id)).map((row) => ({ usuarioId: row.usuario_id, nivel: row.nivel, refId: row.ref_id })),
+    getAccesos: async (id) =>
+      (await adminApi.accounts.access(id)).map((row) => ({
+        usuarioId: row.usuario_id,
+        nivel: row.nivel,
+        refId: row.ref_id,
+      })),
     setAccesos: async (id, access) => {
       await adminApi.accounts.setAccess(id, access)
     },
@@ -521,8 +542,8 @@ export const edgeServices: Services = {
         .map(toLegacyTarea)
     },
     get: async (id) => toLegacyTarea((await operationsApi.get(id)).operation),
-    create: async (_data) => unsupported("tareas.create"),
-    update: async (_id, _data) => unsupported("tareas.update"),
+    create: async () => unsupported("tareas.create"),
+    update: async () => unsupported("tareas.update"),
     subirAdjunto: (file) => uploadAttachment(edge, file),
   },
   cronograma: {

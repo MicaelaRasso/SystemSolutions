@@ -70,28 +70,31 @@ describe("capability Edge clients", () => {
     await createOfflineApi(offline.edge).workingSet()
 
     expect(yacimientos.request).toHaveBeenCalledWith(
-      "https://example.test/yacimientos",
+      "https://example.test/functions/v1/asset-access/yacimientos",
       expect.anything(),
     )
     expect(valves.request).toHaveBeenCalledWith(
-      "https://example.test/valves/valve-1",
+      "https://example.test/functions/v1/asset-access/valves/valve-1",
       expect.anything(),
     )
     expect(requests.request).toHaveBeenCalledWith(
-      "https://example.test/requests",
+      "https://example.test/functions/v1/service-workflow/requests",
       expect.anything(),
     )
-    expect(visits.request).toHaveBeenCalledWith("https://example.test/visits", expect.anything())
+    expect(visits.request).toHaveBeenCalledWith(
+      "https://example.test/functions/v1/service-workflow/visits",
+      expect.anything(),
+    )
     expect(workOrders.request).toHaveBeenCalledWith(
-      "https://example.test/visits/visit-1/work-orders",
+      "https://example.test/functions/v1/service-workflow/visits/visit-1/work-orders",
       expect.anything(),
     )
     expect(signatures.request).toHaveBeenCalledWith(
-      "https://example.test/visits/visit-1/signatures",
+      "https://example.test/functions/v1/certificate-field/visits/visit-1/signatures",
       expect.anything(),
     )
     expect(offline.request).toHaveBeenCalledWith(
-      "https://example.test/offline/working-set",
+      "https://example.test/functions/v1/offline-sync/offline/working-set",
       expect.anything(),
     )
   })
@@ -105,7 +108,7 @@ describe("capability Edge clients", () => {
     expect(createCertificatesApi(edge)).toHaveProperty("valveHistory")
     expect(Object.keys(edgeApi)).not.toContain("tarea")
     expect(request.mock.calls.map(([url]) => String(url))).toEqual([
-      "https://example.test/visits/visit-1",
+      "https://example.test/functions/v1/service-workflow/visits/visit-1",
     ])
   })
 
@@ -174,7 +177,7 @@ describe("capability Edge clients", () => {
       revisions: [{ id: "revision-1", datos: { marca: "Acme" } }],
     })
     expect(request).toHaveBeenCalledWith(
-      "https://example.test/valves/valve-1",
+      "https://example.test/functions/v1/asset-access/valves/valve-1",
       expect.objectContaining({ headers: expect.objectContaining({ apikey: "" }) }),
     )
   })
@@ -216,7 +219,7 @@ describe("capability Edge clients", () => {
       }),
     ).resolves.toEqual(response)
     expect(request).toHaveBeenCalledWith(
-      "https://example.test/valves/valve-1",
+      "https://example.test/functions/v1/asset-access/valves/valve-1",
       expect.objectContaining({
         method: "PATCH",
         body: JSON.stringify({
@@ -246,7 +249,7 @@ describe("capability Edge clients", () => {
     })
 
     expect(request).toHaveBeenCalledWith(
-      "https://example.test/requests/request-1/schedule",
+      "https://example.test/functions/v1/service-workflow/requests/request-1/schedule",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({
@@ -277,7 +280,7 @@ describe("capability Edge clients", () => {
     })
 
     expect(request).toHaveBeenCalledWith(
-      "https://example.test/visits/visit-1/sync",
+      "https://example.test/functions/v1/offline-sync/visits/visit-1/sync",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({

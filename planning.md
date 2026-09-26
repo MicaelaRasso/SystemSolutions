@@ -2,8 +2,8 @@
 
 **Proyecto:** System Solutions · Sistema de gestión de calibración de válvulas de seguridad
 **Base documental:** DRF v1.1 (Magne Studios) · Certificado modelo SYS (con anotaciones) · Referencias de listas desplegables
-**Alcance de este plan:** este documento registra la implementación inicial de
-interfaces con datos simulados (mocks). La integración en curso está en
+**Alcance de este plan:** este documento conserva el diseño inicial de las
+interfaces. La implementación vigente está documentada en
 [`integration.md`](integration.md): Supabase Auth establece la sesión y todas
 las operaciones de datos y archivos del navegador pasan por Edge Functions,
 nunca directamente por PostgreSQL, la Data API, RPCs ni Storage.
@@ -17,7 +17,7 @@ nunca directamente por PostgreSQL, la Data API, RPCs ni Storage.
 | Framework | **Next.js (App Router) + TypeScript** | Definido en el DRF. Una sola app para admin, portal cliente y campo. |
 | Estilos | **Tailwind CSS** + **shadcn/ui** | Definido en el DRF. shadcn da tablas, diálogos, formularios y calendario accesibles y editables en el repo. |
 | Formularios | **React Hook Form + Zod** | Los esquemas Zod se reutilizan para validar en Edge Functions (Deno) más adelante. |
-| Datos en cliente | **TanStack Query** | Misma API para mocks y para el adaptador de Edge Functions; cache y reintentos. |
+| Datos en cliente | **TanStack Query** | Cache, invalidaciones y reintentos sobre los adaptadores de Edge Functions. |
 | Offline (campo) | **Serwist** (service worker / PWA) + **Dexie** (IndexedDB) | Carga de certificados sin conexión y cola de sincronización. |
 | Firma | **signature_pad** | Captura de firma en tablet (técnico y cliente). |
 | Fechas | **date-fns** con locale `es` | Calendarios, vigencias, ventana de 24 h. |
@@ -30,30 +30,34 @@ Convención de nombres: entidades de dominio en español, tal como el DRF (`Tare
 
 ## 2. Principio de arquitectura: capa de servicios intercambiable
 
-Las pantallas **nunca** leen mocks ni servicios Supabase directamente. Todo
-pasa por interfaces de repositorio:
+Las pantallas no acceden a Supabase directamente. Todo pasa por adaptadores de
+capacidad:
 
 ```
 src/
   lib/
     domain/          # Tipos TS + esquemas Zod (fuente única del modelo)
     services/
-      contracts/     # Interfaces: ClientesRepo, TareasRepo, CertificadosRepo, AuthService…
-      mock/          # Implementación con datos semilla (persistidos en localStorage)
+      contracts/     # Interfaces de compatibilidad del dominio
       edge.ts        # adaptador real: llamadas a Edge Functions autenticadas
-      index.ts       # Elige implementación según NEXT_PUBLIC_DATA_SOURCE=mock|supabase
+      edge-transport.ts # registro de las cinco funciones propietarias
+      index.ts       # exporta los adaptadores Edge
     hooks/           # useTareas(), useCertificado(id)… (TanStack Query sobre los repos)
 ```
 
-- Los mocks simulan latencia (200–600 ms) y errores configurables para diseñar estados de carga y error reales.
-- Los mocks respetan las reglas de negocio que después hará el backend (filtrado por cliente, numeración, firma), para que el front ya se comporte como el sistema final.
-- Cambiar a la integración real = implementar rutas Edge y el adaptador con las mismas interfaces.
+- Los estados de carga y error se ejercitan con respuestas y fallos del
+  transporte Edge, sin una fuente de datos alternativa.
+- Las interfaces de compatibilidad se mantienen sólo donde simplifican la
+  migración de componentes; su implementación es siempre el adaptador Edge.
 
 ---
 
 ## 3. Estructura de rutas
 
-Una carpeta por rol, cada una con su layout y su guardia de rol (en mock: cookie de sesión simulada leída por `src/proxy.ts`, el antiguo `middleware.ts` en Next 16). En la implementación se usaron carpetas planas (`app/admin`, `app/taller`…) en lugar de route groups, porque el prefijo de URL ya separa los roles.
+Una carpeta por rol, cada una con su layout y su guardia de rol basada en
+Supabase Auth (`src/proxy.ts`, el antiguo `middleware.ts` en Next 16). En la
+implementación se usaron carpetas planas (`app/admin`, `app/taller`…) en lugar
+de route groups, porque el prefijo de URL ya separa los roles.
 
 ```
 app/
@@ -269,7 +273,7 @@ el contrato de API y PostgreSQL conserva RLS y autorización de dominio. Véase
 
 | Operación en el front | Destino futuro |
 |---|---|
-| Login y sesión | Supabase Auth con cookies SSR; rol y Cuenta desde `GET /context` de `identity-admin` (`service-access` sólo como fallback temporal) |
+| Login y sesión | Supabase Auth con cookies SSR; rol y Cuenta desde `GET /context` de `identity-admin` |
 | CRUD de clientes, estructura, catálogos, tareas, cronograma | Edge Function autenticada; PostgreSQL aplica RLS y autorización de dominio |
 | Filtrado de datos por cliente (RN-09, RNF-01) | Edge Function + políticas RLS (el front no confía en su propio filtro) |
 | Alta de usuarios (admin, taller, cliente) | Edge Function `crear-usuario` (usa service role) |

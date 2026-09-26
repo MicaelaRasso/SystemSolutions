@@ -2,24 +2,27 @@ import { describe, expect, it, vi } from "vitest"
 
 import { EdgeTransport, createEdgeFunctionRegistry } from "./edge-transport"
 
-describe("EdgeTransport", () => {
-  it("selects configured function URLs and falls back to service-access", () => {
-    const registry = createEdgeFunctionRegistry({
-      serviceAccessUrl: "https://example.test/functions/v1/service-access/",
-      functionUrls: { "asset-access": "https://assets.test/functions/v1/asset-access/" },
-    })
+const functionUrls = {
+  "identity-admin": "https://identity.test/functions/v1/identity-admin",
+  "asset-access": "https://assets.test/functions/v1/asset-access",
+  "service-workflow": "https://workflow.test/functions/v1/service-workflow",
+  "certificate-field": "https://certificates.test/functions/v1/certificate-field",
+  "offline-sync": "https://offline.test/functions/v1/offline-sync",
+}
 
-    expect(registry).toEqual({
-      "identity-admin": "https://example.test/functions/v1/service-access",
-      "asset-access": "https://assets.test/functions/v1/asset-access",
-      "service-workflow": "https://example.test/functions/v1/service-access",
-      "certificate-field": "https://example.test/functions/v1/service-access",
-      "offline-sync": "https://example.test/functions/v1/service-access",
-      "service-access": "https://example.test/functions/v1/service-access",
+describe("EdgeTransport", () => {
+  it("uses one direct URL for each owning function", () => {
+    expect(createEdgeFunctionRegistry({ functionUrls })).toEqual(functionUrls)
+    expect(createEdgeFunctionRegistry({ baseUrl: "https://project.test" })).toEqual({
+      "identity-admin": "https://project.test/functions/v1/identity-admin",
+      "asset-access": "https://project.test/functions/v1/asset-access",
+      "service-workflow": "https://project.test/functions/v1/service-workflow",
+      "certificate-field": "https://project.test/functions/v1/certificate-field",
+      "offline-sync": "https://project.test/functions/v1/offline-sync",
     })
   })
 
-  it("sends Auth, apikey, correlation, and JSON headers and parses JSON", async () => {
+  it("sends Auth, apikey, correlation, and JSON headers to the selected owner", async () => {
     const getSession = vi.fn().mockResolvedValue({
       data: { session: { access_token: "session-token" } },
       error: null,
@@ -28,7 +31,7 @@ describe("EdgeTransport", () => {
       .fn<typeof fetch>()
       .mockResolvedValue(new Response(JSON.stringify({ accepted: true }), { status: 200 }))
     const transport = new EdgeTransport({
-      serviceAccessUrl: "https://example.test/service-access",
+      functionUrls,
       anonKey: "publishable-key",
       auth: () => ({ auth: { getSession } }) as never,
       correlationId: "correlation-1",
@@ -43,7 +46,7 @@ describe("EdgeTransport", () => {
     ).resolves.toEqual({ accepted: true })
 
     expect(request).toHaveBeenCalledWith(
-      "https://example.test/service-access/requests",
+      "https://workflow.test/functions/v1/service-workflow/requests",
       expect.objectContaining({
         method: "POST",
         headers: {
@@ -57,15 +60,19 @@ describe("EdgeTransport", () => {
     )
   })
 
+  it("does not invent an owner URL when Supabase is unconfigured", async () => {
+    const transport = new EdgeTransport({ functionUrls: {} })
+    await expect(transport.request("identity-admin", "context")).rejects.toMatchObject({
+      code: "network",
+    })
+  })
+
   it("maps structured and non-JSON HTTP errors", async () => {
     const request = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(JSON.stringify({ error: "Denied" }), { status: 403 }))
       .mockResolvedValueOnce(new Response("upstream unavailable", { status: 502 }))
-    const transport = new EdgeTransport({
-      serviceAccessUrl: "https://example.test/service-access",
-      request,
-    })
+    const transport = new EdgeTransport({ functionUrls, request })
 
     await expect(transport.request("identity-admin", "context")).rejects.toMatchObject({
       message: "Denied",

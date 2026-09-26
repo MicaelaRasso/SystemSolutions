@@ -12,7 +12,8 @@ export type EdgeFunctionRegistry = Readonly<Record<EdgeFunctionName, string>>
 
 export type EdgeTransportOptions = {
   functionUrls?: Partial<Record<EdgeFunctionName, string>>
-  serviceAccessUrl?: string
+  /** Supabase project URL used to derive each direct function URL. */
+  baseUrl?: string
   anonKey?: string
   request?: EdgeFetch
   auth?: (() => BrowserSupabaseClient) | undefined
@@ -34,14 +35,6 @@ function normalizeUrl(url: string) {
   return url.replace(/\/$/, "")
 }
 
-function defaultServiceAccessUrl() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  return (
-    process.env.NEXT_PUBLIC_SERVICE_ACCESS_URL ??
-    (url ? `${url.replace(/\/$/, "")}/functions/v1/service-access` : "")
-  )
-}
-
 function configuredFunctions() {
   try {
     return getSupabaseConfig()
@@ -52,23 +45,29 @@ function configuredFunctions() {
 
 export function createEdgeFunctionRegistry({
   functionUrls,
-  serviceAccessUrl,
-}: Pick<EdgeTransportOptions, "functionUrls" | "serviceAccessUrl"> = {}): EdgeFunctionRegistry {
+  baseUrl,
+}: Pick<EdgeTransportOptions, "functionUrls" | "baseUrl"> = {}): EdgeFunctionRegistry {
   const configured = configuredFunctions()
-  const fallback = normalizeUrl(
-    serviceAccessUrl ?? configured?.serviceAccessUrl ?? defaultServiceAccessUrl(),
+  const projectUrl = normalizeUrl(
+    baseUrl ?? configured?.url ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
   )
-  const urls =
-    functionUrls ?? (serviceAccessUrl !== undefined ? {} : configured?.edgeFunctions) ?? {}
+  const configuredUrls: Partial<Record<EdgeFunctionName, string>> = configured?.edgeFunctions ?? {}
+  const urls = functionUrls ?? {}
+  const directUrl = (name: EdgeFunctionName) =>
+    normalizeUrl(
+      urls[name] ??
+        configuredUrls[name] ??
+        (projectUrl ? `${projectUrl}/functions/v1/${name}` : ""),
+    )
 
-  return {
-    "identity-admin": normalizeUrl(urls["identity-admin"] ?? fallback),
-    "asset-access": normalizeUrl(urls["asset-access"] ?? fallback),
-    "service-workflow": normalizeUrl(urls["service-workflow"] ?? fallback),
-    "certificate-field": normalizeUrl(urls["certificate-field"] ?? fallback),
-    "offline-sync": normalizeUrl(urls["offline-sync"] ?? fallback),
-    "service-access": fallback,
-  }
+  const names: EdgeFunctionName[] = [
+    "identity-admin",
+    "asset-access",
+    "service-workflow",
+    "certificate-field",
+    "offline-sync",
+  ]
+  return Object.fromEntries(names.map((name) => [name, directUrl(name)])) as EdgeFunctionRegistry
 }
 
 function nextCorrelationId() {
@@ -114,7 +113,7 @@ export class EdgeTransport {
 
   constructor({
     functionUrls,
-    serviceAccessUrl,
+    baseUrl,
     anonKey,
     request = fetch,
     auth,
@@ -125,7 +124,7 @@ export class EdgeTransport {
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
       ""
-    this.functions = createEdgeFunctionRegistry({ functionUrls, serviceAccessUrl })
+    this.functions = createEdgeFunctionRegistry({ functionUrls, baseUrl })
     this.anonKey = configuredKey
     this.fetcher = request
     this.auth = auth

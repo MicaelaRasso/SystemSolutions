@@ -1,7 +1,6 @@
 import { HttpError } from "./errors.ts"
 
 export type FunctionName =
-  | "service-access"
   | "identity-admin"
   | "asset-access"
   | "service-workflow"
@@ -187,15 +186,11 @@ export const routeOwner = (method: string, route: string[]): FunctionName | null
   return null
 }
 
-/**
- * The legacy gateway may serve a route during rollout, but it must not become
- * an owner for routes that have not been assigned to a direct function.
- */
 export const canHandleRoute = (
   functionName: FunctionName,
   method: string,
   route: string[],
 ): boolean => {
   const owner = routeOwner(method, route)
-  return owner === functionName || (functionName === "service-access" && owner !== null)
+  return owner === functionName
 }

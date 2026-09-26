@@ -17,9 +17,8 @@ import type {
   Yacimiento,
 } from "@/lib/domain/types"
 import { services, type FiltroTareas, type NuevaTarea, type TareaResumen } from "@/lib/services"
-import { usesSupabaseDataSource } from "@/lib/supabase/config"
 
-export const usaSupabase = () => usesSupabaseDataSource()
+export const usaSupabase = () => true
 
 export const qk = {
   empresas: (filtro?: object) => ["empresas", filtro ?? {}] as const,

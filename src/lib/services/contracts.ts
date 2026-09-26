@@ -1,6 +1,6 @@
 /**
- * Contratos de la capa de datos. Las pantallas solo conocen estas interfaces.
- * Hoy las implementa `mock/`; más adelante `supabase/` (consultas con RLS + Edge Functions).
+ * Contracts for the application data layer. Screens depend on these interfaces,
+ * implemented by the authenticated Supabase Edge adapter.
  */
 
 import type {
@@ -40,7 +40,7 @@ export class ServiceError extends Error {
 }
 
 export interface AuthService {
-  /** En modo Supabase usa Auth; en modo mock usa las credenciales de demostración. */
+  /** Signs in through Supabase Auth. */
   login(email: string, password: string): Promise<Usuario>
   logout?(): Promise<void> | void
 }
@@ -183,7 +183,7 @@ export interface CertificadosRepo {
   listPorValvula(valvulaId: ID): Promise<Certificado[]>
 }
 
-/** Utilidades exclusivas del modo demo. */
+/** Compatibility hook retained until the legacy service adapter is retired. */
 export interface DemoService {
   reset(): Promise<void>
 }

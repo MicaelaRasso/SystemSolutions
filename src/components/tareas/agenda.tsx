@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { diasGrillaMes, iso } from "@/lib/fechas"
-import { usaSupabase, useOperaciones, useTalleres, useTareas } from "@/lib/hooks/queries"
+import { useOperaciones, useTalleres } from "@/lib/hooks/queries"
 import type { TareaResumen } from "@/lib/services"
 import { cn } from "@/lib/utils"
 
@@ -31,13 +31,9 @@ export function Agenda() {
 
   const dias = useMemo(() => diasGrillaMes(mes), [mes])
   const filtro = { desde: iso(dias[0]), hasta: iso(dias[dias.length - 1]) }
-  const supabase = usaSupabase()
   const operaciones = useOperaciones(filtro)
-  const tareasMock = useTareas(filtro)
   const talleres = useTalleres()
-  const tareas = supabase
-    ? (operaciones.data ?? []).map(convertirOperacionATarea)
-    : (tareasMock.data ?? [])
+  const tareas = (operaciones.data ?? []).map(convertirOperacionATarea)
 
   const visibles = tareas.filter(
     (t) => (verCanceladas || t.estado !== "cancelada") && !ocultos.has(t.tallerId ?? SIN_TALLER),
@@ -102,10 +98,10 @@ export function Agenda() {
         </div>
       </div>
 
-      {(supabase ? operaciones.isError : tareasMock.isError) ? (
+      {operaciones.isError ? (
         <ErrorState
-          error={supabase ? operaciones.error : tareasMock.error}
-          onRetry={() => (supabase ? operaciones.refetch() : tareasMock.refetch())}
+          error={operaciones.error}
+          onRetry={() => operaciones.refetch()}
         />
       ) : (
         <MonthCalendar
@@ -115,11 +111,7 @@ export function Agenda() {
           claveDe={(t) => t.id}
           fechaDe={fechaDe}
           colorDe={(t) => t.tallerColor ?? COLOR_SIN_TALLER}
-          cargando={
-            supabase
-              ? operaciones.isPending || operaciones.isPlaceholderData
-              : tareasMock.isPending || tareasMock.isPlaceholderData
-          }
+          cargando={operaciones.isPending || operaciones.isPlaceholderData}
           onNuevo={(fecha) => router.push(`/admin/tareas/nueva?fecha=${fecha}`)}
           renderItem={(t) => <TareaPill tarea={t} onClick={() => setAbierta(t)} />}
         />

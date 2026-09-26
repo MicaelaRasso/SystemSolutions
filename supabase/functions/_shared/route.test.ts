@@ -67,10 +67,9 @@ describe("shared route ownership", () => {
     ).toThrow(/Invalid|must|unsupported|UUID|characters/)
   })
 
-  it("allows the legacy gateway to fall back only to assigned routes", () => {
-    expect(canHandleRoute("service-access", "GET", ["yacimientos"])).toBe(true)
-    expect(canHandleRoute("service-access", "GET", ["context"])).toBe(true)
-    expect(canHandleRoute("service-access", "POST", ["storage", "upload"])).toBe(false)
+  it("only allows the owning direct function to handle a route", () => {
+    expect(canHandleRoute("asset-access", "GET", ["yacimientos"])).toBe(true)
+    expect(canHandleRoute("identity-admin", "GET", ["context"])).toBe(true)
     expect(canHandleRoute("asset-access", "GET", ["requests"])).toBe(false)
   })
 })

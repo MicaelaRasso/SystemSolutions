@@ -104,6 +104,14 @@ export const useEdgeCertificateDraft = (certificateId: string | undefined) =>
     enabled: Boolean(certificateId),
   })
 
+export const useStartEdgeCertificateDraft = () => {
+  const invalidate = useInvalidate(certificateInvalidations)
+  return useMutation({
+    mutationFn: (workOrderId: string) => edgeApi.certificates.startCertificateDraft(workOrderId),
+    onSuccess: invalidate,
+  })
+}
+
 export const useEdgeFinalizedCertificate = (certificateId: string | undefined) =>
   useQuery({
     queryKey: certificateQueryKeys.finalized(certificateId ?? ""),
@@ -202,10 +210,19 @@ export const useTransitionEdgeVisit = () => {
 }
 
 export const useUpdateEdgeWorkOrder = () => {
-  const invalidate = useInvalidate(serviceWorkflowInvalidations)
+  const invalidate = useInvalidate([...serviceWorkflowInvalidations, operationQueryKeys.all])
   return useMutation({
     mutationFn: ({ workOrderId, input }: { workOrderId: string; input: UpdateWorkOrderInput }) =>
       edgeApi.serviceWorkflow.updateWorkOrder(workOrderId, input),
+    onSuccess: invalidate,
+  })
+}
+
+export const useAddEdgeWorkOrder = () => {
+  const invalidate = useInvalidate([...serviceWorkflowInvalidations, operationQueryKeys.all])
+  return useMutation({
+    mutationFn: ({ visitId, valveId }: { visitId: string; valveId: string }) =>
+      edgeApi.serviceWorkflow.addWorkOrder(visitId, valveId),
     onSuccess: invalidate,
   })
 }

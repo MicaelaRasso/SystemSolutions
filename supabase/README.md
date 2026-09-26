@@ -18,9 +18,8 @@ Configure direct function URLs for the deployed environment:
 | `NEXT_PUBLIC_OFFLINE_SYNC_URL`      | `offline-sync`      | Working set and offline synchronization                                                                |
 
 If a direct URL is absent, the registry builds the URL of the corresponding
-proprietary function from `NEXT_PUBLIC_SUPABASE_URL`. Configure
-`NEXT_PUBLIC_SERVICE_ACCESS_URL` only when an explicit legacy fallback is
-required; it is not a capability owner.
+proprietary function from `NEXT_PUBLIC_SUPABASE_URL`. There is no legacy
+gateway fallback; an unknown route fails locally.
 
 The browser-facing adapter names are `identity`, `hierarchy`, `yacimientos`,
 `valves`, `serviceWorkflow`, `serviceRequests`, `visits`, `workOrders`,
@@ -45,7 +44,6 @@ adapters and do not select a function URL themselves.
 | `GET/POST/PATCH/DELETE /accounts`, `PUT /accounts/:id/access-scopes` | `identity-admin` | `admin.accounts` | Available for client accounts and hierarchy scopes |
 | `GET/POST/PATCH /mobile-workshops`, `/technicians`, `/staffing` | `identity-admin` | `admin.workshops`, `admin.people`, `admin.staffing` | Available for current admin screens |
 | `GET/POST/PATCH/PUT /catalogs`, `/test-standards` | `identity-admin` | `admin.catalogs`, `admin.standards` | Available for current catalog screens |
-| Equivalent legacy routes | `service-access` | Registry fallback only | Compatibility fallback; not a direct owner |
 
 All five direct functions use the private runtime in
 `supabase/functions/_shared`. It centralizes bearer-token authentication, actor
@@ -125,10 +123,8 @@ supabase functions serve certificate-field
 supabase functions serve offline-sync
 ```
 
-Then verify that browser network traffic
-contains Auth plus the configured direct function URLs. When a direct URL is
-omitted, verify the request reaches `service-access` only as the compatibility
-fallback. Also verify that:
+Then verify that browser network traffic contains Auth plus the configured
+direct function URLs. Also verify that:
 
 - unauthenticated requests are rejected by every direct function;
 - direct table, RPC and Data API access from the browser is rejected;

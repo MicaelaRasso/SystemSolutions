@@ -30,13 +30,7 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value"
 import { ESTADO_TAREA_LABEL } from "@/lib/domain/rules"
 import type { EstadoTarea } from "@/lib/domain/types"
 import { fmt, hoyIso } from "@/lib/fechas"
-import {
-  usaSupabase,
-  useEmpresas,
-  useOperaciones,
-  useTalleres,
-  useTareas,
-} from "@/lib/hooks/queries"
+import { useEmpresas, useOperaciones, useTalleres } from "@/lib/hooks/queries"
 import type { FiltroTareas } from "@/lib/services"
 
 import { EstadoTareaBadge, TallerChip } from "./badges"
@@ -64,17 +58,13 @@ export function TareasList() {
     empresaId: empresa === TODOS ? undefined : empresa,
     q: q || undefined,
   }
-  const supabase = usaSupabase()
   const operaciones = useOperaciones(filtro)
-  const tareasMock = useTareas(filtro)
-  const data = supabase
-    ? (operaciones.data ?? []).map(convertirOperacionATarea)
-    : (tareasMock.data ?? [])
-  const isPending = supabase ? operaciones.isPending : tareasMock.isPending
-  const isError = supabase ? operaciones.isError : tareasMock.isError
-  const error = supabase ? operaciones.error : tareasMock.error
-  const refetch = supabase ? operaciones.refetch : tareasMock.refetch
-  const isPlaceholderData = supabase ? operaciones.isPlaceholderData : tareasMock.isPlaceholderData
+  const data = (operaciones.data ?? []).map(convertirOperacionATarea)
+  const isPending = operaciones.isPending
+  const isError = operaciones.isError
+  const error = operaciones.error
+  const refetch = operaciones.refetch
+  const isPlaceholderData = operaciones.isPlaceholderData
   const talleres = useTalleres()
   const empresas = useEmpresas({ incluirInactivas: true })
 

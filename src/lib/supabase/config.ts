@@ -1,7 +1,6 @@
 export type SupabaseConfig = {
   url: string
   publishableKey: string
-  serviceAccessUrl: string
   edgeFunctions: Record<EdgeFunctionName, string>
 }
 
@@ -11,15 +10,9 @@ export const edgeFunctionNames = [
   "service-workflow",
   "certificate-field",
   "offline-sync",
-  "service-access",
 ] as const
 
 export type EdgeFunctionName = (typeof edgeFunctionNames)[number]
-
-/** The mock data source remains the default until the integration is enabled. */
-export function usesSupabaseDataSource() {
-  return process.env.NEXT_PUBLIC_DATA_SOURCE === "supabase"
-}
 
 /**
  * Shared public configuration for the Auth clients and the Edge gateway.
@@ -37,27 +30,27 @@ export function getSupabaseConfig(): SupabaseConfig {
     )
   }
 
-  const serviceAccessUrl =
-    process.env.NEXT_PUBLIC_SERVICE_ACCESS_URL ??
-    `${url.replace(/\/$/, "")}/functions/v1/service-access`
   const edgeFunctions: Record<EdgeFunctionName, string> = {
     "identity-admin":
-      process.env.NEXT_PUBLIC_IDENTITY_ADMIN_URL ?? `${url.replace(/\/$/, "")}/functions/v1/identity-admin`,
+      process.env.NEXT_PUBLIC_IDENTITY_ADMIN_URL ??
+      `${url.replace(/\/$/, "")}/functions/v1/identity-admin`,
     "asset-access":
-      process.env.NEXT_PUBLIC_ASSET_ACCESS_URL ?? `${url.replace(/\/$/, "")}/functions/v1/asset-access`,
+      process.env.NEXT_PUBLIC_ASSET_ACCESS_URL ??
+      `${url.replace(/\/$/, "")}/functions/v1/asset-access`,
     "service-workflow":
-      process.env.NEXT_PUBLIC_SERVICE_WORKFLOW_URL ?? `${url.replace(/\/$/, "")}/functions/v1/service-workflow`,
+      process.env.NEXT_PUBLIC_SERVICE_WORKFLOW_URL ??
+      `${url.replace(/\/$/, "")}/functions/v1/service-workflow`,
     "certificate-field":
-      process.env.NEXT_PUBLIC_CERTIFICATE_FIELD_URL ?? `${url.replace(/\/$/, "")}/functions/v1/certificate-field`,
+      process.env.NEXT_PUBLIC_CERTIFICATE_FIELD_URL ??
+      `${url.replace(/\/$/, "")}/functions/v1/certificate-field`,
     "offline-sync":
-      process.env.NEXT_PUBLIC_OFFLINE_SYNC_URL ?? `${url.replace(/\/$/, "")}/functions/v1/offline-sync`,
-    "service-access": serviceAccessUrl,
+      process.env.NEXT_PUBLIC_OFFLINE_SYNC_URL ??
+      `${url.replace(/\/$/, "")}/functions/v1/offline-sync`,
   }
 
   return {
     url,
     publishableKey,
-    serviceAccessUrl,
     edgeFunctions,
   }
 }

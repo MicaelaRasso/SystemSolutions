@@ -1,10 +1,8 @@
 "use client"
 
-import { ChevronsUpDown, LogOut, RotateCcw } from "lucide-react"
+import { ChevronsUpDown, LogOut } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { toast } from "sonner"
-import { useQueryClient } from "@tanstack/react-query"
 
 import { Logo } from "@/components/brand/logo"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -13,7 +11,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Separator } from "@/components/ui/separator"
@@ -38,9 +35,6 @@ import { esActivo, NAVEGACION } from "@/config/navigation"
 import { useAuth } from "@/lib/auth/auth-provider"
 import { ROL_LABEL } from "@/lib/domain/rules"
 import type { Rol } from "@/lib/domain/types"
-import { services } from "@/lib/services"
-
-const esDemo = process.env.NEXT_PUBLIC_DATA_SOURCE !== "supabase"
 
 function iniciales(nombre: string) {
   return nombre
@@ -54,14 +48,7 @@ function iniciales(nombre: string) {
 function MenuUsuario({ rol }: { rol: Rol }) {
   const { sesion, logout } = useAuth()
   const { isMobile } = useSidebar()
-  const queryClient = useQueryClient()
   const nombre = sesion?.nombre ?? "…"
-
-  async function restablecer() {
-    await services.demo.reset()
-    await queryClient.invalidateQueries()
-    toast.success("Datos de demostración restablecidos")
-  }
 
   return (
     <SidebarMenu>
@@ -91,15 +78,6 @@ function MenuUsuario({ rol }: { rol: Rol }) {
               <div className="text-sm font-medium">{nombre}</div>
               <div className="text-xs text-muted-foreground">{ROL_LABEL[rol]}</div>
             </DropdownMenuLabel>
-            {esDemo && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={restablecer}>
-                  <RotateCcw />
-                  Restablecer datos demo
-                </DropdownMenuItem>
-              </>
-            )}
             <DropdownMenuItem onSelect={logout} variant="destructive">
               <LogOut />
               Cerrar sesión
@@ -171,11 +149,6 @@ export function AppShell({ rol, children }: { rol: Rol; children: React.ReactNod
               Gestión de calibración de válvulas de seguridad
             </span>
           </span>
-          {esDemo && (
-            <span className="ml-auto shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
-              Modo demo
-            </span>
-          )}
         </header>
         <main className="flex flex-1 flex-col gap-6 p-4 md:p-6">{children}</main>
       </SidebarInset>

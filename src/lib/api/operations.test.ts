@@ -133,7 +133,7 @@ describe("operations adapter", () => {
     expect(Object.keys(api)).toEqual(["list", "get"])
     await api.get("visit-1")
     expect(request).toHaveBeenCalledWith(
-      "https://example.test/operations/visit-1",
+      "https://example.test/functions/v1/service-workflow/operations/visit-1",
       expect.anything(),
     )
   })
@@ -155,7 +155,7 @@ describe("operations adapter", () => {
     ).resolves.toEqual(list)
 
     expect(request).toHaveBeenCalledWith(
-      "https://example.test/operations?from=2026-10-01&to=2026-10-31&status=programada%2Cen_curso&workshop_id=workshop-1&client_id=client-1&q=V-10&limit=25&offset=50",
+      "https://example.test/functions/v1/service-workflow/operations?from=2026-10-01&to=2026-10-31&status=programada%2Cen_curso&workshop_id=workshop-1&client_id=client-1&q=V-10&limit=25&offset=50",
       expect.anything(),
     )
   })
