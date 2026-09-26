@@ -6,8 +6,17 @@ import { toast } from "sonner"
 import { edgeApi } from "@/lib/api"
 import { certificateQueryKeys } from "@/lib/api/certificates"
 import { hierarchyInvalidations, hierarchyQueryKeys } from "@/lib/api/hierarchy"
-import type { Certificado, ID, ListaCatalogo, Rol, Valvula, Yacimiento } from "@/lib/domain/types"
-import { services, type FiltroTareas } from "@/lib/services"
+import { operationQueryKeys } from "@/lib/api/operations"
+import type {
+  Adjunto,
+  Certificado,
+  ID,
+  ListaCatalogo,
+  Rol,
+  Valvula,
+  Yacimiento,
+} from "@/lib/domain/types"
+import { services, type FiltroTareas, type NuevaTarea, type TareaResumen } from "@/lib/services"
 import { usesSupabaseDataSource } from "@/lib/supabase/config"
 
 export const usaSupabase = () => usesSupabaseDataSource()
@@ -26,6 +35,8 @@ export const qk = {
   patrones: () => ["patrones"] as const,
   talleres: () => ["talleres"] as const,
   personas: () => ["personas"] as const,
+  operaciones: (filtro?: FiltroTareas) => operationQueryKeys.list(operationFilters(filtro ?? {})),
+  operacion: (id: ID) => operationQueryKeys.detail(id),
   tareas: (filtro?: FiltroTareas) => ["tareas", filtro ?? {}] as const,
   tarea: (id: ID) => ["tarea", id] as const,
   nominas: (desde: string, hasta: string) => ["nominas", desde, hasta] as const,
@@ -33,8 +44,8 @@ export const qk = {
 
 /** Prefijos a invalidar tras modificar un catálogo (formularios y administración). */
 export const INVALIDAR_CATALOGOS = [["catalogo"], ["catalogo-admin"]]
-/** Prefijos a invalidar tras modificar tareas. */
-export const INVALIDAR_TAREAS = [["tareas"], ["tarea"]]
+/** Prefijos a invalidar tras modificar tareas o la proyección de operaciones. */
+export const INVALIDAR_TAREAS = [["tareas"], ["tarea"], [...operationQueryKeys.all]]
 
 export function invalidarEstructura(empresaId: ID): QueryKey[] {
   return usaSupabase() ? [...hierarchyInvalidations] : [qk.arbol(empresaId), ["empresas"]]
@@ -88,6 +99,143 @@ function hasSupportedValveData(data: Partial<Omit<Valvula, "id">>) {
     data.diamSalida,
     data.rosca,
   ].some((value) => value !== undefined)
+}
+
+type TareaInput = NuevaTarea
+export type OperationSummaryRead = Awaited<
+  ReturnType<typeof edgeApi.operations.list>
+>["items"][number]
+export type OperationRead = Awaited<ReturnType<typeof edgeApi.operations.get>>
+type ServiceRequest = Awaited<ReturnType<typeof edgeApi.serviceRequests.createRequest>>
+
+function operationFilters(filtro: FiltroTareas) {
+  return {
+    from: filtro.desde,
+    to: filtro.hasta,
+    status: filtro.estados?.flatMap((estado) =>
+      estado === "pendiente"
+        ? ["solicitada" as const]
+        : estado === "asignada"
+          ? (["programada", "aceptada"] as const)
+          : [estado],
+    ),
+    workshopId: filtro.tallerId === "sin_asignar" ? undefined : filtro.tallerId,
+    clientId: filtro.empresaId,
+    q: filtro.q,
+  }
+}
+
+function serviceSelection(data: Pick<TareaInput, "equipoId" | "yacimientoId">) {
+  return {
+    yacimientoId: data.yacimientoId,
+    selections: [{ kind: "equipo" as const, id: data.equipoId }],
+  }
+}
+
+function visitWindow(date: string, time?: string) {
+  const start = new Date(`${date}T${time || "08:00"}:00-03:00`)
+  if (Number.isNaN(start.getTime())) throw new Error("La fecha de ejecución no es válida")
+  return {
+    startsAt: start.toISOString(),
+    endsAt: new Date(start.getTime() + 60 * 60 * 1000).toISOString(),
+  }
+}
+
+function timeFromTimestamp(value: string) {
+  return new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "America/Argentina/Buenos_Aires",
+  }).format(new Date(value))
+}
+
+function responseRequestId(response: ServiceRequest) {
+  return response.request.id
+}
+
+async function solicitudIdDeOperacion(operationId: ID) {
+  const visit = await edgeApi.visits.visit(operationId)
+  const requestId = stringField(visit.visit, "solicitud_id", "request_id", "service_request_id")
+  if (!requestId) throw new Error("La visita no informa la Solicitud de servicio asociada")
+  return requestId
+}
+
+/** Canonical write path for the task screens. It never creates or updates an operation. */
+export async function guardarSolicitudYVisita(
+  operation: OperationRead | undefined,
+  data: TareaInput,
+): Promise<OperationRead | undefined> {
+  const requestId = operation ? await solicitudIdDeOperacion(operation.operation.id) : undefined
+  const response = operation
+    ? await edgeApi.serviceRequests.updateRequest(requestId!, serviceSelection(data))
+    : await edgeApi.serviceRequests.createRequest(serviceSelection(data))
+  const canonicalRequestId = responseRequestId(response)
+
+  if (!data.tallerId) {
+    return undefined
+  }
+
+  const scheduled = await edgeApi.serviceWorkflow.schedule(canonicalRequestId, {
+    tallerMovilId: data.tallerId,
+    ...visitWindow(data.fechaEjecucion, data.horario),
+  })
+  const operationId = stringField(scheduled.visit, "id")
+  return operationId ? edgeApi.operations.get(operationId) : undefined
+}
+
+export async function guardarTarea(tarea: TareaResumen | undefined, data: TareaInput) {
+  if (usaSupabase()) throw new Error("Las tareas históricas se guardan como Solicitud de servicio")
+  const saved = tarea
+    ? await services.tareas.update(tarea.id, data)
+    : await services.tareas.create(data)
+  return services.tareas.get(saved.id)
+}
+
+export async function reasignarVisita(
+  id: ID,
+  tallerId: ID | undefined,
+  fecha: string,
+  horario?: string,
+) {
+  if (!tallerId) throw new Error("La desasignación de una visita no está disponible en esta API")
+  const operation = await edgeApi.operations.get(id)
+  const requestId = await solicitudIdDeOperacion(operation.operation.id)
+  const scheduled = await edgeApi.serviceWorkflow.schedule(requestId, {
+    tallerMovilId: tallerId,
+    ...visitWindow(fecha, horario ?? timeFromTimestamp(operation.operation.starts_at)),
+  })
+  const operationId = stringField(scheduled.visit, "id")
+  return operationId ? edgeApi.operations.get(operationId) : operation
+}
+
+export async function reasignarTarea(id: ID, tallerId: ID | undefined, fecha: string) {
+  if (usaSupabase()) throw new Error("Las tareas históricas se reprograman como Visita de servicio")
+  const saved = await services.tareas.update(id, {
+    tallerId,
+    fechaEjecucion: fecha,
+  })
+  return services.tareas.get(saved.id)
+}
+
+export async function cancelarVisita(id: ID) {
+  await edgeApi.visits.transition(id, "cancel")
+  return edgeApi.operations.get(id)
+}
+
+export async function cambiarEstadoTarea(id: ID, estado: "cancelada" | "pendiente") {
+  if (!usaSupabase()) {
+    const saved = await services.tareas.update(id, { estado })
+    return services.tareas.get(saved.id)
+  }
+  if (estado === "pendiente")
+    throw new Error("La reapertura de una visita no está disponible en esta API")
+  return cancelarVisita(id)
+}
+
+export function subirAdjunto(archivo: File): Promise<Adjunto> {
+  if (usaSupabase()) throw new Error("Los adjuntos de solicitudes no están disponibles en esta API")
+  return services.tareas.subirAdjunto(archivo)
 }
 
 type EdgeCertificate = Awaited<
@@ -164,6 +312,7 @@ export const estructuraApi = {
   async createYacimiento(data: Omit<Yacimiento, "id">) {
     if (!usaSupabase()) return services.estructura.createYacimiento(data)
     return edgeApi.yacimientos.createYacimiento({
+      clientId: data.empresaId,
       name: data.nombre,
       provincia: data.provincia,
       operadora: data.operadora,
@@ -338,15 +487,35 @@ export const useTalleres = () =>
 export const usePersonas = () =>
   useQuery({ queryKey: qk.personas(), queryFn: () => services.personas.list() })
 
+export const useOperaciones = (filtro: FiltroTareas = {}) =>
+  useQuery({
+    queryKey: qk.operaciones(filtro),
+    queryFn: async () => (await edgeApi.operations.list(operationFilters(filtro))).items,
+    enabled: usaSupabase(),
+    placeholderData: (prev) => prev,
+  })
+
+export const useOperacion = (id: ID) =>
+  useQuery({
+    queryKey: qk.operacion(id),
+    queryFn: () => edgeApi.operations.get(id),
+    enabled: Boolean(id) && usaSupabase(),
+  })
+
 export const useTareas = (filtro: FiltroTareas = {}) =>
   useQuery({
     queryKey: qk.tareas(filtro),
     queryFn: () => services.tareas.list(filtro),
+    enabled: !usaSupabase(),
     placeholderData: (prev) => prev,
   })
 
 export const useTarea = (id: ID) =>
-  useQuery({ queryKey: qk.tarea(id), queryFn: () => services.tareas.get(id) })
+  useQuery({
+    queryKey: qk.tarea(id),
+    queryFn: () => services.tareas.get(id),
+    enabled: Boolean(id) && !usaSupabase(),
+  })
 
 export const useNominas = (desde: string, hasta: string) =>
   useQuery({

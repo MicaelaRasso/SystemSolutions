@@ -56,7 +56,7 @@ export const handleRequest = async (
 
     if (!canHandleRoute(functionName, request.method, route)) return routeNotFound(request, id)
 
-    const body = request.method === "GET" ? {} : await parseJsonObject(request)
+    const body = request.method === "GET" ? {} : await parseBody(request)
     const outcome = await handler({
       request,
       body,
@@ -75,6 +75,15 @@ export const handleRequest = async (
     if (error instanceof HttpError) return errorJson(request, error, error.status, id)
     return errorJson(request, { message: "Service unavailable" }, 500, id)
   }
+}
+
+const parseBody = async (request: Request): Promise<Record<string, unknown>> => {
+  const contentType = request.headers.get("content-type")?.toLowerCase() ?? ""
+  if (contentType.startsWith("multipart/form-data")) {
+    const form = await request.formData()
+    return Object.fromEntries(form.entries())
+  }
+  return parseJsonObject(request)
 }
 
 export const serveFunction = (functionName: FunctionName, handler: RouteHandler) => {

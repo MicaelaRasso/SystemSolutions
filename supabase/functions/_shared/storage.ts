@@ -66,3 +66,44 @@ export const storageMetadata = (metadata: StorageObjectMetadata): Record<string,
   "content-type": metadata.contentType,
   "content-length": String(metadata.size),
 })
+
+export const uploadStorageObject = async (
+  bucket: string,
+  objectName: string,
+  file: File,
+): Promise<void> => {
+  const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = (await import("./runtime-env.ts")).runtimeEnv()
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error("Supabase storage is not configured")
+  const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.117.2")
+  const client = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+  const { error } = await client.storage.from(bucket).upload(objectName, file, {
+    contentType: file.type,
+    upsert: true,
+  })
+  if (error) throw error
+}
+
+export const removeStorageObject = async (bucket: string, objectName: string): Promise<void> => {
+  const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = (await import("./runtime-env.ts")).runtimeEnv()
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error("Supabase storage is not configured")
+  const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.117.2")
+  const client = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+  const { error } = await client.storage.from(bucket).remove([objectName])
+  if (error) throw error
+}
+
+export const createSignedStorageUrl = async (bucket: string, objectName: string, expiresIn = 3600) => {
+  const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = (await import("./runtime-env.ts")).runtimeEnv()
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error("Supabase storage is not configured")
+  const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.117.2")
+  const client = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+  const { data, error } = await client.storage.from(bucket).createSignedUrl(objectName, expiresIn)
+  if (error || !data?.signedUrl) throw error ?? new Error("Could not create a signed storage URL")
+  return data.signedUrl
+}

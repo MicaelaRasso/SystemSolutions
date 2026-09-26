@@ -14,9 +14,115 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { fmtDiaLargo } from "@/lib/fechas"
+import type { Adjunto, EstadoTarea } from "@/lib/domain/types"
+import type { OperationRead, OperationSummaryRead } from "@/lib/hooks/queries"
 import type { TareaResumen } from "@/lib/services"
 
 import { EstadoTareaBadge, TallerChip } from "./badges"
+
+type OperationView = OperationSummaryRead | OperationRead
+type OperationSummaryView = OperationSummaryRead
+
+const ESTADO_OPERACION_A_TAREA: Record<OperationSummaryView["estado"], EstadoTarea> = {
+  solicitada: "pendiente",
+  programada: "asignada",
+  aceptada: "asignada",
+  en_curso: "en_curso",
+  completada: "completada",
+  cancelada: "cancelada",
+}
+
+function operationSummary(operation: OperationView): OperationSummaryView {
+  return "operation" in operation ? operation.operation : operation
+}
+
+function stringField(record: Record<string, unknown> | undefined, ...names: string[]) {
+  if (!record) return undefined
+  const value = names.map((name) => record[name]).find((item) => typeof item === "string")
+  return typeof value === "string" ? value : undefined
+}
+
+function recordField(record: Record<string, unknown> | undefined, name: string) {
+  const value = record?.[name]
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined
+}
+
+function stringArrayField(record: Record<string, unknown> | undefined, name: string) {
+  const value = record?.[name]
+  return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : undefined
+}
+
+function fechaDeTimestamp(value: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: "America/Argentina/Buenos_Aires",
+  }).format(new Date(value))
+}
+
+function horaDeTimestamp(value: string) {
+  return new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "America/Argentina/Buenos_Aires",
+  }).format(new Date(value))
+}
+
+/** Compatibilidad exclusiva de presentación: el dominio canónico sigue siendo OperationRead. */
+export function convertirOperacionATarea(operation: OperationView): TareaResumen {
+  const summary = operationSummary(operation)
+  const detail = "operation" in operation ? operation : undefined
+  const request = detail?.request.request
+  const metadata = recordField(request, "metadata")
+  const workOrderEnvelope = detail?.work_orders[0] ?? detail?.visit.work_orders[0]
+  const workOrder =
+    recordField(workOrderEnvelope, "work_order") ??
+    (workOrderEnvelope as Record<string, unknown> | undefined)
+  const context = recordField(workOrderEnvelope, "context")
+  const planta = recordField(context, "planta")
+  const equipo = recordField(context, "equipo")
+  const plantaId =
+    stringField(planta, "id") ?? stringField(workOrder, "planta_id", "plantaId") ?? ""
+  const equipoId =
+    stringField(equipo, "id") ?? stringField(workOrder, "equipo_id", "equipoId") ?? ""
+  const plantaNombre =
+    stringField(planta, "nombre") ?? stringField(workOrder, "planta_nombre", "plantaNombre") ?? "—"
+  const equipoNombre =
+    stringField(equipo, "nombre") ?? stringField(workOrder, "equipo_nombre", "equipoNombre") ?? "—"
+
+  return {
+    id: summary.id,
+    nroSolicitud: summary.numero_solicitud,
+    empresaId: summary.cliente.id,
+    yacimientoId: summary.yacimiento.id,
+    plantaId,
+    equipoId,
+    tallerId: summary.taller_movil?.id,
+    contacto: stringField(metadata, "contacto") ?? "",
+    telefono: stringField(metadata, "telefono") ?? "",
+    fechaSolicitud:
+      stringField(request, "created_at", "createdAt") ?? fechaDeTimestamp(summary.starts_at),
+    fechaEjecucion: fechaDeTimestamp(summary.starts_at),
+    horario: horaDeTimestamp(summary.starts_at),
+    tipo: stringField(metadata, "tipo") ?? "Certificación",
+    detalle: stringField(metadata, "detalle") ?? "",
+    pdRto: stringField(metadata, "pd_rto", "pdRto"),
+    ordenTrabajo: stringField(workOrder, "id"),
+    condiciones: stringArrayField(metadata, "condiciones") ?? [],
+    adjuntos: (metadata?.adjuntos as Adjunto[] | undefined) ?? [],
+    estado: ESTADO_OPERACION_A_TAREA[summary.estado],
+    empresaNombre: summary.cliente.nombre,
+    yacimientoNombre: summary.yacimiento.nombre,
+    plantaNombre,
+    equipoNombre,
+    tallerNombre: summary.taller_movil?.nombre,
+    tallerColor: undefined,
+  }
+}
 
 function Dato({ icono: Icono, children }: { icono: typeof Clock; children: React.ReactNode }) {
   return (

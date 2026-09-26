@@ -1,4 +1,5 @@
 import type { z } from "zod"
+import { z as zod } from "zod"
 
 import type {
   ArbolYacimiento,
@@ -10,7 +11,11 @@ import type {
   Valvula,
   Yacimiento,
 } from "@/lib/domain/types"
-import { ServiceError, type NuevoRegistro, type Services } from "./contracts"
+import { createAdminApi } from "../api/admin"
+import { createOperationsApi, type OperationFilters, type OperationStatus } from "../api/operations"
+import type { OperationSummary } from "../api/contracts"
+import type { Adjunto } from "../domain/types"
+import { ServiceError, type FiltroTareas, type NuevoRegistro, type Services, type TareaResumen } from "./contracts"
 import {
   browserSupabase,
   EdgeTransport,
@@ -142,8 +147,10 @@ export class EdgeAccessClient {
   }
 
   private functionForPath(path: string): EdgeFunctionName {
-    const route = path.replace(/^\//, "")
-    if (route === "context") return "identity-admin"
+    const route = path.replace(/^\//, "").split("?", 1)[0]
+    if (route === "context" || route.startsWith("accounts") || route.startsWith("mobile-workshops") || route.startsWith("technicians") || route.startsWith("staffing") || route.startsWith("catalogs") || route.startsWith("catalog-options") || route.startsWith("test-standards")) return "identity-admin"
+    if (route === "clients" || route.startsWith("clients/")) return "asset-access"
+    if (route === "operations" || route.startsWith("operations/") || route === "attachments") return "service-workflow"
     if (route.startsWith("offline/") || /^(?:visits\/[^/]+\/sync)$/.test(route))
       return "offline-sync"
     if (
@@ -241,6 +248,10 @@ export class EdgeAccessClient {
     })
   }
 
+  async valve(id: ID) {
+    return this.call<{ valve: Record<string, unknown>; revisions: Record<string, unknown>[] }>(`valves/${id}`)
+  }
+
   async createDescendant(kind: "planta" | "equipo" | "valvula", parentId: ID, name: string) {
     return this.call<Record<string, unknown>>("hierarchy", {
       method: "POST",
@@ -318,17 +329,6 @@ function mapTree(raw: Record<string, unknown>): ArbolYacimiento {
   }
 }
 
-function unsupportedRepo<T extends object>(): T {
-  return new Proxy(
-    {},
-    {
-      get(_target, property: string) {
-        return () => unsupported(String(property))
-      },
-    },
-  ) as T
-}
-
 const mapPlanta = (raw: Record<string, unknown>): Planta => ({
   id: String(raw.id),
   yacimientoId: String(raw.yacimiento_id),
@@ -346,6 +346,70 @@ const mapValvula = (raw: Record<string, unknown>): Valvula => ({
   equipoId: String(raw.equipo_id),
   tag: String(raw.nombre),
 })
+
+const legacyOperationStatus: Record<OperationSummary["estado"], TareaResumen["estado"]> = {
+  solicitada: "pendiente",
+  programada: "pendiente",
+  aceptada: "asignada",
+  en_curso: "en_curso",
+  completada: "completada",
+  cancelada: "cancelada",
+}
+
+function toLegacyTarea(operation: OperationSummary): TareaResumen {
+  return {
+    id: operation.id,
+    nroSolicitud: operation.numero_solicitud,
+    empresaId: operation.cliente.id,
+    yacimientoId: operation.yacimiento.id,
+    plantaId: "",
+    equipoId: "",
+    tallerId: operation.taller_movil?.id,
+    contacto: "",
+    telefono: "",
+    fechaSolicitud: "",
+    fechaEjecucion: operation.starts_at,
+    tipo: "Certificación",
+    detalle: "",
+    condiciones: [],
+    adjuntos: [] as Adjunto[],
+    estado: legacyOperationStatus[operation.estado],
+    empresaNombre: operation.cliente.nombre,
+    yacimientoNombre: operation.yacimiento.nombre,
+    plantaNombre: "—",
+    equipoNombre: "—",
+    tallerNombre: operation.taller_movil?.nombre,
+  }
+}
+
+function toOperationFilters(filter: FiltroTareas): OperationFilters {
+  const status: OperationStatus[] | undefined = filter.estados?.flatMap((state) => {
+    if (state === "pendiente") return ["solicitada"]
+    if (state === "asignada") return ["programada", "aceptada"]
+    return [state]
+  })
+  return {
+    from: filter.desde,
+    to: filter.hasta,
+    status,
+    workshopId: filter.tallerId === "sin_asignar" ? undefined : filter.tallerId,
+    clientId: filter.empresaId,
+    q: filter.q,
+  }
+}
+
+const attachmentDtoSchema = zod.object({
+  id: zod.string(),
+  nombre: zod.string(),
+  tipo: zod.string(),
+  url: zod.string(),
+})
+
+function uploadAttachment(edge: EdgeAccessClient, file: File) {
+  const form = new FormData()
+  form.set("file", file)
+  return edge.request("attachments", attachmentDtoSchema, { method: "POST", body: form }) as Promise<Adjunto>
+}
 
 const estructura = {
   arbol: async (empresaId: ID) => [mapTree(await edge.tree(empresaId))],
@@ -380,13 +444,29 @@ const estructura = {
   updateEquipo: async (id: ID, data: Partial<Equipo>) =>
     mapEquipo(await edge.updateDescendant("equipo", id, data.nombre ?? "")),
   deleteEquipo: async () => unsupported("deleteEquipo"),
-  getValvula: async (id: ID) => unsupported(`getValvula:${id}`),
+  getValvula: async (id: ID) => {
+    const response = await edge.valve(id)
+    const valve = mapValvula(response.valve)
+    return {
+      ...valve,
+      marca: response.valve.marca as string | undefined,
+      nroSerie: response.valve.numero_serie as string | undefined,
+      modelo: response.valve.modelo as string | undefined,
+      tipo: response.valve.tipo as string | undefined,
+      diamEntrada: response.valve.diametro_entrada as string | undefined,
+      diamSalida: response.valve.diametro_salida as string | undefined,
+      rosca: response.valve.rosca as string | undefined,
+    }
+  },
   createValvula: async (data: NuevoRegistro<Valvula>) =>
     mapValvula(await edge.createDescendant("valvula", data.equipoId, data.tag)),
   updateValvula: async (id: ID, data: Partial<Valvula>) =>
     mapValvula(await edge.updateDescendant("valvula", id, data.tag ?? "")),
   deleteValvula: async () => unsupported("deleteValvula"),
 }
+
+const adminApi = createAdminApi(edge)
+const operationsApi = createOperationsApi(edge)
 
 export const edgeServices: Services = {
   auth: {
@@ -397,39 +477,59 @@ export const edgeServices: Services = {
       if (error) throw new ServiceError(error.message, "network")
     },
   },
-  empresas: unsupportedRepo<Services["empresas"]>(),
+  // Frontend Empresa maps to the backend Cliente API owned by asset-access.
+  empresas: adminApi.clients,
   estructura,
   usuarios: {
-    list: async () => unsupported("list usuarios"),
+    list: async (filter = {}) => adminApi.accounts.list(filter.empresaId ?? ""),
     get: async (id) => {
-      const currentUser = edge.user()
-      if (!currentUser || currentUser.id !== id) {
-        const context = await edge.context()
-        return {
-          id: context.cuenta_id,
-          email: "",
-          nombre: "",
-          apellido: "",
-          rol: roleMap[context.rol],
-          tallerId: context.taller_movil_id ?? undefined,
-          activo: true,
-          creadoEn: "",
-        }
+      const context = await edge.context()
+      if (context.cuenta_id === id) return edge.user() ?? {
+        id, email: "", nombre: "", apellido: "", rol: roleMap[context.rol], tallerId: context.taller_movil_id ?? undefined, activo: true, creadoEn: "",
       }
-      return currentUser
+      const rows = await adminApi.accounts.list("")
+      const user = rows.find((row) => row.id === id)
+      if (!user) throw new ServiceError("Usuario no encontrado", "not_found")
+      return user
     },
-    create: async () => unsupported("create usuario"),
-    update: async () => unsupported("update usuario"),
-    delete: async () => unsupported("delete usuario"),
-    getAccesos: async () => unsupported("getAccesos"),
-    setAccesos: async () => unsupported("setAccesos"),
+    create: async (data) => adminApi.accounts.create(data.empresaId ?? "", data),
+    update: (id, data) => adminApi.accounts.update(id, data),
+    delete: (id) => adminApi.accounts.remove(id),
+    getAccesos: async (id) => (await adminApi.accounts.access(id)).map((row) => ({ usuarioId: row.usuario_id, nivel: row.nivel, refId: row.ref_id })),
+    setAccesos: async (id, access) => {
+      await adminApi.accounts.setAccess(id, access)
+    },
   },
-  talleres: unsupportedRepo<Services["talleres"]>(),
-  personas: unsupportedRepo<Services["personas"]>(),
-  catalogos: unsupportedRepo<Services["catalogos"]>(),
-  patrones: unsupportedRepo<Services["patrones"]>(),
-  tareas: unsupportedRepo<Services["tareas"]>(),
-  cronograma: unsupportedRepo<Services["cronograma"]>(),
+  talleres: adminApi.workshops,
+  personas: adminApi.people,
+  catalogos: {
+    opciones: adminApi.catalogs.options,
+    listar: adminApi.catalogs.list,
+    resumen: adminApi.catalogs.summary,
+    crear: adminApi.catalogs.create,
+    actualizar: adminApi.catalogs.update,
+    reordenar: adminApi.catalogs.reorder,
+  },
+  patrones: adminApi.standards,
+  // This is a temporary UI seam. The canonical operations adapter returns
+  // operation DTOs; only this legacy repository maps them to TareaResumen.
+  tareas: {
+    list: async (filter = {}) => {
+      const operations = await operationsApi.list(toOperationFilters(filter))
+      return operations.items
+        .filter((operation) => filter.tallerId !== "sin_asignar" || !operation.taller_movil)
+        .map(toLegacyTarea)
+    },
+    get: async (id) => toLegacyTarea((await operationsApi.get(id)).operation),
+    create: async (_data) => unsupported("tareas.create"),
+    update: async (_id, _data) => unsupported("tareas.update"),
+    subirAdjunto: (file) => uploadAttachment(edge, file),
+  },
+  cronograma: {
+    nominas: adminApi.staffing.list,
+    setNomina: adminApi.staffing.set,
+    copiarSemanaAnterior: adminApi.staffing.copyPreviousWeek,
+  },
   certificados: {
     listPorValvula: async (valvulaId): Promise<Certificado[]> => {
       const history = await edge.certificatesForValve(valvulaId)

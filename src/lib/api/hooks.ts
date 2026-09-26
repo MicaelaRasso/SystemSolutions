@@ -8,6 +8,7 @@ import { hierarchyInvalidations, hierarchyQueryKeys } from "./hierarchy"
 import { identityInvalidations, identityQueryKeys } from "./identity"
 import { offlineInvalidations, offlineQueryKeys } from "./offline"
 import { serviceWorkflowInvalidations, serviceWorkflowQueryKeys } from "./service-workflow"
+import { operationQueryKeys, type OperationFilters } from "./operations"
 import type {
   CreateDescendantInput,
   CreateServiceRequestInput,
@@ -81,6 +82,19 @@ export const useEdgeVisit = (visitId: string | undefined) =>
     queryKey: serviceWorkflowQueryKeys.visit(visitId ?? ""),
     queryFn: () => edgeApi.serviceWorkflow.visit(visitId!),
     enabled: Boolean(visitId),
+  })
+
+export const useEdgeOperations = (filters: OperationFilters = {}) =>
+  useQuery({
+    queryKey: operationQueryKeys.list(filters),
+    queryFn: () => edgeApi.operations.list(filters),
+  })
+
+export const useEdgeOperation = (operationId: string | undefined) =>
+  useQuery({
+    queryKey: operationQueryKeys.detail(operationId ?? ""),
+    queryFn: () => edgeApi.operations.get(operationId!),
+    enabled: Boolean(operationId),
   })
 
 export const useEdgeCertificateDraft = (certificateId: string | undefined) =>

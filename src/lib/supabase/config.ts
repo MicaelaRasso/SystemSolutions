@@ -41,11 +41,16 @@ export function getSupabaseConfig(): SupabaseConfig {
     process.env.NEXT_PUBLIC_SERVICE_ACCESS_URL ??
     `${url.replace(/\/$/, "")}/functions/v1/service-access`
   const edgeFunctions: Record<EdgeFunctionName, string> = {
-    "identity-admin": process.env.NEXT_PUBLIC_IDENTITY_ADMIN_URL ?? serviceAccessUrl,
-    "asset-access": process.env.NEXT_PUBLIC_ASSET_ACCESS_URL ?? serviceAccessUrl,
-    "service-workflow": process.env.NEXT_PUBLIC_SERVICE_WORKFLOW_URL ?? serviceAccessUrl,
-    "certificate-field": process.env.NEXT_PUBLIC_CERTIFICATE_FIELD_URL ?? serviceAccessUrl,
-    "offline-sync": process.env.NEXT_PUBLIC_OFFLINE_SYNC_URL ?? serviceAccessUrl,
+    "identity-admin":
+      process.env.NEXT_PUBLIC_IDENTITY_ADMIN_URL ?? `${url.replace(/\/$/, "")}/functions/v1/identity-admin`,
+    "asset-access":
+      process.env.NEXT_PUBLIC_ASSET_ACCESS_URL ?? `${url.replace(/\/$/, "")}/functions/v1/asset-access`,
+    "service-workflow":
+      process.env.NEXT_PUBLIC_SERVICE_WORKFLOW_URL ?? `${url.replace(/\/$/, "")}/functions/v1/service-workflow`,
+    "certificate-field":
+      process.env.NEXT_PUBLIC_CERTIFICATE_FIELD_URL ?? `${url.replace(/\/$/, "")}/functions/v1/certificate-field`,
+    "offline-sync":
+      process.env.NEXT_PUBLIC_OFFLINE_SYNC_URL ?? `${url.replace(/\/$/, "")}/functions/v1/offline-sync`,
     "service-access": serviceAccessUrl,
   }
 

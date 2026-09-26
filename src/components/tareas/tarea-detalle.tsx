@@ -8,16 +8,36 @@ import { ErrorState } from "@/components/common/states"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { fmtFecha } from "@/lib/format"
-import { INVALIDAR_TAREAS, useServiceMutation, useTarea } from "@/lib/hooks/queries"
-import { services } from "@/lib/services"
+import {
+  cancelarVisita,
+  cambiarEstadoTarea,
+  INVALIDAR_TAREAS,
+  usaSupabase,
+  useServiceMutation,
+  useOperacion,
+  useTarea,
+} from "@/lib/hooks/queries"
 
 import { EstadoTareaBadge, TallerChip } from "./badges"
 import { TareaForm } from "./tarea-form"
+import { convertirOperacionATarea } from "./tarea-sheet"
 
 export function TareaDetalle({ id }: { id: string }) {
-  const { data: tarea, isPending, isError, error, refetch } = useTarea(id)
+  const supabase = usaSupabase()
+  const operacion = useOperacion(id)
+  const tareaLegacy = useTarea(id)
+  const tarea = supabase
+    ? operacion.data
+      ? convertirOperacionATarea(operacion.data)
+      : undefined
+    : tareaLegacy.data
+  const isPending = supabase ? operacion.isPending : tareaLegacy.isPending
+  const isError = supabase ? operacion.isError : tareaLegacy.isError
+  const error = supabase ? operacion.error : tareaLegacy.error
+  const refetch = supabase ? operacion.refetch : tareaLegacy.refetch
   const cambiarEstado = useServiceMutation(
-    (estado: "cancelada" | "pendiente") => services.tareas.update(id, { estado }),
+    (estado: "cancelada" | "pendiente") =>
+      supabase && estado === "cancelada" ? cancelarVisita(id) : cambiarEstadoTarea(id, estado),
     { invalidar: INVALIDAR_TAREAS },
   )
 
@@ -48,6 +68,14 @@ export function TareaDetalle({ id }: { id: string }) {
       </>
     )
   }
+  if (!tarea) {
+    return (
+      <>
+        {volver}
+        <ErrorState error={new Error("No se encontró la operación")} onRetry={() => refetch()} />
+      </>
+    )
+  }
 
   const cerrada = tarea.estado === "completada" || tarea.estado === "cancelada"
 
@@ -70,7 +98,7 @@ export function TareaDetalle({ id }: { id: string }) {
             <span>Solicitada el {fmtFecha(tarea.fechaSolicitud)}</span>
           </p>
         </div>
-        {tarea.estado === "cancelada" ? (
+        {tarea.estado === "cancelada" && !supabase ? (
           <Button
             variant="outline"
             disabled={cambiarEstado.isPending}
@@ -97,7 +125,11 @@ export function TareaDetalle({ id }: { id: string }) {
         )}
       </div>
       {/* key: al cambiar el estado desde el encabezado, el formulario toma los valores nuevos */}
-      <TareaForm key={`${tarea.id}-${tarea.estado}`} tarea={tarea} />
+      <TareaForm
+        key={`${tarea.id}-${tarea.estado}`}
+        tarea={tarea}
+        operation={supabase ? operacion.data : undefined}
+      />
     </>
   )
 }

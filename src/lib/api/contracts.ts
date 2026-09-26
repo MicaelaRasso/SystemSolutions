@@ -109,6 +109,7 @@ export const yacimientoAssignmentDtoSchema = edgeRecordSchema.nullable()
 export type YacimientoAssignmentDto = z.infer<typeof yacimientoAssignmentDtoSchema>
 
 export const saveYacimientoInputSchema = z.object({
+  clientId: edgeIdSchema.optional(),
   name: z.string().trim().min(1),
   provincia: z.string().trim(),
   operadora: z.string().trim(),
@@ -131,9 +132,48 @@ export const updateDescendantInputSchema = z.object({
 export type UpdateDescendantInput = z.infer<typeof updateDescendantInputSchema>
 
 const serviceRequestRowSchema = edgeRecordSchema
-const visitRowSchema = edgeRecordSchema
-const workOrderRowSchema = edgeRecordSchema
 const certificateRowSchema = edgeRecordSchema
+
+export const operationStatusSchema = z.enum([
+  "solicitada",
+  "programada",
+  "aceptada",
+  "en_curso",
+  "completada",
+  "cancelada",
+])
+export type OperationStatus = z.infer<typeof operationStatusSchema>
+
+const visitRowSchema = edgeRecordSchema
+  .extend({ estado: operationStatusSchema.optional() })
+  .passthrough()
+
+export const workOrderDetailDtoSchema = edgeRecordSchema
+  .extend({
+    valvula_id: edgeIdSchema.optional(),
+    visita_id: edgeIdSchema.optional(),
+    estado: z.enum(["pendiente", "evaluada", "no_evaluada"]).optional(),
+    no_evaluada_razon: z.string().nullable().optional(),
+  })
+  .passthrough()
+export type WorkOrderDetailDto = z.infer<typeof workOrderDetailDtoSchema>
+const workOrderRowSchema = workOrderDetailDtoSchema
+
+/** Rich work-order projection returned only inside an operation detail. */
+export const operationWorkOrderDetailDtoSchema = z
+  .object({
+    work_order: workOrderDetailDtoSchema,
+    valve: valvulaDtoSchema,
+    context: z
+      .object({
+        yacimiento: yacimientoDtoSchema,
+        planta: plantaDtoSchema,
+        equipo: equipoDtoSchema,
+      })
+      .strict(),
+  })
+  .strict()
+export type OperationWorkOrderDetailDto = z.infer<typeof operationWorkOrderDetailDtoSchema>
 
 export const serviceSelectionInputSchema = z.object({
   kind: z.enum(["yacimiento", "planta", "equipo", "valvula"]),
@@ -158,7 +198,7 @@ export type ServiceRequestDto = z.infer<typeof serviceRequestDtoSchema>
 
 export const visitDtoSchema = z.object({
   visit: visitRowSchema,
-  work_orders: z.array(workOrderRowSchema),
+  work_orders: z.array(workOrderDetailDtoSchema),
 })
 export type VisitDto = z.infer<typeof visitDtoSchema>
 
@@ -175,7 +215,7 @@ export const updateWorkOrderInputSchema = z.object({
   notEvaluatedReason: z.string().trim().min(1).optional(),
 })
 export type UpdateWorkOrderInput = z.infer<typeof updateWorkOrderInputSchema>
-export const workOrderDtoSchema = z.object({ work_order: workOrderRowSchema })
+export const workOrderDtoSchema = z.object({ work_order: workOrderDetailDtoSchema })
 
 export const certificateDraftDtoSchema = z.object({
   certificate: certificateRowSchema,
@@ -297,3 +337,145 @@ export const offlineWorkingSetDtoSchema = z.object({
   ),
 })
 export type OfflineWorkingSetDto = z.infer<typeof offlineWorkingSetDtoSchema>
+
+// Frontend: Empresa/Usuario/Taller/Persona/Catálogo -> the administrative
+// capability functions. These DTOs intentionally preserve snake_case at the
+// transport boundary; view-model mapping belongs in the adapter below.
+export const clientDtoSchema = z.object({
+  id: edgeIdSchema,
+  razon_social: z.string(),
+  nombre: z.string().optional(),
+  cuit: z.string(),
+  contacto: z.string(),
+  telefono: z.string(),
+  email: z.string(),
+  direccion: z.string(),
+  logo_url: z.unknown().nullable().optional(),
+  aviso_vencimiento: z.boolean(),
+  activo: z.boolean(),
+  creado_en: edgeTimestampSchema,
+  yacimientos: z.number().int().nonnegative(),
+  valvulas: z.number().int().nonnegative(),
+  usuarios: z.number().int().nonnegative(),
+}).passthrough()
+export type ClientDto = z.infer<typeof clientDtoSchema>
+
+export const accountDtoSchema = z.object({
+  id: edgeIdSchema,
+  email: z.string(),
+  nombre: z.string(),
+  apellido: z.string(),
+  rol: z.enum(["cliente", "taller_movil", "administrador_regular", "super_administrador"]),
+  activo: z.boolean(),
+  creado_en: edgeTimestampSchema,
+}).passthrough()
+export type AccountDto = z.infer<typeof accountDtoSchema>
+
+export const workshopDtoSchema = z.object({
+  id: edgeIdSchema,
+  nombre: z.string(),
+  color: z.string(),
+  activo: z.boolean(),
+  usuario_id: edgeIdSchema.nullable().optional(),
+  email: z.string(),
+}).passthrough()
+
+export const personDtoSchema = z.object({
+  id: edgeIdSchema,
+  nombre: z.string(),
+  apellido: z.string(),
+  dni: z.string(),
+  activo: z.boolean(),
+}).passthrough()
+
+export const catalogOptionDtoSchema = z.object({
+  id: edgeIdSchema,
+  lista: z.string(),
+  valor: z.string(),
+  orden: z.number().int(),
+  activo: z.boolean(),
+}).passthrough()
+
+export const testStandardDtoSchema = z.object({
+  id: edgeIdSchema,
+  nombre: z.string(),
+  nro_serie: z.string(),
+  vencimiento: z.string(),
+  activo: z.boolean(),
+}).passthrough()
+
+export const staffingDtoSchema = z.object({
+  taller_id: edgeIdSchema,
+  fecha: z.string(),
+  persona_ids: z.array(edgeIdSchema),
+}).passthrough()
+
+/** Canonical operation summary shared by list and detail reads. */
+export const operationSummarySchema = z
+  .object({
+    id: edgeIdSchema,
+    solicitud_id: edgeIdSchema,
+    numero_solicitud: z.number().int(),
+    estado: operationStatusSchema,
+    starts_at: edgeTimestampSchema,
+    ends_at: edgeTimestampSchema,
+    cliente: z
+      .object({
+        id: edgeIdSchema,
+        nombre: z.string(),
+      })
+      .strict(),
+    yacimiento: z
+      .object({
+        id: edgeIdSchema,
+        nombre: z.string(),
+      })
+      .strict(),
+    taller_movil: z
+      .object({
+        id: edgeIdSchema,
+        nombre: z.string(),
+      })
+      .strict()
+      .nullable(),
+    ordenes: z
+      .object({
+        total: z.number().int().nonnegative(),
+        pendientes: z.number().int().nonnegative(),
+        evaluadas: z.number().int().nonnegative(),
+        no_evaluadas: z.number().int().nonnegative(),
+      })
+      .strict(),
+  })
+  .strict()
+export type OperationSummary = z.infer<typeof operationSummarySchema>
+
+/** DTO returned by `GET /operations`. */
+export const operationListDtoSchema = z
+  .object({
+    items: operationSummarySchema.array(),
+    total: z.number().int().nonnegative(),
+    limit: z.number().int().positive(),
+    offset: z.number().int().nonnegative(),
+    has_more: z.boolean(),
+  })
+  .strict()
+export type OperationListDto = z.infer<typeof operationListDtoSchema>
+
+/** DTO returned by `GET /operations/:operationId`. */
+export const operationDetailDtoSchema = z
+  .object({
+    operation: operationSummarySchema,
+    visit: visitDtoSchema,
+    request: serviceRequestDtoSchema,
+    work_orders: operationWorkOrderDetailDtoSchema.array(),
+  })
+  .strict()
+export type OperationDetailDto = z.infer<typeof operationDetailDtoSchema>
+
+// Response-schema names remain as aliases for callers that consumed the first
+// adapter draft; the canonical surface is expressed by the DTO names above.
+export const operationListResponseSchema = operationListDtoSchema
+export type OperationListResponse = OperationListDto
+export const operationDetailResponseSchema = operationDetailDtoSchema
+export type OperationDetailResponse = OperationDetailDto

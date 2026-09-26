@@ -102,8 +102,8 @@ export function createHierarchyApi(edge: EdgeAccessClient) {
       const data = saveYacimientoInputSchema.parse(input)
       return toYacimientoView(
         await edge.request("yacimientos", yacimientoDtoSchema, {
-          method: "POST",
-          body: JSON.stringify(data),
+        method: "POST",
+          body: JSON.stringify({ ...data, client_id: data.clientId }),
         }),
       )
     },

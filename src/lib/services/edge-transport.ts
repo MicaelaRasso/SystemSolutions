@@ -145,7 +145,7 @@ export class EdgeTransport {
 
     const token = await this.token()
     const headers = Object.fromEntries(new Headers(init.headers).entries())
-    if (init.body !== undefined && !headers["content-type"]) {
+    if (init.body !== undefined && !headers["content-type"] && !(init.body instanceof FormData)) {
       headers["content-type"] = "application/json"
     }
     headers.apikey = this.anonKey

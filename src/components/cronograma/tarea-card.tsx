@@ -34,6 +34,7 @@ export function TareaCard({
   talleres,
   onVer,
   onAsignar,
+  permitirDesasignar = true,
   onDragStart,
   onDragEnd,
 }: {
@@ -41,6 +42,7 @@ export function TareaCard({
   talleres: TallerConCuenta[]
   onVer: () => void
   onAsignar: (tallerId: string | undefined) => void
+  permitirDesasignar?: boolean
   onDragStart: () => void
   onDragEnd: () => void
 }) {
@@ -124,7 +126,9 @@ export function TareaCard({
                         {t.nombre}
                       </DropdownMenuRadioItem>
                     ))}
-                    <DropdownMenuRadioItem value={SIN_TALLER}>Sin asignar</DropdownMenuRadioItem>
+                    {permitirDesasignar && (
+                      <DropdownMenuRadioItem value={SIN_TALLER}>Sin asignar</DropdownMenuRadioItem>
+                    )}
                   </DropdownMenuRadioGroup>
                 </DropdownMenuSubContent>
               </DropdownMenuSub>

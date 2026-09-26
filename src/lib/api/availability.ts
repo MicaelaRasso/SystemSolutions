@@ -31,8 +31,9 @@ export const capabilityAvailability = {
     reason: "No supported Edge route exists yet.",
   },
   operations: {
-    status: "unavailable",
-    reason: "The combined operational read model is not implemented; it does not create Tarea.",
+    status: "available",
+    reason:
+      "Offers only GET /operations and GET /operations/:visitId as a read-only projection; mutations remain in Solicitudes, Visitas, and Órdenes.",
   },
   evidence: {
     status: "unavailable",

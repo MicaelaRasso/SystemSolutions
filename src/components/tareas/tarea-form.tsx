@@ -36,18 +36,28 @@ import type { Adjunto, EstadoTarea } from "@/lib/domain/types"
 import { hoyIso } from "@/lib/fechas"
 import {
   INVALIDAR_TAREAS,
+  guardarSolicitudYVisita,
+  guardarTarea,
   mensajeError,
+  subirAdjunto,
+  usaSupabase,
   useCatalogo,
   useServiceMutation,
   useTalleres,
 } from "@/lib/hooks/queries"
-import { services, type NuevaTarea, type TareaResumen } from "@/lib/services"
+import type { OperationRead } from "@/lib/hooks/queries"
+import type { NuevaTarea, TareaResumen } from "@/lib/services"
 
 import { COLOR_SIN_TALLER } from "./badges"
+import { convertirOperacionATarea } from "./tarea-sheet"
 import { UbicacionCascade, type Ubicacion } from "./ubicacion-cascade"
 
 const SIN_TALLER = "__sin_asignar"
 const ESTADOS = Object.keys(ESTADO_TAREA_LABEL) as EstadoTarea[]
+
+function esOperacion(value: TareaResumen | OperationRead | undefined): value is OperationRead {
+  return !!value && "operation" in value
+}
 
 function valoresIniciales(
   tarea?: TareaResumen,
@@ -78,12 +88,15 @@ const vacioAUndefined = (s: string) => (s.trim() ? s.trim() : undefined)
 /** Alta y edición de tareas (RF-13, RF-14, RF-15). */
 export function TareaForm({
   tarea,
+  operation,
   preset,
 }: {
   tarea?: TareaResumen
+  operation?: Parameters<typeof guardarSolicitudYVisita>[0]
   preset?: { fecha?: string; tallerId?: string }
 }) {
   const router = useRouter()
+  const supabase = usaSupabase()
   const editando = !!tarea
   const form = useForm<TareaInput>({
     resolver: zodResolver(tareaSchema),
@@ -104,7 +117,7 @@ export function TareaForm({
     name: ["empresaId", "yacimientoId", "plantaId", "equipoId", "tallerId", "condiciones"],
   })
 
-  const guardar = useServiceMutation(
+  const guardar = useServiceMutation<TareaInput, TareaResumen | OperationRead | undefined>(
     (data: TareaInput) => {
       const payload: NuevaTarea = {
         ...data,
@@ -117,21 +130,26 @@ export function TareaForm({
         detalle: data.detalle.trim(),
         adjuntos,
       }
-      return tarea ? services.tareas.update(tarea.id, payload) : services.tareas.create(payload)
+      return supabase ? guardarSolicitudYVisita(operation, payload) : guardarTarea(tarea, payload)
     },
     { invalidar: INVALIDAR_TAREAS },
   )
 
   function onSubmit(data: TareaInput) {
     guardar.mutate(data, {
-      onSuccess: (t) => {
+      onSuccess: (resultado) => {
+        const t = esOperacion(resultado)
+          ? convertirOperacionATarea(resultado)
+          : supabase
+            ? undefined
+            : resultado
         if (editando) {
           toast.success("Tarea actualizada")
-          form.reset({ ...data, estado: t.estado, tallerId: t.tallerId ?? "" })
+          if (t) form.reset({ ...data, estado: t.estado, tallerId: t.tallerId ?? "" })
           setAdjuntosCambiados(false)
         } else {
-          toast.success(`Tarea creada · Solicitud N° ${t.nroSolicitud}`)
-          router.push(`/admin/tareas/${t.id}`)
+          toast.success(t ? `Tarea creada · Solicitud N° ${t.nroSolicitud}` : "Solicitud creada")
+          router.push(t ? `/admin/tareas/${t.id}` : "/admin/tareas")
         }
       },
     })
@@ -149,7 +167,7 @@ export function TareaForm({
     if (!archivos.length) return
     setSubiendo(true)
     try {
-      const nuevos = await Promise.all(archivos.map((a) => services.tareas.subirAdjunto(a)))
+      const nuevos = await Promise.all(archivos.map((a) => subirAdjunto(a)))
       setAdjuntos((prev) => [...prev, ...nuevos])
       setAdjuntosCambiados(true)
     } catch (err) {

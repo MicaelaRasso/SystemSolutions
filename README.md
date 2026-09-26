@@ -12,7 +12,9 @@ El plan de implementación y su avance están en [`planning.md`](planning.md).
 > `NEXT_PUBLIC_SUPABASE_ANON_KEY`) y las URLs directas opcionales
 > `NEXT_PUBLIC_IDENTITY_ADMIN_URL`, `NEXT_PUBLIC_ASSET_ACCESS_URL`,
 > `NEXT_PUBLIC_SERVICE_WORKFLOW_URL`, `NEXT_PUBLIC_CERTIFICATE_FIELD_URL` y
-> `NEXT_PUBLIC_OFFLINE_SYNC_URL` (o `NEXT_PUBLIC_SERVICE_ACCESS_URL` como fallback).
+> `NEXT_PUBLIC_OFFLINE_SYNC_URL`. Si no se especifican URLs directas, se usan
+> automáticamente las cinco rutas propietarias bajo `NEXT_PUBLIC_SUPABASE_URL`;
+> `NEXT_PUBLIC_SERVICE_ACCESS_URL` queda reservado para el fallback legacy explícito.
 > El adaptador usa exclusivamente la Edge
 > Function para operaciones de negocio y archivos; el navegador solo se
 > comunica directamente con Supabase Auth para la sesión. El modo `mock` sigue

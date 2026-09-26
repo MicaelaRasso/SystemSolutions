@@ -12,12 +12,12 @@ import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { diasGrillaMes, iso } from "@/lib/fechas"
-import { useTalleres, useTareas } from "@/lib/hooks/queries"
+import { usaSupabase, useOperaciones, useTalleres, useTareas } from "@/lib/hooks/queries"
 import type { TareaResumen } from "@/lib/services"
 import { cn } from "@/lib/utils"
 
 import { COLOR_SIN_TALLER } from "./badges"
-import { TareaSheet } from "./tarea-sheet"
+import { convertirOperacionATarea, TareaSheet } from "./tarea-sheet"
 
 const SIN_TALLER = "sin_asignar"
 
@@ -30,10 +30,16 @@ export function Agenda() {
   const [abierta, setAbierta] = useState<TareaResumen | null>(null)
 
   const dias = useMemo(() => diasGrillaMes(mes), [mes])
-  const tareas = useTareas({ desde: iso(dias[0]), hasta: iso(dias[dias.length - 1]) })
+  const filtro = { desde: iso(dias[0]), hasta: iso(dias[dias.length - 1]) }
+  const supabase = usaSupabase()
+  const operaciones = useOperaciones(filtro)
+  const tareasMock = useTareas(filtro)
   const talleres = useTalleres()
+  const tareas = supabase
+    ? (operaciones.data ?? []).map(convertirOperacionATarea)
+    : (tareasMock.data ?? [])
 
-  const visibles = (tareas.data ?? []).filter(
+  const visibles = tareas.filter(
     (t) => (verCanceladas || t.estado !== "cancelada") && !ocultos.has(t.tallerId ?? SIN_TALLER),
   )
 
@@ -96,8 +102,11 @@ export function Agenda() {
         </div>
       </div>
 
-      {tareas.isError ? (
-        <ErrorState error={tareas.error} onRetry={() => tareas.refetch()} />
+      {(supabase ? operaciones.isError : tareasMock.isError) ? (
+        <ErrorState
+          error={supabase ? operaciones.error : tareasMock.error}
+          onRetry={() => (supabase ? operaciones.refetch() : tareasMock.refetch())}
+        />
       ) : (
         <MonthCalendar
           mes={mes}
@@ -106,7 +115,11 @@ export function Agenda() {
           claveDe={(t) => t.id}
           fechaDe={fechaDe}
           colorDe={(t) => t.tallerColor ?? COLOR_SIN_TALLER}
-          cargando={tareas.isPending || tareas.isPlaceholderData}
+          cargando={
+            supabase
+              ? operaciones.isPending || operaciones.isPlaceholderData
+              : tareasMock.isPending || tareasMock.isPlaceholderData
+          }
           onNuevo={(fecha) => router.push(`/admin/tareas/nueva?fecha=${fecha}`)}
           renderItem={(t) => <TareaPill tarea={t} onClick={() => setAbierta(t)} />}
         />

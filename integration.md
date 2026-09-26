@@ -18,7 +18,8 @@ Browser
 Los componentes consumen `edgeApi.identity`, `edgeApi.hierarchy`,
 `edgeApi.yacimientos`, `edgeApi.valves`, `edgeApi.serviceWorkflow`,
 `edgeApi.serviceRequests`, `edgeApi.visits`, `edgeApi.workOrders`,
-`edgeApi.certificates`, `edgeApi.signatures` y `edgeApi.offline`. Estos módulos
+`edgeApi.certificates`, `edgeApi.signatures`, `edgeApi.offline` y
+`edgeApi.operations`. Estos módulos
 son el seam del navegador: validan DTOs y mapean respuestas, pero no conocen la
 URL ni la función que posee una ruta.
 
@@ -42,8 +43,9 @@ autorización de dominio como barrera final.
 - `src/lib/services/edge-transport.ts` mantiene el registro de
   `identity-admin`, `asset-access`, `service-workflow`, `certificate-field`,
   `offline-sync` y `service-access`. Las variables `NEXT_PUBLIC_*_URL` permiten
-  apuntar cada capacidad a su función directa; si falta una URL, el registro
-  usa `service-access` como fallback temporal.
+  apuntar cada capacidad a su función directa; si faltan, se construyen las
+  URLs propietarias desde `NEXT_PUBLIC_SUPABASE_URL`. `service-access` sólo se
+  usa como fallback cuando se configura explícitamente.
 - Las funciones propietarias ya tienen entrypoints y usan el runtime privado
   compartido. La propiedad de las rutas y su estado se detallan en la tabla
   siguiente; que exista un entrypoint no significa que todas las capacidades de
@@ -60,24 +62,100 @@ autorización de dominio como barrera final.
   expuestas por Edge se adaptan; las capacidades bloqueadas siguen fallando de
   forma explícita y no se presentan como terminadas.
 
+### APIs administrativas conectadas
+
+El adaptador `services.edge` ya conecta las pantallas administrativas que antes
+dependían del mock. La correspondencia está documentada en los comentarios de
+`src/lib/api/admin.ts` y `src/lib/services/edge.ts`:
+
+| Pantalla frontend | Adaptador | Edge Function | Backend canónico |
+| --- | --- | --- | --- |
+| Clientes y logo | `admin.clients` | `asset-access` | `clientes` + Auth + Storage |
+| Usuarios y alcances | `admin.accounts` | `identity-admin` | `cuentas`, `cliente_cuentas`, `cliente_accesos` |
+| Talleres y técnicos | `admin.workshops`, `admin.people` | `identity-admin` | `talleres_moviles`, `taller_cuentas`, `personas` |
+| Catálogos y patrones | `admin.catalogs`, `admin.standards` | `identity-admin` | `catalogo_opciones`, `patrones_ensayo` |
+| Cronograma | `admin.staffing` | `identity-admin` | `nominas_jornada` |
+| Tareas, agenda y detalle | `operations` | `service-workflow` | lectura canónica de Solicitudes, Visitas y Ordenes |
+| Adjuntos | `services.tareas.subirAdjunto` (compatibilidad UI) | `service-workflow` | Storage `attachments`; no pertenece a `edgeApi.operations` |
+
+La UI histórica sigue llamando `Tarea` por compatibilidad visual, pero el
+backend no crea una entidad con ese nombre: los comandos crean o actualizan la
+Solicitud de servicio y, cuando corresponde, la Visita de servicio.
+
 ### Propiedad de rutas y funciones
 
-| Rutas implementadas                                 | Función propietaria directa                                                                            | Adaptador de navegador                                                                                                                                          | Estado y límite                                                                                     |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `GET /context`                                      | `identity-admin`                                                                                       | `identity`                                                                                                                                                      | Disponible. El contexto canónico de Cuenta/rol proviene de la función.                              |
-| `GET                                                | POST /yacimientos`, `PATCH /yacimientos/:id`, `GET /yacimientos/:id/{tree,assignment}`, `POST          | PATCH /hierarchy`                                                                                                                                               | `asset-access`                                                                                      | `hierarchy`, `yacimientos`                                                         | Disponible para las operaciones existentes; no incluye ciclo de vida de Cliente ni eliminación. |
-| `GET                                                | PATCH /valves/:id`                                                                                     | `asset-access`                                                                                                                                                  | `hierarchy`, `valves`                                                                               | Disponible para detalle, atributos técnicos y revisión inmutable.                  |
-| `GET /valves/:id/certificates`, `GET                | PATCH /certificates/:id`, `GET /certificates/:id/finalized`, `POST /work-orders/:id/certificate-draft` | `certificate-field`                                                                                                                                             | `certificates`                                                                                      | Disponible según el DTO implementado; no implica una pantalla de captura completa. |
-| `GET                                                | POST                                                                                                   | PATCH /requests`, `POST /requests/:id/schedule`, `GET /visits`, `GET /visits/:id`, comandos de visita, `POST /visits/:id/work-orders`, `PATCH /work-orders/:id` | `service-workflow`                                                                                  | `serviceWorkflow`, `serviceRequests`, `visits`, `workOrders`                       | Disponible como contrato de API; la pantalla operacional combinada aún no existe.               |
-| `POST /visits/:id/signatures`                       | `certificate-field`                                                                                    | `certificates`, `signatures`                                                                                                                                    | Parcial: registra la referencia y los datos de la firma; no carga bytes de media.                   |
-| `GET /offline/working-set`, `POST /visits/:id/sync` | `offline-sync`                                                                                         | `offline`                                                                                                                                                       | Disponible como working set y lote; la UI aún no completa acknowledgement, reintentos y conflictos. |
-| Rutas legacy equivalentes                           | `service-access`                                                                                       | Registro como fallback, nunca como nuevo adaptador                                                                                                              | Compatibilidad temporal únicamente. No es propietario directo de la nueva seam.                     |
+| Rutas implementadas | Función propietaria directa | Adaptador de navegador | Estado y límite |
+| --- | --- | --- | --- |
+| `GET /context` | `identity-admin` | `identity` | Disponible. El contexto canónico de Cuenta/rol proviene de la función. |
+| `GET/POST /yacimientos`, `PATCH /yacimientos/:id`, lecturas de árbol/asignación y `POST/PATCH /hierarchy` | `asset-access` | `hierarchy`, `yacimientos` | Disponible para las operaciones existentes; no incluye ciclo de vida de Cliente ni eliminación. |
+| `GET/PATCH /valves/:id` | `asset-access` | `hierarchy`, `valves` | Disponible para detalle, atributos técnicos y revisión inmutable. |
+| `GET /requests`, `GET /requests/:id`, `POST /requests`, `PATCH /requests/:id`, `POST /requests/:id/schedule` | `service-workflow` | `serviceWorkflow`, `serviceRequests` | Lecturas y mutaciones de Solicitudes de servicio; programar crea o actualiza la Visita canónica. |
+| `GET /visits`, `GET /visits/:id` y comandos `POST /visits/:id/{accept,reject,cancel,start,complete}` | `service-workflow` | `serviceWorkflow`, `visits` | Contrato canónico de Visita de servicio y sus transiciones. |
+| `POST /visits/:id/work-orders`, `PATCH /work-orders/:id` | `service-workflow` | `serviceWorkflow`, `workOrders` | Mutaciones de Orden de trabajo; sólo la Orden individual puede registrar su resultado. |
+| `GET /operations`, `GET /operations/:visitId` | `service-workflow` | `operations` | **Disponible; sólo lectura.** Usa el id de la Visita y envelopes canónicos; `Tarea` es compatibilidad de UI y no una entidad backend. |
+| `POST /attachments` | `service-workflow` | `services.tareas.subirAdjunto` (compatibilidad) | Carga Edge de adjuntos genéricos; no pertenece a `edgeApi.operations`. |
+| `GET /valves/:id/certificates`, `GET/PATCH /certificates/:id`, `GET /certificates/:id/finalized`, `POST /work-orders/:id/certificate-draft` | `certificate-field` | `certificates` | Disponible según el DTO implementado; no implica una pantalla de captura completa. |
+| `POST /visits/:id/signatures` | `certificate-field` | `certificates`, `signatures` | Parcial: registra la referencia y los datos de la firma; no carga bytes de media. |
+| `GET /offline/working-set`, `POST /visits/:id/sync` | `offline-sync` | `offline` | Disponible como working set y lote; la UI aún no completa acknowledgement, reintentos y conflictos. |
+| Rutas legacy equivalentes | `service-access` | Registro como fallback, nunca como nuevo adaptador | Compatibilidad temporal únicamente. No es propietario directo de la nueva seam. |
 
-Las URLs directas se configuran con `NEXT_PUBLIC_IDENTITY_ADMIN_URL`,
+Las URLs directas se pueden configurar con `NEXT_PUBLIC_IDENTITY_ADMIN_URL`,
 `NEXT_PUBLIC_ASSET_ACCESS_URL`, `NEXT_PUBLIC_SERVICE_WORKFLOW_URL`,
-`NEXT_PUBLIC_CERTIFICATE_FIELD_URL` y `NEXT_PUBLIC_OFFLINE_SYNC_URL`. La
-ausencia de una de ellas no cambia la propiedad de la ruta: sólo activa el
-fallback legacy para permitir el rollout gradual.
+`NEXT_PUBLIC_CERTIFICATE_FIELD_URL` y `NEXT_PUBLIC_OFFLINE_SYNC_URL`. Si una
+falta, el frontend apunta a la función propietaria estándar del proyecto; el
+fallback legacy requiere `NEXT_PUBLIC_SERVICE_ACCESS_URL` explícito.
+
+### Contrato canónico de Visita de servicio
+
+La entidad canónica del ciclo operativo es `Visita de servicio`, no `Tarea` ni
+`Operation`. Una Visita pertenece a exactamente un Yacimiento y a una
+`Solicitud de servicio`; la relación es uno a uno en el backend. La respuesta
+de lectura tiene este sobre estable:
+
+```json
+{
+  "visit": {
+    "id": "<visita-id>",
+    "solicitud_id": "<solicitud-id>",
+    "yacimiento_id": "<yacimiento-id>",
+    "taller_movil_id": "<taller-id-or-null>",
+    "starts_at": "<ISO-8601>",
+    "ends_at": "<ISO-8601>",
+    "estado": "solicitada | programada | aceptada | en_curso | completada | cancelada"
+  },
+  "work_orders": [
+    {
+      "id": "<orden-id>",
+      "visita_id": "<visita-id>",
+      "valvula_id": "<valvula-id>",
+      "estado": "pendiente | evaluada | no_evaluada"
+    }
+  ]
+}
+```
+
+Los campos de auditoría y las marcas de aceptación, rechazo o cancelación
+pueden acompañar a `visit`; no cambian su identidad. Las mutaciones de esta
+superficie son explícitas:
+
+| Superficie | Mutación | Resultado canónico |
+| --- | --- | --- |
+| Solicitud | `POST /requests`, `PATCH /requests/:id` | Crea o reemplaza la Selección de servicio mientras la Solicitud sigue editable. |
+| Solicitud → Visita | `POST /requests/:id/schedule` | Un Administrador programa o reasigna la Visita en estado `programada`. |
+| Visita | `POST /visits/:id/accept` | El Taller Móvil asignado pasa `programada` a `aceptada`. |
+| Visita | `POST /visits/:id/reject` | El rechazo devuelve la Visita a `programada` y permite reasignarla. |
+| Visita | `POST /visits/:id/start` | El Taller Móvil asignado pasa `aceptada` a `en_curso`. |
+| Visita | `POST /visits/:id/complete` | El Taller Móvil asignado pasa `en_curso` a `completada`; la finalización de Certificados es independiente. |
+| Visita | `POST /visits/:id/cancel` | El Cliente propietario cancela antes del día de ejecución. |
+| Orden | `POST /visits/:id/work-orders` | Agrega una Válvula a una Visita `en_curso`, respetando Cliente y acceso del Taller Móvil. |
+| Orden | `PATCH /work-orders/:id` | Registra `evaluada` o `no_evaluada`; esta última exige una razón. |
+
+`GET /operations` y `GET /operations/:visitId` sólo leen el contrato canónico
+orientado a Visitas. La colección contiene Visitas, no Solicitudes sin
+programar; el detalle se busca por el id de la Visita y puede incluir la
+Solicitud relacionada y el detalle de sus Ordenes. `Tarea` sólo conserva el
+nombre de compatibilidad de la UI. Ninguna mutación de Solicitud, Visita u
+Orden se realiza a través de `/operations`.
 
 ### Capacidades no disponibles
 
@@ -87,13 +165,8 @@ completadas:
 
 | Capacidad                                                           | Owner previsto                       | Estado actual                                                                                         |
 | ------------------------------------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| Ciclo de vida de Clientes: listar, perfil, crear, editar y logo     | `asset-access`                       | **No disponible.** No hay rutas Edge utilizables.                                                     |
-| Cuentas, alcances de acceso, activación y eliminación               | `identity-admin`                     | **No disponible.** Falta resolver el alcance de Cuenta y no hay rutas administrativas.                |
 | Eliminación de Yacimientos, Plantas, Equipos y Válvulas             | `asset-access`                       | **No disponible.** La política de borrado/archivo e historial no está resuelta.                       |
 | Bytes de firmas, fotos, evidencia y logos                           | `certificate-field` / `asset-access` | **No disponible.** Sólo existe registro de referencia para una firma; no existe carga multipart Edge. |
-| Lista y detalle operacional que reemplazan la pantalla mock `Tarea` | `service-workflow`                   | **No disponible.** No existe `/operations` y no se crea una entidad `Tarea`.                          |
-| Staffing, Talleres Móviles y Técnicos                               | `identity-admin`                     | **No disponible.** No hay rutas de administración implementadas.                                      |
-| Lecturas y administración de catálogos                              | `identity-admin`                     | **No disponible.** El alcance de administración contradice decisiones de dominio pendientes.          |
 
 ### Decisiones abiertas
 
@@ -110,8 +183,6 @@ adaptador:
    historial preservado.
 4. **Contrato de media:** faltan owner, secciones, MIME/tamaño, nombres,
    idempotencia, reemplazo y reglas posteriores al cierre del Certificado.
-5. **Identidad operacional:** falta definir el identificador y ciclo de vida
-   del read model combinado `/operations`; no debe crear `Tarea`.
 
 ## Fase 1 — Compuerta Edge-only (implementada; rollout en curso)
 
@@ -281,15 +352,15 @@ interfaz mock ya la consuma. La propiedad directa está en la tabla
 ### Cliente y estructura de activos
 
 `Empresa` es el nombre histórico del mock; en la API el agregado canónico es
-**Cliente**. Las pantallas `/admin/clientes/**` necesitan el siguiente contrato
-antes de poder abandonar el mock.
+**Cliente**. El contrato administrativo ya está disponible y `services.edge` lo
+consume cuando `NEXT_PUBLIC_DATA_SOURCE=supabase`.
 
 | Capacidad requerida                                                                                               | Ruta Edge propuesta                                                                            | Estado actual                                                                                                                                                                  |
 | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Listar Clientes con búsqueda e inclusión opcional de inactivos, con contadores de Yacimientos, Válvulas y Cuentas | `GET /clients?q=&include_inactive=`                                                            | **Ausente.**                                                                                                                                                                   |
-| Consultar el perfil de un Cliente                                                                                 | `GET /clients/:clientId`                                                                       | **Ausente.**                                                                                                                                                                   |
-| Crear y actualizar Cliente (razón social, CUIT, contactos, aviso de vencimiento y estado)                         | `POST /clients`, `PATCH /clients/:clientId`                                                    | **Ausente.**                                                                                                                                                                   |
-| Cargar, reemplazar o quitar logo de Cliente sin acceso browser→Storage                                            | `PUT`/`DELETE /clients/:clientId/logo` (multipart hacia Edge)                                  | **Ausente.**                                                                                                                                                                   |
+| Listar Clientes con búsqueda e inclusión opcional de inactivos, con contadores de Yacimientos, Válvulas y Cuentas | `GET /clients?q=&include_inactive=`                                                            | **Disponible.**                                                                                                                                                                |
+| Consultar el perfil de un Cliente                                                                                 | `GET /clients/:clientId`                                                                       | **Disponible.**                                                                                                                                                                |
+| Crear y actualizar Cliente (razón social, CUIT, contactos, aviso de vencimiento y estado)                         | `POST /clients`, `PATCH /clients/:clientId`                                                    | **Disponible.**                                                                                                                                                                |
+| Cargar, reemplazar o quitar logo de Cliente sin acceso browser→Storage                                            | `PUT`/`DELETE /clients/:clientId/logo` (multipart hacia Edge)                                  | **Disponible.**                                                                                                            |
 | Listar los Yacimientos accesibles al actor                                                                        | `GET /yacimientos`                                                                             | **Disponible.** No reemplaza aún la lista de Clientes del administrador.                                                                                                       |
 | Consultar el árbol de un Yacimiento                                                                               | `GET /yacimientos/:yacimientoId/tree`                                                          | **Disponible.** La UI actual solicita el árbol por `empresaId`; falta resolver el mapping Cliente→Yacimiento y el DTO de pantalla.                                             |
 | Crear y editar Yacimiento                                                                                         | `POST /yacimientos`, `PATCH /yacimientos/:yacimientoId`                                        | **Disponible**, con los campos actuales de backend (`name`, provincia, operadora, contratista). El formulario mock y su modelo aún no coinciden completamente.                 |
@@ -309,40 +380,39 @@ navegador con una clave de servidor.
 
 | Capacidad requerida                                                                             | Ruta Edge propuesta                                                                      | Estado actual                                              |
 | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Listar y consultar Cuentas, filtradas por rol y Cliente                                         | `GET /accounts?role=&client_id=`, `GET /accounts/:accountId`                             | **Ausente.**                                               |
-| Crear Cuenta de Cliente, activar/desactivar, actualizar datos y eliminarla                      | `POST /accounts`, `PATCH /accounts/:accountId`, `DELETE /accounts/:accountId`            | **Ausente.**                                               |
-| Leer y reemplazar los alcances de acceso de una Cuenta de Cliente (Yacimiento, Planta o Equipo) | `GET /accounts/:accountId/access-scopes`, `PUT /accounts/:accountId/access-scopes`       | **Ausente.**                                               |
-| Listar, crear y editar Taller Móvil junto con su Cuenta de tablet                               | `GET /mobile-workshops`, `POST /mobile-workshops`, `PATCH /mobile-workshops/:workshopId` | **Ausente.**                                               |
-| Listar, crear y editar Técnicos/Personas                                                        | `GET /technicians`, `POST /technicians`, `PATCH /technicians/:technicianId`              | **Ausente.**                                               |
+| Listar y consultar Cuentas, filtradas por rol y Cliente                                         | `GET /accounts?role=&client_id=`, `GET /accounts/:accountId`                             | **Disponible para el listado por Cliente.**                 |
+| Crear Cuenta de Cliente, activar/desactivar, actualizar datos y eliminarla                      | `POST /accounts`, `PATCH /accounts/:accountId`, `DELETE /accounts/:accountId`            | **Disponible.**                                               |
+| Leer y reemplazar los alcances de acceso de una Cuenta de Cliente (Yacimiento, Planta o Equipo) | `GET /accounts/:accountId/access-scopes`, `PUT /accounts/:accountId/access-scopes`       | **Disponible.**                                               |
+| Listar, crear y editar Taller Móvil junto con su Cuenta de tablet                               | `GET /mobile-workshops`, `POST /mobile-workshops`, `PATCH /mobile-workshops/:workshopId` | **Disponible.**                                               |
+| Listar, crear y editar Técnicos/Personas                                                        | `GET /technicians`, `POST /technicians`, `PATCH /technicians/:technicianId`              | **Disponible.**                                               |
 | Consultar la asignación vigente de un Yacimiento                                                | `GET /yacimientos/:yacimientoId/assignment`                                              | **Disponible**, aunque ninguna pantalla actual lo consume. |
 
 ### Catálogos, patrones y planificación de dotación
 
 | Capacidad requerida                                                  | Ruta Edge propuesta                                                                                                                                         | Estado actual |
 | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
-| Listar opciones activas de un catálogo para formularios              | `GET /catalogs/:catalogKey/options`                                                                                                                         | **Ausente.**  |
-| Administrar opciones de catálogo, resumen, activación y orden        | `GET /catalogs/:catalogKey`, `GET /catalogs/summary`, `POST /catalogs/:catalogKey/options`, `PATCH /catalog-options/:id`, `PUT /catalogs/:catalogKey/order` | **Ausente.**  |
-| Listar, crear y editar Patrones de ensayo                            | `GET /test-standards`, `POST /test-standards`, `PATCH /test-standards/:standardId`                                                                          | **Ausente.**  |
-| Consultar nóminas de Técnicos por Taller Móvil y fecha               | `GET /staffing?from=&to=`                                                                                                                                   | **Ausente.**  |
-| Reemplazar una nómina y copiar las vacantes desde la semana anterior | `PUT /staffing/:workshopId/:date`, `POST /staffing/copy-previous-week`                                                                                      | **Ausente.**  |
+| Listar opciones activas de un catálogo para formularios              | `GET /catalogs/:catalogKey/options`                                                                                                                         | **Disponible.**  |
+| Administrar opciones de catálogo, resumen, activación y orden        | `GET /catalogs/:catalogKey`, `GET /catalogs/summary`, `POST /catalogs/:catalogKey/options`, `PATCH /catalog-options/:id`, `PUT /catalogs/:catalogKey/order` | **Disponible.**  |
+| Listar, crear y editar Patrones de ensayo                            | `GET /test-standards`, `POST /test-standards`, `PATCH /test-standards/:standardId`                                                                          | **Disponible.**  |
+| Consultar nóminas de Técnicos por Taller Móvil y fecha               | `GET /staffing?from=&to=`                                                                                                                                   | **Disponible.**  |
+| Reemplazar una nómina y copiar las vacantes desde la semana anterior | `PUT /staffing/:workshopId/:date`, `POST /staffing/copy-previous-week`                                                                                      | **Disponible.**  |
 
 ### Operación: transición de la pantalla mock «Tarea»
 
-La pantalla actual mezcla Solicitud de servicio, programación de Visita de
-servicio y datos que pertenecen a una Orden de trabajo. No se debe crear una
-segunda entidad de backend llamada `Tarea`. Antes de sustituir esas pantallas,
-el frontend necesita un DTO de lectura y comandos que traduzcan explícitamente
-la UI histórica a las entidades canónicas.
+La pantalla actual conserva `Tarea` como compatibilidad visual, pero el backend
+usa las entidades canónicas Solicitud de servicio, Visita de servicio y Orden
+de trabajo. El frontend debe consumir el envelope canónico de Visita y enviar
+las mutaciones a la superficie de la entidad correspondiente.
 
 | Capacidad requerida                                                                                                                        | Ruta Edge propuesta o existente                                                                      | Estado actual                                                                                                                 |
 | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Listar la vista operacional que reemplaza `TareaResumen`, con los filtros y datos de ubicación/taller que usa agenda, cronograma y listado | `GET /operations?from=&to=&status=&workshop_id=&client_id=&q=`                                       | **Ausente.** `GET /requests` y `GET /visits` están disponibles por separado, pero no satisfacen el contrato actual combinado. |
-| Consultar el detalle operacional que reemplaza `Tarea`                                                                                     | `GET /operations/:operationId`                                                                       | **Ausente.** `GET /requests/:id` y `GET /visits/:id` existen por separado.                                                    |
+| Listar la vista operacional compatible con `TareaResumen`, con los filtros y datos de ubicación/taller que usa agenda, cronograma y listado | `GET /operations?from=&to=&status=&workshop_id=&client_id=&q=`                                       | **Disponible para lectura.** Devuelve el contrato canónico de Visitas. |
+| Consultar el detalle operacional compatible con `Tarea`                                                                                     | `GET /operations/:visitId`                                                                       | **Disponible para lectura.** El id es el de la Visita y la respuesta usa envelopes canónicos. |
 | Crear o editar la intención del Cliente como Solicitud de servicio                                                                         | `POST /requests`, `PATCH /requests/:requestId`                                                       | **Disponible.** Tiene DTO, cliente por capacidad y hooks; falta traducir el formulario mock.                                  |
 | Programar una Visita y asignar Taller Móvil                                                                                                | `POST /requests/:requestId/schedule`                                                                 | **Disponible.** Tiene DTO, cliente por capacidad y hooks; falta sustituir la edición de `Tarea`.                              |
 | Listar Visitas y ejecutar aceptar, rechazar, cancelar, iniciar o completar                                                                 | `GET /visits`, `GET /visits/:visitId`, `POST /visits/:visitId/{accept,reject,cancel,start,complete}` | **Disponible.** Tiene DTO, cliente por capacidad y hooks; aún no hay pantalla de campo integrada.                             |
 | Agregar y resolver Orden de trabajo de una Válvula durante una Visita                                                                      | `POST /visits/:visitId/work-orders`, `PATCH /work-orders/:workOrderId`                               | **Disponible.** Tiene DTO y cliente por capacidad; aún no hay pantalla integrada.                                             |
-| Adjuntar archivos a una Solicitud/Visita sin browser→Storage                                                                               | `POST /attachments` o una ruta anidada con multipart                                                 | **Ausente.** La actual `subirAdjunto` sólo genera una data URL mock.                                                          |
+| Adjuntar archivos a una Solicitud/Visita sin browser→Storage                                                                               | `POST /attachments` o una ruta anidada con multipart                                                 | **Disponible** para el adjunto genérico de la pantalla operacional.                                                          |
 
 ### Certificados y trabajo offline
 
@@ -365,8 +435,12 @@ navegador → función propietaria (o `service-access` como fallback) → base d
 
 ## Anexo B — Rutas Edge pendientes para que las pantallas actuales funcionen
 
-Esta lista resume las capacidades del Anexo A que todavía no tienen una ruta
-Edge plenamente utilizable por las pantallas actuales. **Ausente** indica que
+Esta lista conserva el inventario original de capacidades que requerían trabajo.
+Las filas de Clientes, Cuentas, Talleres, Catálogos, Staffing, Operaciones y
+Adjuntos fueron implementadas por `20260926173929_admin_application_apis.sql` y
+`20260926181950_operation_read_model.sql`;
+para el estado vigente prevalecen la tabla de APIs administrativas de arriba y
+los comentarios de los adaptadores. **Ausente** indica que
 no existe una ruta equivalente; **parcial** indica que existe una ruta o
 comando de backend, pero falta el DTO/mapping estable requerido por la UI o el
 paso Edge de carga de archivos. No propone implementar ahora esas capacidades.
@@ -388,11 +462,11 @@ paso Edge de carga de archivos. No propone implementar ahora esas capacidades.
 | Consultar y administrar opciones de catálogo                                       | `GET /catalogs/:catalogKey/options`, `GET /catalogs/:catalogKey`, `GET /catalogs/summary`, `POST /catalogs/:catalogKey/options`, `PATCH /catalog-options/:id`, `PUT /catalogs/:catalogKey/order` | **Ausente**                                                      |
 | Listar, crear y editar Patrones de ensayo                                          | `GET /test-standards`, `POST /test-standards`, `PATCH /test-standards/:standardId`                                                                                                               | **Ausente**                                                      |
 | Consultar y reemplazar nóminas de Técnicos, incluida copia semanal                 | `GET /staffing?from=&to=`, `PUT /staffing/:workshopId/:date`, `POST /staffing/copy-previous-week`                                                                                                | **Ausente**                                                      |
-| Obtener lista y detalle operacional combinados que reemplazan `Tarea`              | `GET /operations` con filtros y `GET /operations/:operationId`                                                                                                                                   | **Ausente**                                                      |
+| Obtener lista y detalle operacional compatibles con `Tarea`                       | `GET /operations` con filtros y `GET /operations/:visitId`                                                                                                                                         | **Disponible para lectura; sólo GET.** El id de detalle es el de la Visita y las mutaciones van por Solicitudes, Visitas y Ordenes. |
 | Adaptar Solicitud de servicio y programación de Visita a formularios actuales      | `POST/PATCH /requests`, `POST /requests/:requestId/schedule`                                                                                                                                     | **Parcial**                                                      |
 | Adaptar Visitas y sus comandos al flujo de pantalla de campo                       | `GET /visits`, `GET /visits/:visitId` y comandos accept/reject/cancel/start/complete                                                                                                             | **Parcial**                                                      |
 | Adaptar Órdenes de trabajo y sus resultados al flujo de Válvula/Visita             | `POST /visits/:visitId/work-orders`, `PATCH /work-orders/:workOrderId`                                                                                                                           | **Parcial**                                                      |
-| Adjuntar archivos a Solicitudes o Visitas mediante Edge                            | `POST /attachments` o ruta anidada multipart                                                                                                                                                     | **Ausente**                                                      |
+| Adjuntar archivos a Solicitudes o Visitas mediante Edge                            | `POST /attachments` o ruta anidada multipart                                                                                                                                                     | **Disponible**; el adaptador canónico de operaciones sigue siendo sólo lectura |
 | Cargar por Edge el archivo de firma de una Visita y registrar su referencia        | `POST /visits/:visitId/signatures` más carga multipart a Storage desde Edge                                                                                                                      | **Parcial**                                                      |
 | Cargar fotos/evidencias de Certificado o Visita mediante Edge                      | Ruta Edge multipart, por ejemplo `POST /visits/:visitId/evidence`                                                                                                                                | **Ausente**                                                      |
 | Adaptar el Borrador de Certificado a una pantalla de captura                       | `POST /work-orders/:workOrderId/certificate-draft`, `GET/PATCH /certificates/:certificateId`                                                                                                     | **Parcial**                                                      |

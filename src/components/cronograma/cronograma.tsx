@@ -9,19 +9,24 @@ import { toast } from "sonner"
 import { PageHeader } from "@/components/common/page-header"
 import { ErrorState } from "@/components/common/states"
 import { COLOR_SIN_TALLER } from "@/components/tareas/badges"
-import { TareaSheet } from "@/components/tareas/tarea-sheet"
+import { convertirOperacionATarea, TareaSheet } from "@/components/tareas/tarea-sheet"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { diasSemana, fmt, iso, lunesDe } from "@/lib/fechas"
 import {
   INVALIDAR_TAREAS,
   qk,
+  reasignarTarea,
+  reasignarVisita,
+  usaSupabase,
   useNominas,
   usePersonas,
+  useOperaciones,
   useServiceMutation,
   useTalleres,
   useTareas,
 } from "@/lib/hooks/queries"
+import type { OperationRead } from "@/lib/hooks/queries"
 import { services, type TareaResumen } from "@/lib/services"
 import { cn } from "@/lib/utils"
 
@@ -44,7 +49,12 @@ export function Cronograma() {
   const desde = iso(dias[0])
   const hasta = iso(dias[6])
 
-  const tareas = useTareas({ desde, hasta })
+  const supabase = usaSupabase()
+  const operaciones = useOperaciones({ desde, hasta })
+  const tareasMock = useTareas({ desde, hasta })
+  const tareas = supabase
+    ? (operaciones.data ?? []).map(convertirOperacionATarea)
+    : (tareasMock.data ?? [])
   const talleres = useTalleres()
   const personas = usePersonas()
   const nominas = useNominas(desde, hasta)
@@ -54,9 +64,12 @@ export function Cronograma() {
   const [sobre, setSobre] = useState<string | null>(null)
 
   const invalidarNominas = [["nominas"]]
-  const reasignar = useServiceMutation(
+  const reasignar = useServiceMutation<
+    { id: string; tallerId: string | undefined; fecha: string },
+    OperationRead | TareaResumen
+  >(
     ({ id, tallerId, fecha }: { id: string; tallerId: string | undefined; fecha: string }) =>
-      services.tareas.update(id, { tallerId, fechaEjecucion: fecha }),
+      supabase ? reasignarVisita(id, tallerId, fecha) : reasignarTarea(id, tallerId, fecha),
     { exito: "Tarea reprogramada", invalidar: INVALIDAR_TAREAS },
   )
   const guardarNomina = useServiceMutation(
@@ -70,21 +83,21 @@ export function Cronograma() {
 
   // Columnas: talleres activos + los inactivos que tengan tareas esta semana.
   const columnas: Columna[] = useMemo(() => {
-    const conTareas = new Set((tareas.data ?? []).map((t) => t.tallerId))
+    const conTareas = new Set(tareas.map((t) => t.tallerId))
     const cols = (talleres.data ?? [])
       .filter((t) => t.activo || conTareas.has(t.id))
       .map((t) => ({ id: t.id, nombre: t.nombre, color: t.color }))
     return [{ id: SIN_TALLER, nombre: "Sin asignar", color: COLOR_SIN_TALLER }, ...cols]
-  }, [talleres.data, tareas.data])
+  }, [talleres.data, tareas])
 
   const tareasPorCelda = useMemo(() => {
     const m = new Map<string, TareaResumen[]>()
-    for (const t of tareas.data ?? []) {
+    for (const t of tareas) {
       const k = `${t.tallerId ?? SIN_TALLER}|${t.fechaEjecucion}`
       m.set(k, [...(m.get(k) ?? []), t])
     }
     return m
-  }, [tareas.data])
+  }, [tareas])
 
   const nominaDe = (tallerId: string, fecha: string) =>
     nominas.data?.find((n) => n.tallerId === tallerId && n.fecha === fecha)?.personaIds ?? []
@@ -104,15 +117,18 @@ export function Cronograma() {
     setSobre(null)
     setArrastrando(null)
     const id = e.dataTransfer.getData("text/plain")
-    const tarea = tareas.data?.find((t) => t.id === id)
+    const tarea = tareas.find((t) => t.id === id)
     if (!tarea || !esMovible(tarea)) return
     const tallerId = columna === SIN_TALLER ? undefined : columna
     if (tarea.tallerId === tallerId && tarea.fechaEjecucion === fecha) return
     reasignar.mutate({ id, tallerId, fecha })
   }
 
-  const cargando = tareas.isPending || talleres.isPending || nominas.isPending || personas.isPending
-  const error = tareas.error ?? talleres.error ?? nominas.error ?? personas.error
+  const tareasPendientes = supabase ? operaciones.isPending : tareasMock.isPending
+  const tareasError = supabase ? operaciones.error : tareasMock.error
+  const tareasPlaceholder = supabase ? operaciones.isPlaceholderData : tareasMock.isPlaceholderData
+  const cargando = tareasPendientes || talleres.isPending || nominas.isPending || personas.isPending
+  const error = tareasError ?? talleres.error ?? nominas.error ?? personas.error
 
   return (
     <>
@@ -176,7 +192,7 @@ export function Cronograma() {
         <ErrorState
           error={error}
           onRetry={() => {
-            tareas.refetch()
+            supabase ? operaciones.refetch() : tareasMock.refetch()
             talleres.refetch()
             nominas.refetch()
             personas.refetch()
@@ -188,7 +204,7 @@ export function Cronograma() {
         <div
           className={cn(
             "overflow-x-auto rounded-xl border bg-card transition-opacity",
-            (tareas.isPlaceholderData || nominas.isPlaceholderData) && "opacity-60",
+            (tareasPlaceholder || nominas.isPlaceholderData) && "opacity-60",
           )}
         >
           <div
@@ -282,6 +298,7 @@ export function Cronograma() {
                             onAsignar={(tallerId) =>
                               reasignar.mutate({ id: t.id, tallerId, fecha: t.fechaEjecucion })
                             }
+                            permitirDesasignar={!supabase}
                             onDragStart={() => setArrastrando(t.id)}
                             onDragEnd={() => {
                               setArrastrando(null)
