@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.offline-sync]
 verify_jwt = false
+
+[functions.backup-export]
+verify_jwt = false

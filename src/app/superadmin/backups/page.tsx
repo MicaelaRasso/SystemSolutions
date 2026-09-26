@@ -1,15 +1,9 @@
 import type { Metadata } from "next"
 
-import { EnConstruccion } from "@/components/common/states"
+import { ManualBackupPanel } from "@/components/backups/manual-backup-panel"
 
-export const metadata: Metadata = { title: "Backups por fecha" }
+export const metadata: Metadata = { title: "Backup manual" }
 
 export default function Page() {
-  return (
-    <EnConstruccion
-      titulo="Backups por fecha"
-      fase={8}
-      detalle="Backup manual de la información filtrado por fecha."
-    />
-  )
+  return <ManualBackupPanel />
 }

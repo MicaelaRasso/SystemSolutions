@@ -8,6 +8,7 @@ const functionUrls = {
   "service-workflow": "https://workflow.test/functions/v1/service-workflow",
   "certificate-field": "https://certificates.test/functions/v1/certificate-field",
   "offline-sync": "https://offline.test/functions/v1/offline-sync",
+  "backup-export": "https://backup.test/functions/v1/backup-export",
 }
 
 describe("EdgeTransport", () => {
@@ -19,6 +20,7 @@ describe("EdgeTransport", () => {
       "service-workflow": "https://project.test/functions/v1/service-workflow",
       "certificate-field": "https://project.test/functions/v1/certificate-field",
       "offline-sync": "https://project.test/functions/v1/offline-sync",
+      "backup-export": "https://project.test/functions/v1/backup-export",
     })
   })
 

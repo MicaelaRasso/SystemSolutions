@@ -87,10 +87,12 @@ Solicitud de servicio y, cuando corresponde, la Visita de servicio.
 | `GET /valves/:id/certificates`, `GET/PATCH /certificates/:id`, `GET /certificates/:id/finalized`, `POST /work-orders/:id/certificate-draft` | `certificate-field` | `certificates` | Disponible según el DTO implementado; no implica una pantalla de captura completa. |
 | `POST /visits/:id/signatures` | `certificate-field` | `certificates`, `signatures` | Parcial: registra la referencia y los datos de la firma; no carga bytes de media. |
 | `GET /offline/working-set`, `POST /visits/:id/sync` | `offline-sync` | `offline` | Disponible como working set y lote; la UI persiste acknowledgements, reintenta fallos y conserva conflictos para su revisión. |
+| `POST /backups` | `backup-export` | `backups` | Disponible sólo para el Súper Administrador. Genera una descarga ZIP inmediata completa o por rango inclusivo, con manifest, checksums, advertencias de media y metadata de generación; nunca retiene el archivo. |
 
 Las URLs directas se pueden configurar con `NEXT_PUBLIC_IDENTITY_ADMIN_URL`,
 `NEXT_PUBLIC_ASSET_ACCESS_URL`, `NEXT_PUBLIC_SERVICE_WORKFLOW_URL`,
-`NEXT_PUBLIC_CERTIFICATE_FIELD_URL` y `NEXT_PUBLIC_OFFLINE_SYNC_URL`. Si una
+`NEXT_PUBLIC_CERTIFICATE_FIELD_URL`, `NEXT_PUBLIC_OFFLINE_SYNC_URL` y
+`NEXT_PUBLIC_BACKUP_EXPORT_URL`. Si una
 falta, el frontend apunta a la función propietaria estándar del proyecto. No
 existe una URL alternativa de `service-access`.
 

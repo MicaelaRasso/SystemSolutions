@@ -3,7 +3,6 @@ import {
   Building2,
   CalendarDays,
   ClipboardList,
-  DatabaseBackup,
   FileCheck2,
   LayoutDashboard,
   ListChecks,
@@ -46,7 +45,6 @@ const ADMIN: NavGrupo[] = [
       { titulo: "Talleres y personal", href: "/admin/talleres", icono: Truck },
       { titulo: "Catálogos", href: "/admin/catalogos", icono: ListChecks },
       { titulo: "Config. certificado", href: "/admin/configuracion/certificado", icono: Settings2 },
-      { titulo: "Backups", href: "/admin/backups", icono: DatabaseBackup },
     ],
   },
 ]

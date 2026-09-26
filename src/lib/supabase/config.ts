@@ -10,6 +10,7 @@ export const edgeFunctionNames = [
   "service-workflow",
   "certificate-field",
   "offline-sync",
+  "backup-export",
 ] as const
 
 export type EdgeFunctionName = (typeof edgeFunctionNames)[number]
@@ -46,6 +47,9 @@ export function getSupabaseConfig(): SupabaseConfig {
     "offline-sync":
       process.env.NEXT_PUBLIC_OFFLINE_SYNC_URL ??
       `${url.replace(/\/$/, "")}/functions/v1/offline-sync`,
+    "backup-export":
+      process.env.NEXT_PUBLIC_BACKUP_EXPORT_URL ??
+      `${url.replace(/\/$/, "")}/functions/v1/backup-export`,
   }
 
   return {

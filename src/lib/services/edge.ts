@@ -149,6 +149,7 @@ export class EdgeAccessClient {
 
   functionForPath(path: string): EdgeFunctionName {
     const route = path.replace(/^\//, "").split("?", 1)[0]
+    if (route === "backups") return "backup-export"
     if (
       /^(context(?:\/|$)|accounts(?:\/|$)|mobile-workshops(?:\/|$)|technicians(?:\/|$)|staffing(?:\/|$)|catalogs(?:\/|$)|catalog-options(?:\/|$)|test-standards(?:\/|$))/.test(
         route,
@@ -194,6 +195,10 @@ export class EdgeAccessClient {
       throw new ServiceError("La Edge Function devolvió una respuesta inválida", "network")
     }
     return parsed.data
+  }
+
+  async download(path: string, init: RequestInit = {}): Promise<Response> {
+    return this.transport.response(this.functionForPath(path), path, init)
   }
 
   async login(email: string, password: string): Promise<Usuario> {

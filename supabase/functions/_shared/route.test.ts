@@ -21,6 +21,7 @@ describe("shared route ownership", () => {
     ["POST", ["visits", "v-1", "signatures"], "certificate-field"],
     ["POST", ["visits", "v-1", "sync"], "offline-sync"],
     ["GET", ["offline", "working-set"], "offline-sync"],
+    ["POST", ["backups"], "backup-export"],
   ])("assigns %s /%s to %s", (method, route, owner) => {
     expect(routeOwner(method, route)).toBe(owner)
   })
@@ -30,6 +31,7 @@ describe("shared route ownership", () => {
     expect(routeOwner("DELETE", ["accounts", "a-1"])).toBe("identity-admin")
     expect(routeOwner("DELETE", ["valves", "v-1"])).toBeNull()
     expect(routeOwner("POST", ["operations"])).toBeNull()
+    expect(routeOwner("POST", ["backups", "extra"])).toBeNull()
     expect(routeOwner("PATCH", ["operations", "00000000-0000-0000-0000-000000000001"])).toBeNull()
     expect(routeOwner("POST", ["storage", "upload"])).toBeNull()
   })

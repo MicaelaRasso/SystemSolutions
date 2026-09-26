@@ -66,6 +66,7 @@ export function createEdgeFunctionRegistry({
     "service-workflow",
     "certificate-field",
     "offline-sync",
+    "backup-export",
   ]
   return Object.fromEntries(names.map((name) => [name, directUrl(name)])) as EdgeFunctionRegistry
 }
@@ -138,7 +139,7 @@ export class EdgeTransport {
     return data.session?.access_token
   }
 
-  async request(functionName: EdgeFunctionName, path: string, init: RequestInit = {}) {
+  async response(functionName: EdgeFunctionName, path: string, init: RequestInit = {}) {
     const baseUrl = this.functions[functionName]
     if (!baseUrl) throw new ServiceError("Falta configurar la URL de Supabase", "network")
 
@@ -164,13 +165,17 @@ export class EdgeTransport {
       )
     }
 
-    const data = await responseData(response)
     if (!response.ok) {
+      const data = await responseData(response)
       throw new ServiceError(
         responseMessage(data) ?? "La Edge Function rechazó la solicitud",
         errorCode(response.status),
       )
     }
-    return data
+    return response
+  }
+
+  async request(functionName: EdgeFunctionName, path: string, init: RequestInit = {}) {
+    return responseData(await this.response(functionName, path, init))
   }
 }

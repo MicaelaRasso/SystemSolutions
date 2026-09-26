@@ -1,15 +1,11 @@
 import type { Metadata } from "next"
+import { redirect } from "next/navigation"
 
-import { EnConstruccion } from "@/components/common/states"
+import { requerirSesion } from "@/lib/auth/server"
 
-export const metadata: Metadata = { title: "Backups" }
+export const metadata: Metadata = { title: "Backup manual" }
 
-export default function Page() {
-  return (
-    <EnConstruccion
-      titulo="Backups"
-      fase={8}
-      detalle="Generación y descarga de backup masivo de la información."
-    />
-  )
+export default async function Page() {
+  await requerirSesion(["superadmin"])
+  redirect("/superadmin/backups")
 }

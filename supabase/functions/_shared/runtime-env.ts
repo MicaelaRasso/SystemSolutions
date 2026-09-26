@@ -13,5 +13,7 @@ export const runtimeEnv = (): RuntimeEnv => {
     SUPABASE_ANON_KEY: deno?.env.get("SUPABASE_ANON_KEY"),
     SUPABASE_SERVICE_ROLE_KEY: deno?.env.get("SUPABASE_SERVICE_ROLE_KEY"),
     SUPABASE_URL: deno?.env.get("SUPABASE_URL"),
+    BACKUP_MAX_ARCHIVE_BYTES: deno?.env.get("BACKUP_MAX_ARCHIVE_BYTES"),
+    BACKUP_MAX_DURATION_MS: deno?.env.get("BACKUP_MAX_DURATION_MS"),
   }
 }

@@ -12,6 +12,7 @@ import { createWorkOrdersApi } from "./work-orders"
 import { createYacimientosApi } from "./yacimientos"
 import { createAdminApi } from "./admin"
 import { createOperationsApi } from "./operations"
+import { createBackupsApi } from "./backups"
 
 /**
  * Capability-oriented browser API. Components consume hooks/adapters built on
@@ -31,6 +32,7 @@ export const edgeApi = {
   offline: createOfflineApi(edgeAccess),
   admin: createAdminApi(edgeAccess),
   operations: createOperationsApi(edgeAccess),
+  backups: createBackupsApi(edgeAccess),
 }
 
 export * from "./contracts"
@@ -48,3 +50,4 @@ export * from "./work-orders"
 export * from "./yacimientos"
 export * from "./admin"
 export * from "./operations"
+export * from "./backups"
