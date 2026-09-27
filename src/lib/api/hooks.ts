@@ -20,7 +20,7 @@ import type {
   UpdateServiceRequestInput,
   UpdateValveInput,
   UpdateWorkOrderInput,
-  VisitSignatureInput,
+  VisitSignatureUploadInput,
 } from "./contracts"
 
 const useInvalidate = (keys: readonly (readonly unknown[])[]) => {
@@ -75,6 +75,12 @@ export const useEdgeVisits = () =>
   useQuery({
     queryKey: serviceWorkflowQueryKeys.visits(),
     queryFn: edgeApi.serviceWorkflow.listVisits,
+  })
+
+export const useEdgePendingClientSignatureVisits = () =>
+  useQuery({
+    queryKey: certificateQueryKeys.pendingClientSignatureVisits(),
+    queryFn: edgeApi.certificates.pendingClientSignatureVisits,
   })
 
 export const useEdgeVisit = (visitId: string | undefined) =>
@@ -241,11 +247,11 @@ export const useUpdateEdgeCertificateDraft = () => {
   })
 }
 
-export const useSubmitEdgeVisitSignature = () => {
-  const invalidate = useInvalidate(certificateInvalidations)
+export const useUploadEdgeVisitSignature = () => {
+  const invalidate = useInvalidate([...certificateInvalidations, serviceWorkflowInvalidations[0]])
   return useMutation({
-    mutationFn: ({ visitId, input }: { visitId: string; input: VisitSignatureInput }) =>
-      edgeApi.certificates.submitVisitSignature(visitId, input),
+    mutationFn: ({ visitId, input }: { visitId: string; input: VisitSignatureUploadInput }) =>
+      edgeApi.certificates.uploadVisitSignature(visitId, input),
     onSuccess: invalidate,
   })
 }

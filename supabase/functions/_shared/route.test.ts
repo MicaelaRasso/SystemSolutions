@@ -19,7 +19,10 @@ describe("shared route ownership", () => {
     ["GET", ["operations", "00000000-0000-0000-0000-000000000001"], "service-workflow"],
     ["POST", ["work-orders", "o-1", "certificate-draft"], "certificate-field"],
     ["POST", ["visits", "v-1", "signatures"], "certificate-field"],
+    ["GET", ["clients", "me", "pending-certificates"], "certificate-field"],
     ["POST", ["visits", "v-1", "sync"], "offline-sync"],
+    ["POST", ["visits", "v-1", "claim"], "offline-sync"],
+    ["POST", ["visits", "v-1", "media"], "offline-sync"],
     ["GET", ["offline", "working-set"], "offline-sync"],
     ["POST", ["backups"], "backup-export"],
   ])("assigns %s /%s to %s", (method, route, owner) => {

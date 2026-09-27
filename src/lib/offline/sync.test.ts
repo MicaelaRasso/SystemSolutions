@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest"
 
-import type { OfflineStore, OperacionOffline, VisitaOffline } from "./sync"
-import { OfflineSyncCoordinator } from "./sync"
+import type { OfflineMedia, OfflineStore, OperacionOffline, VisitaOffline } from "./sync"
+import { OfflineSyncCoordinator, queueOfflineSignatureCapture } from "./sync"
 
 class MemoryStore implements OfflineStore {
   operations = new Map<string, OperacionOffline>()
   visits = new Map<string, VisitaOffline>()
+  media = new Map<string, OfflineMedia>()
 
   async getOperation(id: string) {
     return this.operations.get(id)
@@ -21,6 +22,24 @@ class MemoryStore implements OfflineStore {
   }
   async getVisit(id: string) {
     return this.visits.get(id)
+  }
+  async listVisits() {
+    return [...this.visits.values()]
+  }
+  async removeVisit(id: string) {
+    this.visits.delete(id)
+  }
+  async deleteVisit(id: string) {
+    this.visits.delete(id)
+  }
+  async saveMedia(media: OfflineMedia) {
+    this.media.set(media.mediaId ?? media.id, media)
+  }
+  async getMedia(id: string) {
+    return this.media.get(id)
+  }
+  async removeMedia(id: string) {
+    this.media.delete(id)
   }
   async removeOperationPayload(id: string, receipt: OperacionOffline["receipt"]) {
     const operation = this.operations.get(id)
@@ -210,5 +229,199 @@ describe("OfflineSyncCoordinator", () => {
     expect((await store.getVisit("visit-2"))?.estadoLocal).toBe("completada_local")
     expect((await store.getOperation("conflict-op"))?.estado).toBe("conflicto")
     expect((await store.getOperation("conflict-op"))?.payload).toEqual({ local_completed_at: "2026-09-25T11:59:00.000Z" })
+  })
+
+  it("prevents certificate edits after local completion", async () => {
+    const store = new MemoryStore()
+    await store.saveVisit({
+      id: "closed-visit",
+      context: {},
+      cachedAt: "2026-09-25T11:00:00.000Z",
+      estadoLocal: "completada_local",
+      synchronizationPending: true,
+    })
+    const coordinator = new OfflineSyncCoordinator(store, { syncVisit: async () => ({ operations: [] }) })
+
+    await expect(
+      coordinator.queue("closed-visit", "device-1", "update_certificate_draft", { notes: "late" }),
+    ).rejects.toThrow("borrador está cerrado")
+  })
+
+  it("persists offline signature media and submits it after the media operation", async () => {
+    const store = new MemoryStore()
+    const coordinator = new OfflineSyncCoordinator(store, { syncVisit: async () => ({ operations: [] }) }, {
+      now: () => "2026-09-25T12:00:00.000Z",
+      id: (() => { let id = 0; return () => `signature-op-${id++}` })(),
+    })
+    const file = new Blob(["signature"], { type: "image/png" })
+
+    const queued = await queueOfflineSignatureCapture({
+      store,
+      coordinator,
+      visitId: "visit-signature",
+      deviceId: "device-1",
+      party: "tecnico",
+      signerName: "Ana Técnica",
+      file,
+      mediaId: "media-signature-1",
+    })
+
+    expect((await store.getMedia("media-signature-1"))?.blob).toBe(file)
+    expect(queued.mediaOperation.kind).toBe("upload_evidence")
+    expect(Object.keys(queued.mediaOperation.payload)).not.toContain(["media", "name"].join("_"))
+    expect(queued.signatureOperation.kind).toBe("submit_signature")
+    expect(queued.signatureOperation.dependencies).toEqual([queued.mediaOperation.operationId])
+    expect(queued.signatureOperation.payload).toMatchObject({
+      image_id: "media-signature-1",
+      media_id: "media-signature-1",
+      signer_name: "Ana Técnica",
+    })
+  })
+
+  it("uploads IndexedDB media before sending and compacts it only after acknowledgement", async () => {
+    const store = new MemoryStore()
+    const uploadCalls: unknown[] = []
+    let sentPayload: Record<string, unknown> | undefined
+    const coordinator = new OfflineSyncCoordinator(store, {
+      uploadMedia: async (input) => {
+        uploadCalls.push(input)
+        return {
+          media_id: input.mediaId,
+          image_id: input.mediaId,
+          bucket: "certificate-signatures",
+          object_path: `visits/${input.visitId}/tecnico/${input.mediaId}.png`,
+          content_type: "image/png",
+          server_received_at: "2026-09-25T12:00:01.000Z",
+        }
+      },
+      syncVisit: async (_visitId, operations) => {
+        sentPayload = (operations[0] as { payload: Record<string, unknown> }).payload
+        return {
+          operations: [{ operation_id: "media-op", estado: "sincronizada", result: { accepted: true } }],
+        }
+      },
+    }, { now: () => "2026-09-25T12:00:00.000Z", id: () => "unused" })
+    await store.saveMedia({
+      id: "media-1",
+      mediaId: "media-1",
+      visitId: "visit-media",
+      operationId: "media-op",
+      kind: "signature",
+      blob: new Blob(["signature"], { type: "image/png" }),
+      contentType: "image/png",
+      createdAt: "2026-09-25T11:59:00.000Z",
+    })
+    await store.saveOperation({
+      operationId: "media-op",
+      visitId: "visit-media",
+      kind: "submit_signature",
+      payload: { media_id: "media-1", party: "tecnico", signer_name: "Ana" },
+      dependencies: ["prior-op"],
+      schemaVersion: 2,
+      createdAt: "2026-09-25T12:00:00.000Z",
+      deviceTimestamp: "2026-09-25T12:00:00.000Z",
+      deviceId: "device-1",
+      estado: "guardada_local",
+      attempts: 0,
+      mediaIds: ["media-1"],
+    })
+    await store.saveOperation({
+      operationId: "prior-op",
+      visitId: "visit-media",
+      kind: "work_order_outcome",
+      payload: {},
+      dependencies: [],
+      schemaVersion: 2,
+      createdAt: "2026-09-25T11:58:00.000Z",
+      deviceId: "device-1",
+      estado: "sincronizada",
+      attempts: 1,
+    })
+
+    await coordinator.sync("visit-media", "device-1")
+
+    expect(uploadCalls).toHaveLength(1)
+    expect(sentPayload).toMatchObject({
+      party: "tecnico",
+      image_id: "media-1",
+      bucket: "certificate-signatures",
+      object_path: "visits/visit-media/tecnico/media-1.png",
+    })
+    expect(store.media.has("media-1")).toBe(false)
+  })
+
+  it("copies the acknowledged upload reference into a dependent signature operation", async () => {
+    const store = new MemoryStore()
+    await store.saveMedia({
+      id: "media-2",
+      mediaId: "media-2",
+      visitId: "visit-signature-dependency",
+      kind: "signature",
+      blob: new Blob(["signature"], { type: "image/png" }),
+      createdAt: "2026-09-25T12:00:00.000Z",
+    })
+    const sent: { kind: string; payload: Record<string, unknown>; dependencies: string[] }[] = []
+    const coordinator = new OfflineSyncCoordinator(store, {
+      uploadMedia: async ({ mediaId, visitId }) => ({
+        media_id: mediaId,
+        image_id: mediaId,
+        bucket: "certificate-signatures",
+        object_path: `visits/${visitId}/tecnico/${mediaId}.png`,
+        content_type: "image/png",
+        server_received_at: "2026-09-25T12:00:01.000Z",
+      }),
+      syncVisit: async (_visitId, operations) => {
+        const current = operations as {
+          operation_id: string
+          kind: string
+          payload: Record<string, unknown>
+          dependencies: string[]
+        }[]
+        sent.push(...current)
+        return {
+          operations: current.map((operation) => ({
+            operation_id: operation.operation_id,
+            estado: "sincronizada" as const,
+            result:
+              operation.kind === "upload_evidence"
+                ? {
+                    media_id: "media-2",
+                    image_id: "media-2",
+                    bucket: "certificate-signatures",
+                    object_path: "visits/visit-signature-dependency/tecnico/media-2.png",
+                  }
+                : { accepted: true },
+          })),
+        }
+      },
+    })
+    const media = await coordinator.queue(
+      "visit-signature-dependency",
+      "device-1",
+      "upload_evidence",
+      { media_id: "media-2", category: "firma_tecnico" },
+      [],
+      { mediaIds: ["media-2"] },
+    )
+    await coordinator.queue(
+      "visit-signature-dependency",
+      "device-1",
+      "submit_signature",
+      { media_id: "media-2", image_id: "media-2", party: "tecnico", signer_name: "Ana" },
+      [media.operationId],
+    )
+
+    await coordinator.sync("visit-signature-dependency", "device-1")
+
+    expect(sent).toHaveLength(2)
+    expect(sent[1]).toMatchObject({
+      kind: "submit_signature",
+      dependencies: [media.operationId],
+      payload: {
+        bucket: "certificate-signatures",
+        object_path: "visits/visit-signature-dependency/tecnico/media-2.png",
+        image_id: "media-2",
+      },
+    })
   })
 })

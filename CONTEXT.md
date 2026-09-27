@@ -152,3 +152,20 @@ Access granted to the active Taller Móvil for a yacimiento and its complete des
 
 **Historial de relaciones**:
 The preserved record of previous service relationships and hierarchy relationships. It supports audit but is not visible to ordinary users.
+
+## Backups
+
+**Backup manual**:
+An unencrypted archive generated on demand by the Súper Administrador, either as a complete export or as an export of every record and file related to activity within an inclusive date range. It is delivered immediately as a download and is not retained by System Solutions; M8 does not include restoration.
+
+**Backup completo**:
+A Backup manual containing all current application-owned business records and referenced files, including historical, pending, draft, configuration, and synchronization data. It excludes authentication internals, secrets, credentials, and infrastructure configuration.
+
+**Backup por rango de fechas**:
+A Backup manual containing every activity within an inclusive date range plus the minimum related records needed to interpret that activity, even when those related records fall outside the range.
+
+**Manifiesto del backup**:
+The description included in a Backup manual that records its scope, normalized date boundaries, generation time, record and file counts, checksum when available, and any missing or unreadable files.
+
+**Registro de generación del backup**:
+The persisted metadata about a Backup manual request, including the Súper Administrador, time, scope, date range when applicable, counts, checksum when available, warnings, and outcome. It does not retain the archive.

@@ -126,6 +126,9 @@ export const routeOwner = (method: string, route: string[]): FunctionName | null
   )
     return "identity-admin"
 
+  if (method === "GET" && is(route, "clients", "me", "pending-certificates"))
+    return "certificate-field"
+
   if (
     (route[0] === "clients" && ["GET", "POST", "PATCH", "PUT", "DELETE"].includes(method)) ||
     (method === "GET" && is(route, "yacimientos")) ||
@@ -183,6 +186,8 @@ export const routeOwner = (method: string, route: string[]): FunctionName | null
 
   if (
     (method === "POST" && route[0] === "visits" && route.length === 3 && route[2] === "sync") ||
+    (method === "POST" && route[0] === "visits" && route.length === 3 && route[2] === "claim") ||
+    (method === "POST" && route[0] === "visits" && route.length === 3 && route[2] === "media") ||
     (method === "GET" && is(route, "offline", "working-set"))
   )
     return "offline-sync"

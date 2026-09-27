@@ -62,10 +62,15 @@ beforeAll(async () => {
 
 afterAll(() => vi.unstubAllGlobals())
 
-const context = (request: Request, route: string[], rpc: ReturnType<typeof vi.fn>) => ({
+const context = (
+  request: Request,
+  route: string[],
+  rpc: ReturnType<typeof vi.fn>,
+  body: Record<string, unknown> = {},
+) => ({
   request,
   route,
-  body: {},
+  body,
   actor: { id: clientId, authorization: "Bearer token" },
   db: { rpc } as never,
   correlationId: "correlation-1",
@@ -228,5 +233,109 @@ describe("service-workflow operations read routes", () => {
     const response = await handler(context(request, route, rpc))
     expect(response.status).toBe(404)
     expect(rpc).not.toHaveBeenCalled()
+  })
+})
+
+describe("service-workflow mutation routes", () => {
+  it.each([
+    {
+      name: "edits a service request",
+      method: "PATCH",
+      route: ["requests", clientId],
+      body: { selections: [{ kind: "valvula", id: operationId }] },
+      rpcName: "api_update_service_request",
+      rpcArgs: { request_id: clientId, selections: [{ kind: "valvula", id: operationId }] },
+    },
+    {
+      name: "schedules a visit",
+      method: "POST",
+      route: ["requests", clientId, "schedule"],
+      body: {
+        taller_movil_id: clientId,
+        starts_at: "2099-01-01T09:00:00Z",
+        ends_at: "2099-01-01T10:00:00Z",
+      },
+      rpcName: "api_schedule_visit",
+      rpcArgs: {
+        request_id: clientId,
+        provider_id: clientId,
+        visit_starts_at: "2099-01-01T09:00:00Z",
+        visit_ends_at: "2099-01-01T10:00:00Z",
+      },
+    },
+    {
+      name: "accepts a visit",
+      method: "POST",
+      route: ["visits", operationId, "accept"],
+      body: {},
+      rpcName: "api_accept_visit",
+      rpcArgs: { visit_id: operationId },
+    },
+    {
+      name: "rejects a visit",
+      method: "POST",
+      route: ["visits", operationId, "reject"],
+      body: {},
+      rpcName: "api_reject_visit",
+      rpcArgs: { visit_id: operationId },
+    },
+    {
+      name: "cancels a visit",
+      method: "POST",
+      route: ["visits", operationId, "cancel"],
+      body: {},
+      rpcName: "api_cancel_visit",
+      rpcArgs: { visit_id: operationId },
+    },
+    {
+      name: "starts a visit",
+      method: "POST",
+      route: ["visits", operationId, "start"],
+      body: {},
+      rpcName: "api_start_visit",
+      rpcArgs: { visit_id: operationId },
+    },
+    {
+      name: "completes a visit",
+      method: "POST",
+      route: ["visits", operationId, "complete"],
+      body: {},
+      rpcName: "api_complete_visit",
+      rpcArgs: { visit_id: operationId },
+    },
+    {
+      name: "adds a work order",
+      method: "POST",
+      route: ["visits", operationId, "work-orders"],
+      body: { valvula_id: clientId },
+      rpcName: "api_add_work_order",
+      rpcArgs: { visit_id: operationId, target_valvula: clientId },
+    },
+    {
+      name: "updates a work order outcome",
+      method: "PATCH",
+      route: ["work-orders", operationId],
+      body: { outcome: "no_evaluada", not_evaluated_reason: "No access" },
+      rpcName: "api_update_work_order",
+      rpcArgs: {
+        work_order_id: operationId,
+        outcome: "no_evaluada",
+        not_evaluated_reason: "No access",
+      },
+    },
+  ])("$name through the Edge RPC seam", async ({ method, route, body, rpcName, rpcArgs }) => {
+    const rpc = vi.fn().mockResolvedValue({ data: { ok: true }, error: null })
+    const request = new Request(
+      "https://example.test/functions/v1/service-workflow/" + route.join("/"),
+      {
+        method,
+      },
+    )
+
+    await expect(handler(context(request, route, rpc, body))).resolves.toEqual({
+      data: { ok: true },
+      error: null,
+    })
+    expect(rpc).toHaveBeenCalledWith(rpcName, rpcArgs)
   })
 })

@@ -1,7 +1,40 @@
-import { routeNotFound } from "../_shared/http.ts"
-import { serveFunction } from "../_shared/transport.ts"
+import { HttpError } from "../_shared/errors.ts"
+import { json, routeNotFound } from "../_shared/http.ts"
+import {
+  removeStorageObject,
+  uploadStorageObject,
+  validateStorageObject,
+} from "../_shared/storage.ts"
+import { isUuid } from "../_shared/route.ts"
+import { serveFunction, type RouteHandler } from "../_shared/transport.ts"
 
-serveFunction("certificate-field", async ({ request, route, body, db, correlationId }) => {
+const SIGNATURE_BUCKET = "certificate-signatures"
+
+const signatureCaptureMethod = (party: unknown, requested: unknown): string => {
+  if (party === "tecnico") {
+    if (requested !== undefined && requested !== "pwa_tecnico")
+      throw new HttpError(400, "Invalid Técnico capture method")
+    return "pwa_tecnico"
+  }
+  if (party !== "cliente") throw new HttpError(400, "Invalid signature party")
+  if (requested === undefined) return "pwa_cliente_presencial"
+  if (requested !== "pwa_cliente_presencial" && requested !== "panel_cliente")
+    throw new HttpError(400, "Invalid Cliente capture method")
+  return requested
+}
+
+const signatureExtension = (contentType: string) =>
+  (({ "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" }) as Record<string, string>)[
+    contentType
+  ] ?? "png"
+
+export const certificateFieldHandler: RouteHandler = async ({
+  request,
+  route,
+  body,
+  db,
+  correlationId,
+}) => {
   const segments = route
 
   if (
@@ -9,10 +42,24 @@ serveFunction("certificate-field", async ({ request, route, body, db, correlatio
     request.method === "POST" &&
     segments[1] &&
     segments[2] === "certificate-draft"
-  )
+  ) {
+    if (typeof body.source_certificate_id === "string")
+      return db.rpc("api_create_certificate_replacement", {
+        source_certificate_id: body.source_certificate_id,
+        work_order_id: segments[1],
+        reason: body.reason ?? "correccion",
+      })
     return db.rpc("api_start_certificate_draft", {
       work_order_id: segments[1],
     })
+  }
+  if (
+    segments[0] === "clients" &&
+    request.method === "GET" &&
+    segments[1] === "me" &&
+    segments[2] === "pending-certificates"
+  )
+    return db.rpc("api_cliente_pending_certificates")
   if (segments[0] === "certificates" && request.method === "GET" && segments[1] && !segments[2])
     return db.rpc("api_certificate_draft", {
       certificate_id: segments[1],
@@ -45,14 +92,52 @@ serveFunction("certificate-field", async ({ request, route, body, db, correlatio
     request.method === "POST" &&
     segments[1] &&
     segments[2] === "signatures"
-  )
-    return db.rpc("api_submit_visit_signature", {
-      target_visit: segments[1],
-      signing_party: body.party,
-      signer_name: body.signer_name,
-      bucket_name: body.bucket,
-      asset_path: body.object_path,
+  ) {
+    if (!isUuid(segments[1])) throw new HttpError(400, "visitId must be a UUID")
+    const file = body.file instanceof File ? body.file : null
+    if (!file)
+      return json(request, { error: "A signature image file is required" }, 400, correlationId)
+
+    const party = body.party
+    const signerName = typeof body.signer_name === "string" ? body.signer_name.trim() : ""
+    if (!signerName)
+      return json(request, { error: "A signer name is required" }, 400, correlationId)
+    const captureMethod = signatureCaptureMethod(party, body.capture_method)
+    const objectName = `visits/${segments[1]}/${party}/${crypto.randomUUID()}.${signatureExtension(file.type)}`
+    const validation = validateStorageObject({
+      objectName,
+      contentType: file.type,
+      size: file.size,
     })
+    if (!validation.ok) return json(request, { error: validation.error }, 400, correlationId)
+
+    await uploadStorageObject(SIGNATURE_BUCKET, validation.metadata.objectName, file)
+    const result = await db.rpc("api_submit_visit_signature", {
+      target_visit: segments[1],
+      signing_party: party,
+      signer_name: signerName,
+      bucket_name: SIGNATURE_BUCKET,
+      asset_path: validation.metadata.objectName,
+      capture_method: captureMethod,
+    })
+    if (result.error) {
+      try {
+        await removeStorageObject(SIGNATURE_BUCKET, validation.metadata.objectName)
+      } catch (cleanupError) {
+        console.error(
+          JSON.stringify({
+            event: "certificate_signature_cleanup_failed",
+            visitId: segments[1],
+            objectName: validation.metadata.objectName,
+            error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+          }),
+        )
+      }
+    }
+    return result
+  }
 
   return routeNotFound(request, correlationId)
-})
+}
+
+serveFunction("certificate-field", certificateFieldHandler)

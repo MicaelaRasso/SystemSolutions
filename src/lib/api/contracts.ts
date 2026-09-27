@@ -202,6 +202,27 @@ export const visitDtoSchema = z.object({
 })
 export type VisitDto = z.infer<typeof visitDtoSchema>
 
+export const pendingClientSignatureVisitDtoSchema = z.object({
+  visit: visitRowSchema,
+  yacimiento: z
+    .object({
+      id: edgeIdSchema,
+      nombre: z.string(),
+    })
+    .passthrough(),
+  work_orders: z.array(workOrderDetailDtoSchema),
+  pending_certificates: z.array(certificateRowSchema),
+  pending_certificate_count: z.number().int().positive(),
+})
+export type PendingClientSignatureVisitDto = z.infer<typeof pendingClientSignatureVisitDtoSchema>
+
+export const pendingClientSignatureVisitsDtoSchema = z.object({
+  visits: z.array(pendingClientSignatureVisitDtoSchema),
+})
+export type PendingClientSignatureVisitsDto = z.infer<
+  typeof pendingClientSignatureVisitsDtoSchema
+>
+
 export const visitTransitionDtoSchema = z.object({ visit: visitRowSchema }).or(visitDtoSchema)
 export const scheduleVisitInputSchema = z.object({
   tallerMovilId: edgeIdSchema,
@@ -277,13 +298,11 @@ export const valveCertificateHistoryDtoSchema = z.object({
 })
 export type ValveCertificateHistoryDto = z.infer<typeof valveCertificateHistoryDtoSchema>
 
-export const visitSignatureInputSchema = z.object({
-  party: z.enum(["tecnico", "cliente"]),
-  signerName: z.string().trim().min(1),
-  bucket: z.string().trim().min(1),
-  objectPath: z.string().trim().min(1),
-})
-export type VisitSignatureInput = z.infer<typeof visitSignatureInputSchema>
+export interface VisitSignatureUploadInput {
+  party: "tecnico" | "cliente"
+  signerName: string
+  file: File
+}
 export const visitSignatureDtoSchema = z.object({
   signature_id: edgeIdSchema,
   finalized_certificates: z.array(certificateRowSchema),
@@ -296,12 +315,19 @@ export const offlineOperationInputSchema = z.object({
     "start_certificate_draft",
     "update_certificate_draft",
     "submit_signature",
+    "upload_photo",
+    "capture_evidence",
+    "upload_evidence",
+    "finalize_certificate",
+    "claim_visit",
     "complete_visit",
   ]),
   payload: z.record(z.string(), z.unknown()),
+  idempotencyKey: edgeIdSchema.optional(),
   schemaVersion: z.number().int().positive().optional(),
   dependencies: z.array(edgeIdSchema).optional(),
   deviceTimestamp: edgeTimestampSchema.optional(),
+  baseVersions: z.record(z.string(), z.number().int().nonnegative()).optional(),
 })
 export const syncVisitInputSchema = z.object({
   deviceId: edgeIdSchema,
@@ -319,11 +345,39 @@ export const syncVisitDtoSchema = z.object({
         result: z.unknown().optional(),
         error_code: z.string().optional(),
         error_message: z.string().optional(),
+        server_received_at: edgeTimestampSchema.optional(),
+        server_acknowledged_at: edgeTimestampSchema.optional(),
       })
       .passthrough(),
   ),
+  visit_acknowledgement: z
+    .object({
+      visit_id: edgeIdSchema,
+      estado: z.enum(["sincronizada", "conflicto", "pendiente"]),
+      server_received_at: edgeTimestampSchema,
+      server_acknowledged_at: edgeTimestampSchema,
+    })
+    .passthrough()
+    .optional(),
 })
 export type SyncVisitDto = z.infer<typeof syncVisitDtoSchema>
+
+export const offlineClaimVisitDtoSchema = z.object({
+  visit_id: edgeIdSchema,
+  device_id: edgeIdSchema,
+  claimed_at: edgeTimestampSchema,
+  last_seen_at: edgeTimestampSchema,
+})
+
+export const offlineMediaUploadDtoSchema = z.object({
+  media_id: edgeIdSchema,
+  image_id: edgeIdSchema,
+  bucket: z.string().min(1),
+  object_path: z.string().min(1),
+  content_type: z.string().min(1),
+  server_received_at: edgeTimestampSchema,
+})
+export type OfflineMediaUploadDto = z.infer<typeof offlineMediaUploadDtoSchema>
 
 export const offlineWorkingSetDtoSchema = z.object({
   visits: z.array(

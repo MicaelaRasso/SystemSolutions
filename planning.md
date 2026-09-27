@@ -79,7 +79,6 @@ app/
     talleres/                       Cuentas de taller móvil (RF-04) y personal
     catalogos/                      Listas desplegables, patrones, alcance/repuestos, condiciones del servicio
     configuracion/certificado/      Campos configurables del certificado (RF-44, P-10)
-    backups/                        Backup masivo (RF-46)
   (taller)/taller/
     page.tsx                        Mis tareas del día / semana (RF-17)
     tareas/[id]/                    Detalle de tarea + certificados cargados
@@ -253,7 +252,7 @@ Cada fase termina con algo navegable y revisable por el cliente.
 - [ ] Histórico de certificados con filtros cliente/yacimiento/planta/válvula, estado de firma y vigencia.
 - [ ] Detalle del certificado con auditoría de correcciones y descarga siempre habilitada.
 - [ ] Configuración de campos del certificado (RF-44).
-- [ ] Pantallas de backup (Súper Admin: por fecha; Admin: masivo) con descarga simulada.
+- [ ] Pantalla de Backup manual del Súper Administrador: exportación completa o por rango inclusivo, con descarga inmediata y advertencia de contenido sensible.
 - [ ] Súper Admin: gestión de administradores.
 
 ### Fase 9 — Pulido
@@ -283,7 +282,7 @@ el contrato de API y PostgreSQL conserva RLS y autorización de dominio. Véase
 | Descarga de PDF | Edge Function autorizada entrega o transmite el archivo; no hay URL de Storage para el navegador |
 | Corrección 24 h + auditoría | Edge Function `corregir-certificado` |
 | Aviso de vencimiento 30 días | Edge Function `avisos-vencimiento` programada (cron), email desde systemsrl.com.ar |
-| Backups | Edge Function `backup` (export filtrado por fecha) |
+| Backups | Capability autenticada de Edge Function `backup`: exportación completa o por rango, sin retención ni restauración |
 | Logos, fotos, adjuntos | Edge Function autorizada gestiona Supabase Storage (buckets por tipo) |
 
 ---

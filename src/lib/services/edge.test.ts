@@ -11,6 +11,7 @@ describe("EdgeAccessClient", () => {
     ["hierarchy", "asset-access"],
     ["valves/v1", "asset-access"],
     ["valves/v1/certificates", "certificate-field"],
+    ["clients/me/pending-certificates", "certificate-field"],
     ["requests/r1/schedule", "service-workflow"],
     ["visits/v1", "service-workflow"],
     ["visits/v1/sync", "offline-sync"],

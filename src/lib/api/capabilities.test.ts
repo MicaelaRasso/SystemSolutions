@@ -59,11 +59,10 @@ describe("capability Edge clients", () => {
     await createWorkOrdersApi(workOrders.edge).addWorkOrder("visit-1", "valve-1")
 
     const signatures = client({ signature_id: "signature-1", finalized_certificates: [] })
-    await createSignaturesApi(signatures.edge).submitVisitSignature("visit-1", {
+    await createSignaturesApi(signatures.edge).uploadVisitSignature("visit-1", {
       party: "tecnico",
       signerName: "Ana",
-      bucket: "signatures",
-      objectPath: "visit-1/tecnico.png",
+      file: new File(["signature"], "tecnico.png", { type: "image/png" }),
     })
 
     const offline = client({ visits: [] })
@@ -296,5 +295,40 @@ describe("capability Edge clients", () => {
         }),
       }),
     )
+  })
+
+  it("uploads offline media through the offline-sync multipart seam", async () => {
+    const response = {
+      media_id: "00000000-0000-0000-0000-000000000010",
+      image_id: "00000000-0000-0000-0000-000000000010",
+      bucket: "certificate-signatures",
+      object_path:
+        "visits/00000000-0000-0000-0000-000000000001/tecnico/00000000-0000-0000-0000-000000000010.png",
+      content_type: "image/png",
+      server_received_at: "2026-09-25T12:00:00.000Z",
+    }
+    const { edge, request } = client(response)
+
+    await createOfflineApi(edge).uploadMedia("00000000-0000-0000-0000-000000000001", {
+      deviceId: "00000000-0000-0000-0000-000000000002",
+      operationId: "00000000-0000-0000-0000-000000000003",
+      mediaId: "00000000-0000-0000-0000-000000000010",
+      kind: "signature",
+      party: "tecnico",
+      file: new Blob(["signature"], { type: "image/png" }),
+      fileName: "signature.png",
+    })
+
+    const [url, init] = request.mock.calls[0]
+    expect(url).toBe(
+      "https://example.test/functions/v1/offline-sync/visits/00000000-0000-0000-0000-000000000001/media",
+    )
+    expect(init?.method).toBe("POST")
+    expect(init?.body).toBeInstanceOf(FormData)
+    const form = init?.body as FormData
+    expect(form.get("device_id")).toBe("00000000-0000-0000-0000-000000000002")
+    expect(form.get("operation_id")).toBe("00000000-0000-0000-0000-000000000003")
+    expect(form.get("party")).toBe("tecnico")
+    expect(form.get("file")).toBeInstanceOf(File)
   })
 })
