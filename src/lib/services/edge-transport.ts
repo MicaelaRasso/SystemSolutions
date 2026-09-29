@@ -150,7 +150,7 @@ export class EdgeTransport {
 
     let response: Response
     try {
-      response = await this.fetcher(`${baseUrl}/${path.replace(/^\//, "")}`, {
+      response = await this.fetcher.call(globalThis, `${baseUrl}/${path.replace(/^\//, "")}`, {
         ...init,
         headers,
       })

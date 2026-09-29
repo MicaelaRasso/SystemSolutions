@@ -12,6 +12,25 @@ const functionUrls = {
 }
 
 describe("EdgeTransport", () => {
+  it("calls the default fetch with the global object as its receiver", async () => {
+    const fetch = vi.fn(function (this: unknown) {
+      expect(this).toBe(globalThis)
+      return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }))
+    })
+    vi.stubGlobal("fetch", fetch)
+
+    try {
+      const transport = new EdgeTransport({
+        functionUrls,
+        publishableKey: "publishable-key",
+      })
+
+      await expect(transport.request("identity-admin", "context")).resolves.toEqual({ ok: true })
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it("uses one direct URL for each owning function", () => {
     expect(createEdgeFunctionRegistry({ functionUrls })).toEqual(functionUrls)
     expect(createEdgeFunctionRegistry({ baseUrl: "https://project.test" })).toEqual({
