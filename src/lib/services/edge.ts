@@ -80,14 +80,14 @@ export class EdgeAccessClient {
 
   constructor({
     baseUrl,
-    anonKey,
+    publishableKey,
     functionUrls,
     request = fetch,
     auth,
     correlationId,
   }: {
     baseUrl?: string
-    anonKey?: string
+    publishableKey?: string
     functionUrls?: Partial<Record<EdgeFunctionName, string>>
     request?: typeof fetch
     auth?: () => BrowserSupabaseClient
@@ -97,7 +97,7 @@ export class EdgeAccessClient {
     this.transport = new EdgeTransport({
       functionUrls,
       baseUrl,
-      anonKey,
+      publishableKey,
       request,
       auth: this.auth,
       correlationId,
@@ -158,7 +158,7 @@ export class EdgeAccessClient {
       return "identity-admin"
     if (route === "clients/me/pending-certificates") return "certificate-field"
     if (route === "clients" || route.startsWith("clients/")) return "asset-access"
-    if (/^operations(?:\/|$)/.test(route) || route === "attachments") return "service-workflow"
+    if (/^(?:operations|audit|admin)(?:\/|$)/.test(route) || route === "attachments") return "service-workflow"
     if (
       route.startsWith("offline/") ||
       /^(?:visits\/[^/]+\/(?:sync|claim|media))$/.test(route)

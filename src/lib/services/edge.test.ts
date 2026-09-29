@@ -39,7 +39,7 @@ describe("EdgeAccessClient", () => {
     )
     const client = new EdgeAccessClient({
       baseUrl: "https://example.supabase.co",
-      anonKey: "anon-key",
+      publishableKey: "publishable-key",
       request,
     })
 
@@ -50,7 +50,7 @@ describe("EdgeAccessClient", () => {
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({
-          apikey: "anon-key",
+          apikey: "publishable-key",
           "content-type": "application/json",
         }),
         body: JSON.stringify({ kind: "planta", parent_id: "yac-1", name: "Planta 1" }),
@@ -237,7 +237,7 @@ describe("EdgeAccessClient", () => {
     )
     const client = new EdgeAccessClient({
       baseUrl: "https://example.test",
-      anonKey: "anon-key",
+      publishableKey: "publishable-key",
       correlationId: "correlation-1",
       request,
       auth: () => ({ auth: { getSession } }) as never,
@@ -255,7 +255,7 @@ describe("EdgeAccessClient", () => {
       "https://example.test/functions/v1/identity-admin/context",
       expect.objectContaining({
         headers: expect.objectContaining({
-          apikey: "anon-key",
+          apikey: "publishable-key",
           "x-correlation-id": "correlation-1",
         }),
       }),

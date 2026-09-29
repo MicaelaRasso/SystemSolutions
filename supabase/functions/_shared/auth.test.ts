@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest"
 import { authenticateRequest, bearerAuthorization } from "./auth.ts"
 
 describe("shared authentication", () => {
-  const env = { SUPABASE_URL: "https://example.supabase.co", SUPABASE_ANON_KEY: "anon" }
+  const env = {
+    SUPABASE_URL: "https://example.supabase.co",
+    SUPABASE_PUBLISHABLE_KEY: "publishable",
+  }
 
   it("accepts only bearer authorization headers", () => {
     expect(bearerAuthorization("Bearer token")).toBe("Bearer token")

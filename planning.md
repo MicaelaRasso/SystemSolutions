@@ -75,7 +75,8 @@ app/
       [id]/estructura/              Árbol yacimiento → planta → equipo → válvula (RF-08)
       [id]/usuarios/                Usuarios de la empresa + accesos asignados (RF-03)
     certificados/                   Histórico con filtros (RF-33, CA-08)
-      [id]/                         Vista del certificado, auditoría, descarga (RF-29)
+      [id]/                         Vista del certificado, auditoría relacionada, historial de la Válvula y descarga (RF-29)
+    auditoria/                      Registro global de auditoría para administradores (CA-08)
     talleres/                       Cuentas de taller móvil (RF-04) y personal
     catalogos/                      Listas desplegables, patrones, alcance/repuestos, condiciones del servicio
     configuracion/certificado/      Campos configurables del certificado (RF-44, P-10)
@@ -248,9 +249,10 @@ Cada fase termina con algo navegable y revisable por el cliente.
 - [ ] Perfil de empresa y carga de logo.
 
 ### Fase 8 — Panel admin, histórico y backups (M7 + M8)
-- [ ] Dashboard: certificados generados, servicios completados en el período, próximos vencimientos, tareas sin taller asignado.
+- [ ] Dashboard: certificados finalizados, Visitas de servicio completadas, certificados pendientes, certificados por vencer y Visitas de servicio sin Taller Móvil asignado; período seleccionable con mes actual por defecto.
 - [ ] Histórico de certificados con filtros cliente/yacimiento/planta/válvula, estado de firma y vigencia.
-- [ ] Detalle del certificado con auditoría de correcciones y descarga siempre habilitada.
+- [ ] Registro global de auditoría con filtros por fecha, actor, acción, objetivo, resultado, Cliente, Yacimiento e identificadores de certificado/Visita de servicio.
+- [ ] Detalle del certificado con eventos de auditoría relacionados, historial completo de la Válvula y descarga siempre habilitada; no muestra una sección separada de correcciones.
 - [ ] Configuración de campos del certificado (RF-44).
 - [ ] Pantalla de Backup manual del Súper Administrador: exportación completa o por rango inclusivo, con descarga inmediata y advertencia de contenido sensible.
 - [ ] Súper Admin: gestión de administradores.

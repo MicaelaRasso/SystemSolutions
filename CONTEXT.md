@@ -94,6 +94,17 @@ A pending operation rejected because the server-side visit, access, or certifica
 **Estado local de la visita**:
 The device's view of a Visita de servicio, which may show the visit as completed before the backend has received its completion operation. Local completion makes certificate drafts read-only even while synchronization is pending. It is distinct from the backend's Estado de la Visita de servicio and must show whether data synchronization is pending, synchronized, or conflicted.
 
+## Operational control and audit
+
+**Métrica operativa**:
+An aggregate indicator of current operational activity, such as finalized certificates, completed visits, pending certificates, upcoming expirations, or unassigned visits. It supports administrative monitoring and is not evidence of a specific certificate event.
+
+**Registro de auditoría**:
+An immutable record of a state-changing action or sensitive export, preserving its actor, action, target, outcome, server receipt time, and structured change summary; offline actions may also preserve the device event time and correlation identity. Ordinary reads do not create audit records.
+
+**Historial de certificados**:
+The complete sequence of persisted certification records for a Válvula, including pending and finalized certificates, which remains separate from operational metrics and the Registro de auditoría.
+
 ## Certificates and evidence
 
 **Plantilla de certificado**:

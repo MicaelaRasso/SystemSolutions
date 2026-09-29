@@ -9,6 +9,7 @@ import {
   RefreshCw,
   Settings2,
   ShieldCheck,
+  History,
   Truck,
   UserCircle,
   type LucideIcon,
@@ -36,6 +37,7 @@ const ADMIN: NavGrupo[] = [
       { titulo: "Cronograma", href: "/admin/cronograma", icono: Truck },
       { titulo: "Tareas", href: "/admin/tareas", icono: ClipboardList },
       { titulo: "Certificados", href: "/admin/certificados", icono: FileCheck2 },
+      { titulo: "Auditoría", href: "/admin/auditoria", icono: History },
     ],
   },
   {

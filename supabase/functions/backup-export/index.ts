@@ -54,10 +54,10 @@ const numberFromEnv = (name: string, fallback: number) => {
 
 const storageDownloader = async () => {
   const env = runtimeEnv()
-  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY)
+  if (!env.SUPABASE_URL || !env.SUPABASE_SECRET_KEY)
     throw new HttpError(500, "Supabase storage is not configured")
   const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.117.2")
-  const client = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+  const client = createClient(env.SUPABASE_URL, env.SUPABASE_SECRET_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
   return async (reference: { bucket: string; object_path: string }) => {

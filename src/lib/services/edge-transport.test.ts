@@ -34,7 +34,7 @@ describe("EdgeTransport", () => {
       .mockResolvedValue(new Response(JSON.stringify({ accepted: true }), { status: 200 }))
     const transport = new EdgeTransport({
       functionUrls,
-      anonKey: "publishable-key",
+      publishableKey: "publishable-key",
       auth: () => ({ auth: { getSession } }) as never,
       correlationId: "correlation-1",
       request,

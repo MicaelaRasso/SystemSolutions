@@ -10,14 +10,14 @@ type AdminClient = {
   }
 }
 
-/** Service-role Auth operations stay inside Edge Functions; the browser never sees this client. */
+/** Secret-key Auth operations stay inside Edge Functions; the browser never sees this client. */
 export const createAuthAdmin = async (): Promise<AdminClient> => {
   const env = runtimeEnv()
-  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY)
+  if (!env.SUPABASE_URL || !env.SUPABASE_SECRET_KEY)
     throw new Error("Supabase service access is not configured")
 
   const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.117.2")
-  return createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+  return createClient(env.SUPABASE_URL, env.SUPABASE_SECRET_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
   }) as AdminClient
 }

@@ -47,9 +47,9 @@ adapters and do not select a function URL themselves.
 
 All five direct functions use the private runtime in
 `supabase/functions/_shared`. It centralizes bearer-token authentication, actor
-propagation, service-role database access, route ownership, CORS, validation,
+propagation, secret-key database access, route ownership, CORS, validation,
 errors, request metadata and correlation IDs. The server-only
-`SUPABASE_SERVICE_ROLE_KEY` is never exposed to the browser.
+`SUPABASE_SECRET_KEY` is never exposed to the browser.
 
 ## Canonical service workflow contract
 
@@ -82,9 +82,15 @@ comma-separated list of browser origins, such as the deployed application and
 `http://localhost:3000`. CORS is denied unless an origin is explicitly listed;
 `ALLOWED_ORIGIN` remains supported as a single-origin compatibility setting.
 
-The Auth client uses `NEXT_PUBLIC_SUPABASE_URL` and
-`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (with the legacy anon-key name supported
-during migration). Neither key grants browser access to application tables.
+The browser Auth client uses `NEXT_PUBLIC_SUPABASE_URL` and
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. Edge Functions use
+`SUPABASE_PUBLISHABLE_KEY` for request authentication and
+`SUPABASE_SECRET_KEY` for privileged database, Auth and Storage operations.
+Hosted Supabase runtimes may expose the named-key JSON maps
+`SUPABASE_PUBLISHABLE_KEYS` and `SUPABASE_SECRET_KEYS`; the shared runtime
+resolves those maps as a deployment fallback. `SUPABASE_JWKS_URL` is not
+required because request authentication currently uses Supabase Auth's
+`getUser` endpoint.
 
 ## Capabilities with unresolved scope
 

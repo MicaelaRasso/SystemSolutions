@@ -161,6 +161,9 @@ export const routeOwner = (method: string, route: string[]): FunctionName | null
       ["accept", "reject", "cancel", "start", "complete", "work-orders"].includes(route[2])) ||
     (method === "PATCH" && route[0] === "work-orders" && route.length === 2) ||
     (method === "GET" && route[0] === "operations" && (route.length === 1 || route.length === 2)) ||
+    (method === "GET" && route[0] === "audit" && (route.length === 1 || (route.length === 2 && route[1] === "export"))) ||
+    (method === "GET" && route[0] === "audit" && route.length === 2) ||
+    (method === "GET" && route[0] === "admin" && route.length >= 2) ||
     (method === "POST" && is(route, "attachments"))
   )
     return "service-workflow"

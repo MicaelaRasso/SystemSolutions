@@ -15,15 +15,10 @@ export const edgeFunctionNames = [
 
 export type EdgeFunctionName = (typeof edgeFunctionNames)[number]
 
-/**
- * Shared public configuration for the Auth clients and the Edge gateway.
- * `NEXT_PUBLIC_SUPABASE_ANON_KEY` remains supported while deployments migrate
- * to Supabase's current publishable-key name.
- */
+/** Shared public configuration for the Auth clients and the Edge gateway. */
 export function getSupabaseConfig(): SupabaseConfig {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const publishableKey =
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 
   if (!url || !publishableKey) {
     throw new Error(

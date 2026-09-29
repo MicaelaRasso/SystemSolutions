@@ -14,7 +14,7 @@ export type EdgeTransportOptions = {
   functionUrls?: Partial<Record<EdgeFunctionName, string>>
   /** Supabase project URL used to derive each direct function URL. */
   baseUrl?: string
-  anonKey?: string
+  publishableKey?: string
   request?: EdgeFetch
   auth?: (() => BrowserSupabaseClient) | undefined
   correlationId?: string | (() => string)
@@ -107,7 +107,7 @@ async function responseData(response: Response): Promise<unknown> {
 /** Shared authenticated browser transport for all capability-owning functions. */
 export class EdgeTransport {
   readonly functions: EdgeFunctionRegistry
-  private readonly anonKey: string
+  private readonly publishableKey: string
   private readonly fetcher: EdgeFetch
   private readonly auth: (() => BrowserSupabaseClient) | undefined
   private readonly correlationId: () => string
@@ -115,18 +115,14 @@ export class EdgeTransport {
   constructor({
     functionUrls,
     baseUrl,
-    anonKey,
+    publishableKey,
     request = fetch,
     auth,
     correlationId = nextCorrelationId,
   }: EdgeTransportOptions = {}) {
-    const configuredKey =
-      anonKey ??
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
-      ""
+    const configuredKey = publishableKey ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? ""
     this.functions = createEdgeFunctionRegistry({ functionUrls, baseUrl })
-    this.anonKey = configuredKey
+    this.publishableKey = configuredKey
     this.fetcher = request
     this.auth = auth
     this.correlationId = typeof correlationId === "function" ? correlationId : () => correlationId
@@ -148,7 +144,7 @@ export class EdgeTransport {
     if (init.body !== undefined && !headers["content-type"] && !(init.body instanceof FormData)) {
       headers["content-type"] = "application/json"
     }
-    headers.apikey = this.anonKey
+    headers.apikey = this.publishableKey
     headers["x-correlation-id"] = this.correlationId()
     if (token) headers.authorization = `Bearer ${token}`
 

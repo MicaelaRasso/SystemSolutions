@@ -22,12 +22,12 @@ export const createServiceRoleClient = async ({
   functionName: string
   env?: RuntimeEnv
 }): Promise<ServiceRoleClient> => {
-  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
+  if (!env.SUPABASE_URL || !env.SUPABASE_SECRET_KEY) {
     throw new HttpError(500, "Supabase service access is not configured")
   }
 
   const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.117.2")
-  return createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+  return createClient(env.SUPABASE_URL, env.SUPABASE_SECRET_KEY, {
     global: {
       headers: actorHeaders({ actorId, correlationId, functionName }),
     },

@@ -16,7 +16,7 @@ export const bearerAuthorization = (authorization: string | null) => {
 const defaultGetUser: GetUser = async (authorization, env) => {
   try {
     const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.117.2")
-    const client = createClient(env.SUPABASE_URL!, env.SUPABASE_ANON_KEY!, {
+    const client = createClient(env.SUPABASE_URL!, env.SUPABASE_PUBLISHABLE_KEY!, {
       global: { headers: { authorization } },
     })
     const {
@@ -37,7 +37,7 @@ export const authenticateRequest = async (
   if (!authorization) throw new HttpError(401, "Authentication required")
 
   const env = dependencies.env ?? runtimeEnv()
-  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
+  if (!env.SUPABASE_URL || !env.SUPABASE_PUBLISHABLE_KEY) {
     throw new HttpError(500, "Supabase authentication is not configured")
   }
 

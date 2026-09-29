@@ -13,6 +13,7 @@ import { createYacimientosApi } from "./yacimientos"
 import { createAdminApi } from "./admin"
 import { createOperationsApi } from "./operations"
 import { createBackupsApi } from "./backups"
+import { createObservabilityApi } from "./observability"
 
 /**
  * Capability-oriented browser API. Components consume hooks/adapters built on
@@ -33,6 +34,7 @@ export const edgeApi = {
   admin: createAdminApi(edgeAccess),
   operations: createOperationsApi(edgeAccess),
   backups: createBackupsApi(edgeAccess),
+  observability: createObservabilityApi(edgeAccess),
 }
 
 export * from "./contracts"
@@ -51,3 +53,4 @@ export * from "./yacimientos"
 export * from "./admin"
 export * from "./operations"
 export * from "./backups"
+export * from "./observability"

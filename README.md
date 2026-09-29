@@ -5,8 +5,7 @@ El plan de implementación y su avance están en [`planning.md`](planning.md).
 
 > La app frontend usa Supabase Auth y cinco Edge Functions por dominio. Configura
 > `NEXT_PUBLIC_SUPABASE_URL`,
-> `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (o el alias compatible
-> `NEXT_PUBLIC_SUPABASE_ANON_KEY`) y las URLs directas opcionales
+> `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` y las URLs directas opcionales
 > `NEXT_PUBLIC_IDENTITY_ADMIN_URL`, `NEXT_PUBLIC_ASSET_ACCESS_URL`,
 > `NEXT_PUBLIC_SERVICE_WORKFLOW_URL`, `NEXT_PUBLIC_CERTIFICATE_FIELD_URL` y
 > `NEXT_PUBLIC_OFFLINE_SYNC_URL`. Si no se especifican URLs directas, se usan
@@ -14,6 +13,9 @@ El plan de implementación y su avance están en [`planning.md`](planning.md).
 > El adaptador usa exclusivamente la Edge
 > Function para operaciones de negocio y archivos; el navegador solo se
 > comunica directamente con Supabase Auth para la sesión.
+> Las Edge Functions usan `SUPABASE_PUBLISHABLE_KEY` para validar sesiones y
+> `SUPABASE_SECRET_KEY` para operaciones privilegiadas; la clave secreta nunca
+> debe exponerse al navegador.
 
 ## Stack
 

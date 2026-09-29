@@ -46,8 +46,15 @@ declare
   valve_row public.valvulas;
   yid uuid;
 begin
-  select v, p.yacimiento_id
-    into valve_row, yid
+  select v
+    into valve_row
+  from public.valvulas v
+  join public.equipos_unidades e on e.id = v.equipo_id
+  join public.plantas_locaciones p on p.id = e.planta_id
+  where v.id = target;
+
+  select p.yacimiento_id
+    into yid
   from public.valvulas v
   join public.equipos_unidades e on e.id = v.equipo_id
   join public.plantas_locaciones p on p.id = e.planta_id
@@ -99,13 +106,20 @@ declare
   new_snapshot jsonb;
   yid uuid;
 begin
-  select v, p.yacimiento_id
-    into valve_row, yid
+  select v
+    into valve_row
   from public.valvulas v
   join public.equipos_unidades e on e.id = v.equipo_id
   join public.plantas_locaciones p on p.id = e.planta_id
   where v.id = target
   for update of v;
+
+  select p.yacimiento_id
+    into yid
+  from public.valvulas v
+  join public.equipos_unidades e on e.id = v.equipo_id
+  join public.plantas_locaciones p on p.id = e.planta_id
+  where v.id = target;
 
   if valve_row.id is null then
     raise exception using errcode = 'no_data_found', message = 'Valve not found';

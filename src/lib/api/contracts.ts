@@ -541,6 +541,27 @@ export const operationDetailDtoSchema = z
   .strict()
 export type OperationDetailDto = z.infer<typeof operationDetailDtoSchema>
 
+export const auditEventDtoSchema = z.object({
+  id: edgeIdSchema,
+  actor_cuenta_id: edgeIdSchema.nullable().optional(),
+  actor_email: z.string().optional(),
+  actor_rol: z.string().optional(),
+  accion: z.string(),
+  tipo_objetivo: z.string(),
+  objetivo_id: edgeIdSchema.nullable().optional(),
+  resultado: z.enum(["exitoso", "fallido"]),
+  recibida_en: edgeTimestampSchema,
+  evento_dispositivo_en: edgeTimestampSchema.nullable().optional(),
+  identidad_correlacion: z.string().nullable().optional(),
+  resumen_cambio: z.record(z.string(), z.unknown()),
+  identificadores_relacionados: z.record(z.string(), z.unknown()),
+}).passthrough()
+export type AuditEventDto = z.infer<typeof auditEventDtoSchema>
+export const auditListDtoSchema = z.object({ items: auditEventDtoSchema.array(), total: z.number(), limit: z.number(), offset: z.number(), has_more: z.boolean() })
+export const adminMetricsDtoSchema = z.object({ from: z.string(), to: z.string(), finalized_certificates: z.number(), completed_visits: z.number(), pending_certificates: z.number(), expiring_certificates: z.number(), unassigned_visits: z.number() })
+export const adminCertificateListDtoSchema = z.object({ items: z.array(certificateRowSchema), total: z.number(), limit: z.number(), offset: z.number() })
+export const adminCertificateDetailDtoSchema = z.object({ certificate: certificateRowSchema, history: certificateRowSchema.array(), audit_events: auditEventDtoSchema.array() })
+
 // Response-schema names remain as aliases for callers that consumed the first
 // adapter draft; the canonical surface is expressed by the DTO names above.
 export const operationListResponseSchema = operationListDtoSchema

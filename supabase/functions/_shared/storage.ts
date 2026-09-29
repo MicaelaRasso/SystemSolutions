@@ -72,10 +72,10 @@ export const uploadStorageObject = async (
   objectName: string,
   file: File,
 ): Promise<void> => {
-  const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = (await import("./runtime-env.ts")).runtimeEnv()
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error("Supabase storage is not configured")
+  const { SUPABASE_URL, SUPABASE_SECRET_KEY } = (await import("./runtime-env.ts")).runtimeEnv()
+  if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) throw new Error("Supabase storage is not configured")
   const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.117.2")
-  const client = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  const client = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
   const { error } = await client.storage.from(bucket).upload(objectName, file, {
@@ -86,10 +86,10 @@ export const uploadStorageObject = async (
 }
 
 export const removeStorageObject = async (bucket: string, objectName: string): Promise<void> => {
-  const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = (await import("./runtime-env.ts")).runtimeEnv()
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error("Supabase storage is not configured")
+  const { SUPABASE_URL, SUPABASE_SECRET_KEY } = (await import("./runtime-env.ts")).runtimeEnv()
+  if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) throw new Error("Supabase storage is not configured")
   const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.117.2")
-  const client = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  const client = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
   const { error } = await client.storage.from(bucket).remove([objectName])
@@ -97,10 +97,10 @@ export const removeStorageObject = async (bucket: string, objectName: string): P
 }
 
 export const createSignedStorageUrl = async (bucket: string, objectName: string, expiresIn = 3600) => {
-  const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = (await import("./runtime-env.ts")).runtimeEnv()
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error("Supabase storage is not configured")
+  const { SUPABASE_URL, SUPABASE_SECRET_KEY } = (await import("./runtime-env.ts")).runtimeEnv()
+  if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) throw new Error("Supabase storage is not configured")
   const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.117.2")
-  const client = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  const client = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
   const { data, error } = await client.storage.from(bucket).createSignedUrl(objectName, expiresIn)

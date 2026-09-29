@@ -224,6 +224,45 @@ export const serviceWorkflowHandler: RouteHandler = async ({
     return { data: result.data, error: null }
   }
 
+  if (segments[0] === "audit" && request.method === "GET" && (segments.length === 1 || (segments.length === 2 && segments[1] === "export"))) {
+    const query = new URL(request.url).searchParams
+    const result = await db.rpc(segments[1] === "export" ? "api_audit_export" : "api_audit_events", {
+      from_date: query.get("from"), to_date: query.get("to"),
+      actor_filter: query.get("actor_id"), action_filter: query.get("action"),
+      target_type_filter: query.get("target_type"), outcome_filter: query.get("outcome"),
+      client_filter: query.get("client_id"), yacimiento_filter: query.get("yacimiento_id"),
+      visit_filter: query.get("visit_id"), certificate_filter: query.get("certificate_id"),
+      limit_count: Number(query.get("limit") ?? 100), offset_count: Number(query.get("offset") ?? 0),
+    })
+    if (result.error) return result
+    const envelope = result.data as { items?: Record<string, unknown>[] }
+    const format = query.get("format")
+    if (format !== "json" && format !== "csv") return json(request, { error: "format must be json or csv" }, 400, correlationId)
+    if (format === "json") return new Response(JSON.stringify(envelope.items ?? []), { status: 200, headers: { "content-type": "application/json", "content-disposition": "attachment; filename=auditoria.json" } })
+    const columns = ["id", "recibida_en", "actor_cuenta_id", "accion", "tipo_objetivo", "objetivo_id", "resultado", "identidad_correlacion"]
+    const csv = [columns.join(","), ...(envelope.items ?? []).map((row) => columns.map((column) => JSON.stringify(row[column] ?? "")).join(","))].join("\n")
+    return new Response(csv, { status: 200, headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": "attachment; filename=auditoria.csv" } })
+  }
+
+  if (segments[0] === "audit" && request.method === "GET" && segments.length === 2)
+    return db.rpc("api_audit_event", { event_id: segments[1] })
+
+  if (segments[0] === "admin" && request.method === "GET" && segments[1] === "metrics") {
+    const query = new URL(request.url).searchParams
+    return db.rpc("api_admin_metrics", { period_from: query.get("from"), period_to: query.get("to") })
+  }
+  if (segments[0] === "admin" && request.method === "GET" && segments[1] === "certificates" && !segments[2]) {
+    const query = new URL(request.url).searchParams
+    return db.rpc("api_admin_certificate_history", {
+      client_filter: query.get("client_id"), yacimiento_filter: query.get("yacimiento_id"), plant_filter: query.get("plant_id"),
+      valve_filter: query.get("valve_id"), state_filter: query.get("state"), valid_until_filter: query.get("valid_until"),
+      search_text: query.get("q"),
+      limit_count: Number(query.get("limit") ?? 100), offset_count: Number(query.get("offset") ?? 0),
+    })
+  }
+  if (segments[0] === "admin" && request.method === "GET" && segments[1] === "certificates" && segments[2])
+    return db.rpc(segments[3] === "download" ? "api_admin_certificate_export" : "api_admin_certificate", { certificate_id: segments[2] })
+
   if (
     segments[0] === "requests" &&
     request.method === "POST" &&

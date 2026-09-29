@@ -194,7 +194,7 @@ o a las RPCs de aplicación sin pasar por una Edge Function propietaria.
      restablece su identidad para las reglas existentes basadas en `auth.uid()`;
    - conserve RLS y validaciones de dominio en las funciones PostgreSQL.
 3. Se configuraron las funciones propietarias para validar primero el JWT de la
-   Cuenta y luego invocar las RPCs con `SUPABASE_SERVICE_ROLE_KEY` y el
+     Cuenta y luego invocar las RPCs con `SUPABASE_SECRET_KEY` y el
    encabezado interno de actor. La clave nunca se expone al navegador. En
    producción, limitar CORS al origen de la aplicación.
 4. Se añadieron pruebas de contrato que demuestran:
