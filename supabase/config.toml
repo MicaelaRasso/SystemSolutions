@@ -4,19 +4,19 @@ project_id = "system-solutions"
 enabled = true
 
 [functions.identity-admin]
-verify_jwt = false
+verify_jwt = true
 
 [functions.asset-access]
-verify_jwt = false
+verify_jwt = true
 
 [functions.service-workflow]
-verify_jwt = false
+verify_jwt = true
 
 [functions.certificate-field]
-verify_jwt = false
+verify_jwt = true
 
 [functions.offline-sync]
-verify_jwt = false
+verify_jwt = true
 
 [functions.backup-export]
-verify_jwt = false
+verify_jwt = true

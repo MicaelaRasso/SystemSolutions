@@ -23,8 +23,8 @@ describe("shared authentication", () => {
     await expect(
       authenticateRequest(request, {
         env,
-        getUser: async (authorization) => ({
-          id: authorization === "Bearer token" ? "user-1" : "wrong",
+        getUser: async (accessToken) => ({
+          id: accessToken === "token" ? "user-1" : "wrong",
         }),
       }),
     ).resolves.toEqual({ id: "user-1", authorization: "Bearer token" })

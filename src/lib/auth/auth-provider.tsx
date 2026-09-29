@@ -2,14 +2,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useRouter } from "next/navigation"
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
 
 import { RUTA_INICIO } from "@/lib/domain/rules"
 import type { Sesion, Usuario } from "@/lib/domain/types"
@@ -92,9 +85,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       queryClient.setQueryData(["usuario-actual", u.id], u)
       const destino =
         next && next.startsWith("/") && !next.startsWith("//") ? next : RUTA_INICIO[u.rol]
-      router.replace(destino)
+      // The session is persisted in cookies by Supabase asynchronously. A full
+      // navigation makes the new cookies available to proxy.ts and the protected
+      // server layouts before they validate the destination.
+      window.location.replace(destino)
     },
-    [queryClient, router],
+    [queryClient],
   )
 
   const value = useMemo(
