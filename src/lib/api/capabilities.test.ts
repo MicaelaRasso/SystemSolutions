@@ -98,6 +98,33 @@ describe("capability Edge clients", () => {
     )
   })
 
+  it("sends administrative Solicitud creation through its dedicated route", async () => {
+    const response = {
+      request: { id: "request-1" },
+      selected_valves: [{ id: "valve-1", name: "V-10" }],
+    }
+    const { edge, request } = client(response)
+
+    await expect(
+      createServiceRequestsApi(edge).createAdministrativeRequest({
+        clientId: "client-1",
+        yacimientoId: "yacimiento-1",
+        selections: [{ kind: "equipo", id: "equipment-1" }],
+      }),
+    ).resolves.toEqual(response)
+    expect(request).toHaveBeenCalledWith(
+      "https://example.test/functions/v1/service-workflow/admin/requests",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          cliente_cuenta_id: "client-1",
+          yacimiento_id: "yacimiento-1",
+          selections: [{ kind: "equipo", id: "equipment-1" }],
+        }),
+      }),
+    )
+  })
+
   it("keeps certificate history in certificates and never adds a Tarea route", async () => {
     const { edge, request } = client({ visit: { id: "visit-1" }, work_orders: [] })
 

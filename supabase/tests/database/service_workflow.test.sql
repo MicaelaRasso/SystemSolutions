@@ -1,20 +1,22 @@
 begin;
 
-select plan(47);
+select plan(54);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000001101', 'workflow-client-a@example.test'),
   ('00000000-0000-0000-0000-000000001102', 'workflow-client-b@example.test'),
   ('00000000-0000-0000-0000-000000001103', 'workflow-tech-a@example.test'),
   ('00000000-0000-0000-0000-000000001104', 'workflow-tech-b@example.test'),
-  ('00000000-0000-0000-0000-000000001105', 'workflow-admin@example.test');
+  ('00000000-0000-0000-0000-000000001105', 'workflow-admin@example.test'),
+  ('00000000-0000-0000-0000-000000001106', 'workflow-super-admin@example.test');
 
 insert into public.cuentas (id, rol) values
   ('00000000-0000-0000-0000-000000001101', 'cliente'),
   ('00000000-0000-0000-0000-000000001102', 'cliente'),
   ('00000000-0000-0000-0000-000000001103', 'taller_movil'),
   ('00000000-0000-0000-0000-000000001104', 'taller_movil'),
-  ('00000000-0000-0000-0000-000000001105', 'administrador_regular');
+  ('00000000-0000-0000-0000-000000001105', 'administrador_regular'),
+  ('00000000-0000-0000-0000-000000001106', 'super_administrador');
 
 insert into public.clientes (cuenta_id, nombre) values
   ('00000000-0000-0000-0000-000000001101', 'Workflow Cliente A'),
@@ -71,6 +73,9 @@ $$;
 grant execute on function public.test_workflow_set_actor(uuid) to service_role;
 
 select has_function('public', 'api_update_service_request', array['uuid', 'jsonb']::text[], 'request editing RPC exists');
+select has_function('public', 'api_admin_create_service_request', array['uuid', 'uuid', 'jsonb']::text[], 'administrative request creation RPC exists');
+select is(has_function_privilege('authenticated', 'public.api_admin_create_service_request(uuid,uuid,jsonb)', 'execute'), false, 'browser roles cannot call administrative request creation RPC');
+select is(has_function_privilege('service_role', 'public.api_admin_create_service_request(uuid,uuid,jsonb)', 'execute'), true, 'the Edge service_role can call administrative request creation RPC');
 select has_function('public', 'api_add_work_order', array['uuid', 'uuid']::text[], 'technician-added work-order RPC exists');
 select is(has_function_privilege('authenticated', 'public.api_update_service_request(uuid,jsonb)', 'execute'), false, 'browser roles cannot call request mutation RPCs');
 select is(has_function_privilege('service_role', 'public.api_update_service_request(uuid,jsonb)', 'execute'), true, 'Edge service_role can call request mutation RPCs');
@@ -140,6 +145,35 @@ select throws_ok(
 select throws_ok(
   $$select public.api_create_service_request('00000000-0000-0000-0000-000000001301'::uuid, '[{"kind":"valvula","id":"00000000-0000-0000-0000-000000001601"}]'::jsonb)$$,
   '42501', 'Only the owning Cliente can create a service request', 'another Cliente cannot create a request for the Yacimiento'
+);
+select throws_ok(
+  $$select public.api_admin_create_service_request('00000000-0000-0000-0000-000000001101'::uuid, '00000000-0000-0000-0000-000000001303'::uuid, '[{"kind":"valvula","id":"00000000-0000-0000-0000-000000001607"}]'::jsonb)$$,
+  '23503', 'The selected Cliente does not own the Yacimiento', 'an administrator cannot create a request with a mismatched Cliente and Yacimiento'
+);
+
+select public.test_workflow_set_actor('00000000-0000-0000-0000-000000001105');
+select is(
+  (public.api_admin_create_service_request(
+    '00000000-0000-0000-0000-000000001102'::uuid,
+    '00000000-0000-0000-0000-000000001303'::uuid,
+    '[{"kind":"equipo","id":"00000000-0000-0000-0000-000000001506"}]'::jsonb
+  )->'request'->>'cliente_cuenta_id'),
+  '00000000-0000-0000-0000-000000001102',
+  'an Administrador regular creates a request for the selected Cliente'
+);
+select throws_ok(
+  $$select public.api_admin_create_service_request('00000000-0000-0000-0000-000000001101'::uuid, '00000000-0000-0000-0000-000000001301'::uuid, '[{"kind":"valvula","id":"00000000-0000-0000-0000-000000001601"}]'::jsonb)$$,
+  '42501', 'Only an active Administrador can create a service request', 'a Cliente is denied administrative request creation'
+);
+select public.test_workflow_set_actor('00000000-0000-0000-0000-000000001106');
+select is(
+  (public.api_admin_create_service_request(
+    '00000000-0000-0000-0000-000000001102'::uuid,
+    '00000000-0000-0000-0000-000000001303'::uuid,
+    '[{"kind":"valvula","id":"00000000-0000-0000-0000-000000001607"}]'::jsonb
+  )->'request'->>'cliente_cuenta_id'),
+  '00000000-0000-0000-0000-000000001102',
+  'a Super administrador creates a request for the selected Cliente'
 );
 
 select public.test_workflow_set_actor('00000000-0000-0000-0000-000000001101');

@@ -184,6 +184,14 @@ export const createServiceRequestInputSchema = z.object({
   selections: z.array(serviceSelectionInputSchema).min(1),
 })
 export type CreateServiceRequestInput = z.infer<typeof createServiceRequestInputSchema>
+export const createAdministrativeServiceRequestInputSchema = createServiceRequestInputSchema.extend(
+  {
+    clientId: edgeIdSchema,
+  },
+)
+export type CreateAdministrativeServiceRequestInput = z.infer<
+  typeof createAdministrativeServiceRequestInputSchema
+>
 
 export const updateServiceRequestInputSchema = z.object({
   selections: z.array(serviceSelectionInputSchema).min(1),
@@ -300,6 +308,7 @@ export type ValveCertificateHistoryDto = z.infer<typeof valveCertificateHistoryD
 
 export interface VisitSignatureUploadInput {
   party: "tecnico" | "cliente"
+  captureMethod?: "pwa_tecnico" | "pwa_cliente_presencial" | "panel_cliente"
   signerName: string
   file: File
 }
@@ -405,7 +414,10 @@ export const clientDtoSchema = z
     telefono: z.string(),
     email: z.string(),
     direccion: z.string(),
-    logo_url: z.unknown().nullable().optional(),
+    logo_url: z.union([
+      z.string(),
+      z.object({ bucket: z.string(), path: z.string() }),
+    ]).nullable().optional(),
     aviso_vencimiento: z.boolean(),
     activo: z.boolean(),
     creado_en: edgeTimestampSchema,

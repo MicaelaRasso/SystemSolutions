@@ -113,7 +113,15 @@ export function FirmaPendientePanel() {
                     onClick={() => {
                       if (!file) return
                       upload.mutate(
-                        { visitId: visit.visit.id, input: { party: "cliente", signerName, file } },
+                        {
+                          visitId: visit.visit.id,
+                          input: {
+                            party: "cliente",
+                            captureMethod: "panel_cliente",
+                            signerName,
+                            file,
+                          },
+                        },
                         {
                           onSuccess: async () => {
                             setMessage(

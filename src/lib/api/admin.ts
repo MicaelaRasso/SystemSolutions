@@ -36,6 +36,7 @@ const toEmpresa = (dto: z.infer<typeof clientDtoSchema>): Empresa => ({
   telefono: dto.telefono,
   email: dto.email,
   direccion: dto.direccion,
+  logoUrl: typeof dto.logo_url === "string" ? dto.logo_url : undefined,
   avisoVencimiento: dto.aviso_vencimiento,
   activo: dto.activo,
   creadoEn: dto.creado_en,
@@ -87,7 +88,10 @@ export function createAdminApi(edge: EdgeAccessClient) {
         }))
       },
       async setLogo(id: ID, file: File | null) {
-        if (!file) return toEmpresa(await edge.request(`clients/${id}`, clientDtoSchema))
+        if (!file)
+          return toEmpresa(
+            await edge.request(`clients/${id}/logo`, clientDtoSchema, { method: "DELETE" }),
+          )
         const form = new FormData()
         form.set("file", file)
         return toEmpresa(await edge.request(`clients/${id}/logo`, clientDtoSchema, { method: "PUT", body: form }))

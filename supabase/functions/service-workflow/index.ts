@@ -264,6 +264,20 @@ export const serviceWorkflowHandler: RouteHandler = async ({
     return db.rpc(segments[3] === "download" ? "api_admin_certificate_export" : "api_admin_certificate", { certificate_id: segments[2] })
 
   if (
+    segments[0] === "admin" && segments[1] === "requests" &&
+    request.method === "POST" && segments.length === 2
+  ) {
+    const authorization = await db.rpc("api_actor_is_admin", {})
+    if (authorization.error) return authorization
+    if (authorization.data !== true) throw new HttpError(403, "Only an active Administrador can create a service request")
+    return db.rpc("api_admin_create_service_request", {
+      target_client: body.cliente_cuenta_id,
+      target_yacimiento: body.yacimiento_id,
+      selections: body.selections,
+    })
+  }
+
+  if (
     segments[0] === "requests" &&
     request.method === "POST" &&
     segments[1] &&

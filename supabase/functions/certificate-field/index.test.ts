@@ -48,6 +48,18 @@ const context = (
 })
 
 describe("certificate signature upload seam", () => {
+  it("routes Cliente certificate downloads through the scoped export RPC", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { certificate: { id: "certificate-1" } }, error: null })
+
+    await expect(
+      handler(context({}, rpc, ["certificates", "certificate-1", "download"], "GET")),
+    ).resolves.toEqual({ data: { certificate: { id: "certificate-1" } }, error: null })
+
+    expect(rpc).toHaveBeenCalledWith("api_cliente_certificate_export", {
+      certificate_id: "certificate-1",
+    })
+  })
+
   it("reads the owning Cliente pending set through its dedicated RPC", async () => {
     const rpc = vi.fn().mockResolvedValue({ data: { visits: [] }, error: null })
 
@@ -118,6 +130,46 @@ describe("certificate signature upload seam", () => {
     })
   })
 
+  it("registers the pending Cliente panel capture method for a completed visit", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: { signature_id: "signature-2", finalized_certificates: [] },
+      error: null,
+    })
+    const file = new File(["signature"], "signature.png", { type: "image/png" })
+
+    await handler(
+      context(
+        { file, party: "cliente", signer_name: "Cliente Uno", capture_method: "panel_cliente" },
+        rpc,
+      ),
+    )
+
+    expect(rpc).toHaveBeenCalledWith(
+      "api_submit_visit_signature",
+      expect.objectContaining({ signing_party: "cliente", capture_method: "panel_cliente" }),
+    )
+  })
+
+  it("rejects capture methods that do not belong to the signing party", async () => {
+    const rpc = vi.fn()
+    await expect(
+      handler(
+        context(
+          {
+            file: new File(["signature"], "signature.png", { type: "image/png" }),
+            party: "tecnico",
+            signer_name: "Ana",
+            capture_method: "panel_cliente",
+          },
+          rpc,
+        ),
+      ),
+    ).rejects.toThrow("Invalid Técnico capture method")
+
+    expect(rpc).not.toHaveBeenCalled()
+    expect(storage.uploadStorageObject).not.toHaveBeenCalled()
+  })
+
   it("removes an uploaded object when metadata registration is rejected", async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: null,
@@ -126,6 +178,14 @@ describe("certificate signature upload seam", () => {
     const file = new File(["signature"], "signature.png", { type: "image/png" })
 
     await handler(context({ file, party: "cliente", signer_name: "Cliente" }, rpc))
+
+    expect(rpc).toHaveBeenCalledWith(
+      "api_submit_visit_signature",
+      expect.objectContaining({
+        signing_party: "cliente",
+        capture_method: "pwa_cliente_presencial",
+      }),
+    )
 
     expect(storage.removeStorageObject).toHaveBeenCalledWith(
       "certificate-signatures",

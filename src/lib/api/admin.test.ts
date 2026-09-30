@@ -30,4 +30,15 @@ describe("Cliente logo API mapping", () => {
       logoUrl: "https://storage.test/signed-logo",
     })
   })
+
+  it("removes a logo through the Edge asset route", async () => {
+    const request = vi.fn().mockResolvedValue(clientDto)
+    const api = createAdminApi({ request } as unknown as EdgeAccessClient)
+
+    await api.clients.setLogo("cliente-1", null)
+
+    expect(request).toHaveBeenCalledWith("clients/cliente-1/logo", expect.anything(), {
+      method: "DELETE",
+    })
+  })
 })

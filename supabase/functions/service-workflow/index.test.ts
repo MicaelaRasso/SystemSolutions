@@ -236,6 +236,20 @@ describe("service-workflow operations read routes", () => {
   })
 })
 
+describe("service-workflow visits read route", () => {
+  it("routes the canonical visit list through api_visits", async () => {
+    const visits = [{ visit: { id: operationId, estado: "programada" }, work_orders: [] }]
+    const rpc = vi.fn().mockResolvedValue({ data: visits, error: null })
+    const request = new Request("https://example.test/functions/v1/service-workflow/visits")
+
+    await expect(handler(context(request, ["visits"], rpc))).resolves.toEqual({
+      data: visits,
+      error: null,
+    })
+    expect(rpc).toHaveBeenCalledWith("api_visits")
+  })
+})
+
 describe("service-workflow mutation routes", () => {
   it.each([
     {
@@ -337,5 +351,40 @@ describe("service-workflow mutation routes", () => {
       error: null,
     })
     expect(rpc).toHaveBeenCalledWith(rpcName, rpcArgs)
+  })
+
+  it("authorizes an Administrador before creating the selected Cliente's request", async () => {
+    const rpc = vi
+      .fn()
+      .mockResolvedValueOnce({ data: true, error: null })
+      .mockResolvedValueOnce({ data: { request: { id: "request-1" }, selected_valves: [] }, error: null })
+    const route = ["admin", "requests"]
+    const request = new Request("https://example.test/functions/v1/service-workflow/admin/requests", {
+      method: "POST",
+    })
+
+    await expect(handler(context(request, route, rpc, {
+      cliente_cuenta_id: clientId,
+      yacimiento_id: operationId,
+      selections: [{ kind: "equipo", id: operationId }],
+    }))).resolves.toMatchObject({ error: null })
+    expect(rpc).toHaveBeenNthCalledWith(1, "api_actor_is_admin", {})
+    expect(rpc).toHaveBeenNthCalledWith(2, "api_admin_create_service_request", {
+      target_client: clientId,
+      target_yacimiento: operationId,
+      selections: [{ kind: "equipo", id: operationId }],
+    })
+  })
+
+  it("denies non-administrators at the Edge route before the mutation RPC", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: false, error: null })
+    const route = ["admin", "requests"]
+    const request = new Request("https://example.test/functions/v1/service-workflow/admin/requests", {
+      method: "POST",
+    })
+
+    await expect(handler(context(request, route, rpc, {}))).rejects.toMatchObject({ status: 403 })
+    expect(rpc).toHaveBeenCalledTimes(1)
+    expect(rpc).toHaveBeenCalledWith("api_actor_is_admin", {})
   })
 })

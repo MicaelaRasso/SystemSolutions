@@ -146,6 +146,9 @@ export const routeOwner = (method: string, route: string[]): FunctionName | null
   )
     return "asset-access"
 
+  if (method === "POST" && route[0] === "admin" && route[1] === "requests" && route.length === 2)
+    return "service-workflow"
+
   if (
     (method === "POST" &&
       route[0] === "requests" &&
@@ -178,7 +181,7 @@ export const routeOwner = (method: string, route: string[]): FunctionName | null
     (method === "GET" &&
       route[0] === "certificates" &&
       route.length === 3 &&
-      route[2] === "finalized") ||
+      ["finalized", "download"].includes(route[2])) ||
     (method === "GET" &&
       route[0] === "valves" &&
       route.length === 3 &&

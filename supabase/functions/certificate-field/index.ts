@@ -79,6 +79,15 @@ export const certificateFieldHandler: RouteHandler = async ({
       certificate_id: segments[1],
     })
   if (
+    segments[0] === "certificates" &&
+    request.method === "GET" &&
+    segments[1] &&
+    segments[2] === "download"
+  )
+    return db.rpc("api_cliente_certificate_export", {
+      certificate_id: segments[1],
+    })
+  if (
     segments[0] === "valves" &&
     request.method === "GET" &&
     segments[1] &&

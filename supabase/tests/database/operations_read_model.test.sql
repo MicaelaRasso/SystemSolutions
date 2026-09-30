@@ -1,6 +1,6 @@
 begin;
 
-select plan(30);
+select plan(35);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000000901', 'operations-admin@example.test'),
@@ -135,6 +135,12 @@ select set_config('request.jwt.claim.role', 'service_role', true);
 select public.test_set_operations_gateway_actor('00000000-0000-0000-0000-000000000901');
 
 select is(
+  (select jsonb_agg(v->'visit'->>'id' order by v->'visit'->>'id') from public.api_visits() v),
+  '["00000000-0000-0000-0000-000000000991", "00000000-0000-0000-0000-000000000992", "00000000-0000-0000-0000-000000000993"]'::jsonb,
+  'Administradores retain the complete canonical visit schedule'
+);
+
+select is(
   jsonb_array_length(public.api_operations(null, null, null, null, null, null, 100, 0)->'items'),
   3,
   'the list contains visits only and excludes the unscheduled request'
@@ -253,6 +259,12 @@ select throws_ok(
 select public.test_set_operations_gateway_actor('00000000-0000-0000-0000-000000000902');
 
 select is(
+  (select jsonb_agg(v->'visit'->>'id' order by v->'visit'->>'id') from public.api_visits() v),
+  '["00000000-0000-0000-0000-000000000991", "00000000-0000-0000-0000-000000000992"]'::jsonb,
+  'a Cliente receives only visits for its owned Yacimientos'
+);
+
+select is(
   jsonb_array_length(public.api_operations(null, null, null, null, null, null, 100, 0)->'items'),
   2,
   'a Cliente sees only visits in its own Yacimiento'
@@ -265,7 +277,21 @@ select throws_ok(
   'a Cliente cannot read another Cliente operation detail'
 );
 
+select public.test_set_operations_gateway_actor('00000000-0000-0000-0000-000000000903');
+
+select is(
+  (select jsonb_agg(v->'visit'->>'id' order by v->'visit'->>'id') from public.api_visits() v),
+  '["00000000-0000-0000-0000-000000000993"]'::jsonb,
+  'a different Cliente receives only its own scheduled visit'
+);
+
 select public.test_set_operations_gateway_actor('00000000-0000-0000-0000-000000000904');
+
+select is(
+  (select jsonb_agg(v->'visit'->>'id' order by v->'visit'->>'id') from public.api_visits() v),
+  '["00000000-0000-0000-0000-000000000991", "00000000-0000-0000-0000-000000000992"]'::jsonb,
+  'a Taller Móvil receives only visits assigned to its account'
+);
 
 select is(
   jsonb_array_length(public.api_operations(null, null, null, null, null, null, 100, 0)->'items'),
@@ -274,6 +300,12 @@ select is(
 );
 
 select public.test_set_operations_gateway_actor('00000000-0000-0000-0000-000000000905');
+
+select is(
+  (select jsonb_agg(v->'visit'->>'id' order by v->'visit'->>'id') from public.api_visits() v),
+  '["00000000-0000-0000-0000-000000000993"]'::jsonb,
+  'a second Taller Móvil receives only its own assigned visit'
+);
 
 select is(
   jsonb_array_length(public.api_operations(null, null, null, null, null, null, 100, 0)->'items'),

@@ -3,6 +3,7 @@ import { createServiceWorkflowApi, type ServiceWorkflowApi } from "./service-wor
 
 export type VisitsApi = Pick<ServiceWorkflowApi, "listVisits" | "visit" | "transition">
 
+/** #REVISAR: Cliente Calendario/Turnos should consume this canonical read path when screens exist. */
 /** Visit queries and lifecycle commands already exposed by service-workflow. */
 export function createVisitsApi(edge: EdgeAccessClient): VisitsApi {
   const serviceWorkflow = createServiceWorkflowApi(edge)

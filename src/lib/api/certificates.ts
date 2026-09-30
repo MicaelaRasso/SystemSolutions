@@ -65,6 +65,8 @@ export function createCertificatesApi(edge: EdgeAccessClient) {
       edge.request(`certificates/${certificateId}`, certificateDraftDtoSchema),
     finalized: (certificateId: string) =>
       edge.request(`certificates/${certificateId}/finalized`, finalizedCertificateDtoSchema),
+    download: (certificateId: string) =>
+      edge.request(`certificates/${certificateId}/download`, finalizedCertificateDtoSchema),
     valveHistory: (valvulaId: string) =>
       edge.request(`valves/${valvulaId}/certificates`, valveCertificateHistoryDtoSchema),
     pendingClientSignatureVisits: () =>
@@ -85,6 +87,7 @@ export function createCertificatesApi(edge: EdgeAccessClient) {
       if (!signerName) throw new TypeError("El nombre del firmante es obligatorio")
       const form = new FormData()
       form.set("party", input.party)
+      if (input.captureMethod) form.set("capture_method", input.captureMethod)
       form.set("signer_name", signerName)
       form.set("file", input.file, input.file.name || "firma.png")
       return edge.request(`visits/${visitId}/signatures`, visitSignatureDtoSchema, {

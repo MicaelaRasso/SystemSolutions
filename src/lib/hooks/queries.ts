@@ -166,9 +166,17 @@ export async function guardarSolicitudYVisita(
   data: TareaInput,
 ): Promise<OperationRead | undefined> {
   const requestId = operation ? await solicitudIdDeOperacion(operation.operation.id) : undefined
+  const context = operation ? undefined : await edgeApi.identity.context()
+  const isAdministrator =
+    context?.rol === "administrador_regular" || context?.rol === "super_administrador"
   const response = operation
     ? await edgeApi.serviceRequests.updateRequest(requestId!, serviceSelection(data))
-    : await edgeApi.serviceRequests.createRequest(serviceSelection(data))
+    : isAdministrator
+      ? await edgeApi.serviceRequests.createAdministrativeRequest({
+          clientId: data.empresaId,
+          ...serviceSelection(data),
+        })
+      : await edgeApi.serviceRequests.createRequest(serviceSelection(data))
   const canonicalRequestId = responseRequestId(response)
 
   if (!data.tallerId) {

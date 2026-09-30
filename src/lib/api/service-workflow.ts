@@ -1,6 +1,7 @@
 import type { EdgeAccessClient } from "../services/edge"
 import {
   createServiceRequestInputSchema,
+  createAdministrativeServiceRequestInputSchema,
   serviceRequestDtoSchema,
   scheduleVisitInputSchema,
   updateServiceRequestInputSchema,
@@ -10,6 +11,7 @@ import {
   workOrderDtoSchema,
   certificateDraftDtoSchema,
   type CreateServiceRequestInput,
+  type CreateAdministrativeServiceRequestInput,
   type ScheduleVisitInput,
   type UpdateServiceRequestInput,
   type UpdateWorkOrderInput,
@@ -37,6 +39,18 @@ export function createServiceWorkflowApi(edge: EdgeAccessClient) {
       return edge.request("requests", serviceRequestDtoSchema, {
         method: "POST",
         body: json({ yacimiento_id: data.yacimientoId, selections: data.selections }),
+      })
+    },
+
+    async createAdministrativeRequest(input: CreateAdministrativeServiceRequestInput) {
+      const data = createAdministrativeServiceRequestInputSchema.parse(input)
+      return edge.request("admin/requests", serviceRequestDtoSchema, {
+        method: "POST",
+        body: json({
+          cliente_cuenta_id: data.clientId,
+          yacimiento_id: data.yacimientoId,
+          selections: data.selections,
+        }),
       })
     },
 

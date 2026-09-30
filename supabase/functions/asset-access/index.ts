@@ -1,10 +1,11 @@
 import { isValveUpdatePayload } from "../_shared/validation.ts"
 import { createAuthAdmin, requireCreatedUser } from "../_shared/admin.ts"
+import { clientLogoObjectName, validateClientLogo } from "../_shared/client-logo.ts"
 import { json, routeNotFound } from "../_shared/http.ts"
-import { createSignedStorageUrl, removeStorageObject, safeObjectName, uploadStorageObject, validateStorageObject } from "../_shared/storage.ts"
+import { createSignedStorageUrl, removeStorageObject, uploadStorageObject } from "../_shared/storage.ts"
 import { serveFunction } from "../_shared/transport.ts"
 
-serveFunction("asset-access", async ({ request, route, body, db, correlationId }) => {
+serveFunction("asset-access", async ({ request, route, body, actor, db, correlationId }) => {
   const segments = route
 
   const withLogoUrl = async (value: unknown) => {
@@ -16,6 +17,58 @@ serveFunction("asset-access", async ({ request, route, body, db, correlationId }
     const bucket = (logo as Record<string, unknown>).bucket
     if (typeof path !== "string" || typeof bucket !== "string") return value
     return { ...client, logo_url: await createSignedStorageUrl(bucket, path) }
+  }
+
+  if (segments[0] === "clients" && segments[1] === "me" && segments.length === 2 && request.method === "GET") {
+    const client = await db.rpc("api_client_me")
+    if (client.error) return client
+    return { data: await withLogoUrl(client.data), error: null }
+  }
+
+  if (
+    segments[0] === "clients" &&
+    segments[1] === "me" &&
+    segments[2] === "logo" &&
+    request.method === "PUT" &&
+    segments.length === 3
+  ) {
+    const file = body.file instanceof File ? body.file : null
+    if (!file) return json(request, { error: "A logo file is required" }, 400, correlationId)
+    const profile = await db.rpc("api_client_me")
+    if (profile.error) return profile
+    const profileId = profile.data && typeof profile.data === "object" && typeof (profile.data as Record<string, unknown>).id === "string"
+      ? (profile.data as Record<string, string>).id
+      : actor.id
+    const objectName = clientLogoObjectName(profileId, file.name)
+    const validation = validateClientLogo(objectName, file.type, file.size)
+    if (!validation.ok) return json(request, { error: validation.error }, 400, correlationId)
+    await uploadStorageObject("client-logos", validation.metadata.objectName, file)
+    const result = await db.rpc("api_set_own_client_logo", {
+      object_path: validation.metadata.objectName,
+    })
+    if (result.error) {
+      await removeStorageObject("client-logos", validation.metadata.objectName)
+      return result
+    }
+    return { data: await withLogoUrl(result.data), error: null }
+  }
+
+  if (
+    segments[0] === "clients" &&
+    segments[1] === "me" &&
+    segments[2] === "logo" &&
+    request.method === "DELETE" &&
+    segments.length === 3
+  ) {
+    const current = await db.rpc("api_client_me")
+    if (current.error) return current
+    const logo = current.data && typeof current.data === "object" ? (current.data as Record<string, unknown>).logo_url : null
+    if (logo && typeof logo === "object" && typeof (logo as Record<string, unknown>).bucket === "string" && typeof (logo as Record<string, unknown>).path === "string")
+      await removeStorageObject((logo as Record<string, string>).bucket, (logo as Record<string, string>).path)
+    const clientId = current.data && typeof current.data === "object" && typeof (current.data as Record<string, unknown>).id === "string"
+      ? (current.data as Record<string, string>).id
+      : actor.id
+    return db.rpc("api_set_client_logo", { target: clientId, bucket_name: null, object_path: null })
   }
 
   // Frontend: /admin/clientes -> backend: Cliente lifecycle. Auth account
@@ -84,13 +137,15 @@ serveFunction("asset-access", async ({ request, route, body, db, correlationId }
   if (segments[0] === "clients" && request.method === "PUT" && segments.length === 3 && segments[2] === "logo") {
     const file = body.file instanceof File ? body.file : null
     if (!file) return json(request, { error: "A logo file is required" }, 400, correlationId)
-    const objectName = safeObjectName(`clients/${segments[1]}/${crypto.randomUUID()}-${file.name.replace(/[^A-Za-z0-9._-]/g, "-")}`)
-    const validation = validateStorageObject({ objectName, contentType: file.type, size: file.size }, {
-      allowedMimeTypes: ["image/jpeg", "image/png", "image/webp", "image/svg+xml"], maxBytes: 5 * 1024 * 1024,
-    })
+    const objectName = clientLogoObjectName(segments[1], file.name)
+    const validation = validateClientLogo(objectName, file.type, file.size)
     if (!validation.ok) return json(request, { error: validation.error }, 400, correlationId)
     await uploadStorageObject("client-logos", validation.metadata.objectName, file)
-    const client = await db.rpc("api_set_client_logo", { target: segments[1], bucket_name: "client-logos", object_path: validation.metadata.objectName })
+    const client = await db.rpc("api_set_client_logo", {
+      target: segments[1],
+      bucket_name: "client-logos",
+      object_path: validation.metadata.objectName,
+    })
     if (client.error) return client
     return { data: await withLogoUrl(client.data), error: null }
   }

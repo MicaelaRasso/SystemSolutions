@@ -1,11 +1,9 @@
 import type { Metadata } from "next"
 
-import { EnConstruccion } from "@/components/common/states"
+import { ClienteEmpresaPortal } from "@/components/clientes/cliente-empresa-portal"
 
 export const metadata: Metadata = { title: "Mi empresa" }
 
 export default function Page() {
-  return (
-    <EnConstruccion titulo="Mi empresa" fase={7} detalle="Datos de la empresa y carga del logo." />
-  )
+  return <ClienteEmpresaPortal />
 }
