@@ -1,6 +1,6 @@
 begin;
 
-select plan(12);
+select plan(21);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000001701', 'hierarchy-admin@example.test'),
@@ -73,6 +73,17 @@ select lives_ok(
   'an Administrador corrects a descendant name'
 );
 
+select is(
+  (select count(*) from public.api_yacimientos()),
+  1::bigint,
+  'an Administrador can read the Cliente Yacimiento'
+);
+select is(
+  public.api_yacimiento_tree(current_setting('app.test_admin_yacimiento_id')::uuid)->'valvulas'->0->>'nombre',
+  'Valvula Admin',
+  'an Administrador can read the complete hierarchy tree'
+);
+
 select public.test_set_admin_hierarchy_gateway_actor('00000000-0000-0000-0000-000000001704');
 select throws_ok(
   $$select public.api_update_descendant_for_actor('equipo', current_setting('app.test_admin_equipo_id')::uuid, 'Cambio no autorizado')$$,
@@ -82,17 +93,54 @@ select throws_ok(
 );
 
 select public.test_set_admin_hierarchy_gateway_actor('00000000-0000-0000-0000-000000001702');
-select lives_ok(
-  $$select public.api_update_yacimiento_for_actor(current_setting('app.test_admin_yacimiento_id')::uuid, 'Campo Corregido', 'Neuquen', 'Operadora', 'Contratista')$$,
-  'the owning Cliente retains correction access'
+select is(
+  (select count(*) from public.api_yacimientos()),
+  1::bigint,
+  'a Cliente can list its owned Yacimiento'
+);
+select is(
+  public.api_yacimiento_tree(current_setting('app.test_admin_yacimiento_id')::uuid)->'valvulas'->0->>'nombre',
+  'Valvula Admin',
+  'a Cliente can read its complete Yacimiento tree'
+);
+select throws_ok(
+  $$select public.api_create_yacimiento_for_actor(null, 'No permitido', 'Neuquen', 'Operadora', 'Contratista')$$,
+  '42501',
+  'Only an Administrador can change hierarchy',
+  'a Cliente cannot create a Yacimiento'
+);
+select throws_ok(
+  $$select public.api_update_yacimiento_for_actor(current_setting('app.test_admin_yacimiento_id')::uuid, 'No permitido', 'Neuquen', 'Operadora', 'Contratista')$$,
+  '42501',
+  'Only an Administrador can change hierarchy',
+  'a Cliente cannot rename a Yacimiento'
+);
+select throws_ok(
+  $$select public.api_create_descendant_for_actor('planta', current_setting('app.test_admin_yacimiento_id')::uuid, 'No permitido')$$,
+  '42501',
+  'Only an Administrador can change hierarchy',
+  'a Cliente cannot create a descendant'
+);
+select throws_ok(
+  $$select public.api_update_descendant_for_actor('equipo', current_setting('app.test_admin_equipo_id')::uuid, 'No permitido')$$,
+  '42501',
+  'Only an Administrador can change hierarchy',
+  'a Cliente cannot rename a descendant'
 );
 
 select public.test_set_admin_hierarchy_gateway_actor('00000000-0000-0000-0000-000000001703');
+select is((select count(*) from public.api_yacimientos()), 0::bigint, 'another Cliente cannot list an unrelated Yacimiento');
+select throws_ok(
+  $$select public.api_yacimiento_tree(current_setting('app.test_admin_yacimiento_id')::uuid)$$,
+  '42501',
+  'Not authorized',
+  'another Cliente cannot read an unrelated Yacimiento tree'
+);
 select throws_ok(
   $$select public.api_update_yacimiento_for_actor(current_setting('app.test_admin_yacimiento_id')::uuid, 'Cambio ajeno', 'Neuquen', 'Operadora', 'Contratista')$$,
   '42501',
-  'Only the owning Cliente or an Administrador can update a Yacimiento',
-  'another Cliente cannot edit the hierarchy'
+  'Only an Administrador can change hierarchy',
+  'another Cliente cannot mutate the hierarchy'
 );
 
 select is(
