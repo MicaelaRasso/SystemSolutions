@@ -250,6 +250,20 @@ describe("service-workflow visits read route", () => {
   })
 })
 
+describe("service-workflow visits read route", () => {
+  it("routes the canonical visit list through api_visits", async () => {
+    const visits = [{ visit: { id: operationId, estado: "programada" }, work_orders: [] }]
+    const rpc = vi.fn().mockResolvedValue({ data: visits, error: null })
+    const request = new Request("https://example.test/functions/v1/service-workflow/visits")
+
+    await expect(handler(context(request, ["visits"], rpc))).resolves.toEqual({
+      data: visits,
+      error: null,
+    })
+    expect(rpc).toHaveBeenCalledWith("api_visits")
+  })
+})
+
 describe("service-workflow mutation routes", () => {
   it.each([
     {
