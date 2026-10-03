@@ -1,25 +1,28 @@
 # SystemSolutions
 
-Domain language for Clientes requesting and scheduling safety-valve certification work from Talleres Móviles across a hierarchy of yacimientos and their equipment.
+Domain language for Administradores registering and scheduling safety-valve certification work for Clientes across a hierarchy of yacimientos and their equipment.
 
 ## People and accounts
 
 **Cliente**:
-An individual who creates and owns yacimientos, requests certificates, and has exactly one login.
+An individual whose Cuenta principal is created by an Administrador and who owns yacimientos and their Descendientes. A Cliente can view its data and hierarchy, sign all certificates from a visit, upload its logo, and view or download its certificates.
 _Avoid_: organization, tenant, customer account
 
 **Taller Móvil**:
 A worker unit belonging to System Solutions that performs certificate work. System Solutions can have multiple Talleres Móviles, and each Taller Móvil can have multiple Técnicos.
 
 **Cuenta**:
-The login identity for one person. Each account has exactly one immutable role.
+The login identity for one person. Each account has exactly one immutable role; the MVP exposes one Cuenta principal for each Cliente while retaining existing support for additional Cliente accounts without defining that workflow here.
 _Avoid_: user, profile
 
 **Rol**:
 An exclusive permission category assigned to an account. An account cannot hold more than one role, and its role does not change.
 
+**Administrador**:
+An Administrador regular or Super administrador who registers and corrects Client-owned asset hierarchies and schedules service visits for Clientes. The two administrative roles differ in their additional account, configuration, and exceptional-correction permissions.
+
 **Administrador regular**:
-An administrative account with access to every Cliente and yacimiento that manages ordinary operational requests, scheduling, assignments, and data corrections.
+An administrative account with access to every Cliente and yacimiento that registers and corrects asset hierarchies and manages ordinary operational requests, scheduling, and assignments.
 
 **Super administrador**:
 An administrative account with access to every Cliente and yacimiento and the highest administrative permissions, including account, role, Taller Móvil, configuration, exceptional-correction, and audit actions.
@@ -27,7 +30,7 @@ An administrative account with access to every Cliente and yacimiento and the hi
 ## Asset hierarchy
 
 **Yacimiento**:
-A geographic area created and owned by a Cliente. It contains one or more Plantas/locaciones and carries its province, name, and free-text Operadora and Contratista attributes.
+A geographic area registered by an Administrador for and owned by a Cliente. It contains one or more Plantas/locaciones and carries its province, name, and free-text Operadora and Contratista attributes.
 
 **Planta/locación**:
 A specific installation beneath a Yacimiento. A Planta/locación can contain multiple Equipos/unidades and has a required alphanumeric name.
@@ -44,13 +47,13 @@ Any planta/locación, equipo/unidad, or válvula contained beneath a yacimiento.
 ## Service and access
 
 **Solicitud de servicio**:
-A yacimiento-scoped request from a Cliente to a Taller Móvil. When accepted, it creates the active service relationship and grants the Taller Móvil access to the complete Yacimiento descendant tree.
+A yacimiento-scoped operational request registered by an Administrador for a Cliente. The Administrador selects the service scope, assigns and schedules the visit, and the accepted service creates the active service relationship that grants the Taller Móvil access to the complete Yacimiento descendant tree.
 
 **Visita de servicio**:
-A confirmed service appointment scheduled for exactly one Yacimiento and containing one or more valve-scoped work items. Only an Administrador can assign its Taller Móvil. Simultaneous visits may share a Yacimiento or Planta/locación, but an Equipo/unidad cannot belong to more than one simultaneous visit. As an edge case, the Técnico may add a Válvula from another Yacimiento during the visit only when that Yacimiento belongs to the same Cliente and the Taller Móvil already has access to it; this does not make the visit a multi-Yacimiento scheduling event. The Técnico completes the visit when the Taller Móvil leaves the Yacimiento and the Técnico records completion; certificate finalization is a separate step.
+A confirmed service appointment scheduled by an Administrador for exactly one Yacimiento and containing one or more valve-scoped work items. Only an Administrador can assign its Taller Móvil. Simultaneous visits may share a Yacimiento or Planta/locación, but an Equipo/unidad cannot belong to more than one simultaneous visit. As an edge case, the Técnico may add a Válvula from another Yacimiento during the visit only when that Yacimiento belongs to the same Cliente and the Taller Móvil already has access to it; this does not make the visit a multi-Yacimiento scheduling event. The Técnico completes the visit when the Taller Móvil leaves the Yacimiento and the Técnico records completion; certificate finalization is a separate step.
 
 **Cliente de servicio**:
-The single Cliente who creates a Solicitud de servicio and remains the owner of every Yacimiento and Válvula included in that service.
+The single Cliente for whom an Administrador creates a Solicitud de servicio and who remains the owner of every Yacimiento and Válvula included in that service.
 
 **Orden de trabajo**:
 A valve-scoped work item identifying one Válvula to be serviced and certified within a Visita de servicio. Its certificate data begins when the Técnico starts evaluating the Válvula; if the Válvula is not evaluated, no Certificado is created. While the Visita de servicio is open, the work item may hold an editable Borrador de certificado. When the visit closes, the eligible draft becomes a Certificado pendiente or a Certificado finalizado according to the available signatures.
@@ -60,7 +63,7 @@ _Avoid_: Solicitud de certificado
 A non-canonical term for an Orden de trabajo. The canonical term is Orden de trabajo. A Válvula can have multiple Ordenes de trabajo over time.
 
 **Selección de servicio**:
-The set of assets chosen by a Cliente when a Visita de servicio is solicited. A Cliente may select a Yacimiento, Planta/locación, Equipo/unidad, or Válvula; selecting an upper-level asset includes all descendant Válvulas at that time. Later additions to the descendant tree are not included automatically; the Cliente may edit the Solicitud de servicio while it remains editable, but the Taller Móvil may also add the new Válvula during the visit when operationally necessary, including Válvulas outside the originally selected asset tree but belonging to the same Cliente and an accessible Yacimiento.
+The set of assets chosen by an Administrador when organizing a Visita de servicio for a Cliente. The selection may start at a Yacimiento, Planta/locación, Equipo/unidad, or Válvula; selecting an upper-level asset includes all descendant Válvulas at that time. Later additions to the descendant tree are not included automatically, but the Taller Móvil may add a new Válvula during the visit when operationally necessary, including Válvulas outside the originally selected asset tree but belonging to the same Cliente and an accessible Yacimiento.
 
 **Resultado de la Orden de trabajo**:
 The independent outcome of servicing one Válvula. A Válvula that cannot be evaluated does not prevent certificates from being generated for the other Válvulas in the same Visita de servicio.
@@ -72,7 +75,10 @@ The fixed maintenance-action checklist represented by the certificate template. 
 The versioned replacement-parts checklist represented by the certificate template. A Técnico selects zero or more predefined categories and may enter one optional `Otros` description. The MVP catalog has no runtime maintenance mechanism; future catalog changes require a new template/application version. Each category has a stable identifier, and the certificate preserves the catalog version and displayed labels used at capture time. Inventory quantities and technician-entered manufacturer or serial identifiers are outside this context.
 
 **Estado de la Visita de servicio**:
-The lifecycle state of a visit: solicitada, programada, aceptada, en curso, completada, or cancelada. A Taller Móvil rejection returns the visit to programada for administrator reassignment; it is not a terminal state. The Cliente may cancel the visit without administrator approval at any time before its execution day. A Técnico may mark a visit completed without connectivity; the device can show local completion before the backend receives it, while the backend records completion when the completion operation is synchronized. Local completion immediately closes editing for eligible certificate drafts. Visit completion requires one Técnico signature, but does not require the Cliente signature; certificates may therefore remain pending after the visit is completed. These states are distinct from Certificado finalizado.
+The lifecycle state of a visit: solicitada, programada, aceptada, en curso, completada, or cancelada. A Taller Móvil rejection returns the visit to programada for administrator reassignment; it is not a terminal state. A Técnico may mark a visit completed without connectivity; the device can show local completion before the backend receives it, while the backend records completion when the completion operation is synchronized. Local completion immediately closes editing for eligible certificate drafts. Visit completion requires one Técnico signature, but does not require the Cliente signature; certificates may therefore remain pending after the visit is completed. These states are distinct from Certificado finalizado.
+
+**Portal del Cliente**:
+The Cliente-facing presentation for viewing its data and Yacimientos/Descendientes, signing all certificates from a visit, uploading its logo, and viewing or downloading its certificates. It does not expose visit requests, visit scheduling, operational assignment, hierarchy registration or editing, or technical certificate editing; existing backend capabilities that are not exposed by the portal remain available for future or compatibility use.
 
 ## Offline field work and synchronization
 

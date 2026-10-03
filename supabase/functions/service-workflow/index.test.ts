@@ -250,17 +250,44 @@ describe("service-workflow visits read route", () => {
   })
 })
 
-describe("service-workflow visits read route", () => {
-  it("routes the canonical visit list through api_visits", async () => {
-    const visits = [{ visit: { id: operationId, estado: "programada" }, work_orders: [] }]
-    const rpc = vi.fn().mockResolvedValue({ data: visits, error: null })
-    const request = new Request("https://example.test/functions/v1/service-workflow/visits")
+describe("service-workflow audit read routes", () => {
+  it("returns the audit list envelope without requiring an export format", async () => {
+    const auditEnvelope = { items: [], total: 0, limit: 100, offset: 0, has_more: false }
+    const rpc = vi.fn().mockResolvedValue({ data: auditEnvelope, error: null })
+    const request = new Request("https://example.test/functions/v1/service-workflow/audit")
 
-    await expect(handler(context(request, ["visits"], rpc))).resolves.toEqual({
-      data: visits,
+    await expect(handler(context(request, ["audit"], rpc))).resolves.toEqual({
+      data: auditEnvelope,
       error: null,
     })
-    expect(rpc).toHaveBeenCalledWith("api_visits")
+    expect(rpc).toHaveBeenCalledWith("api_audit_events", {
+      from_date: null,
+      to_date: null,
+      actor_filter: null,
+      action_filter: null,
+      target_type_filter: null,
+      outcome_filter: null,
+      client_filter: null,
+      yacimiento_filter: null,
+      visit_filter: null,
+      certificate_filter: null,
+      limit_count: 100,
+      offset_count: 0,
+    })
+  })
+
+  it("requires an export format only for the audit export route", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: { items: [], total: 0, limit: 100, offset: 0, has_more: false },
+      error: null,
+    })
+    const request = new Request("https://example.test/functions/v1/service-workflow/audit/export")
+
+    const response = await handler(context(request, ["audit", "export"], rpc))
+
+    expect(response).toBeInstanceOf(Response)
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({ error: "format must be json or csv" })
   })
 })
 

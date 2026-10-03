@@ -180,15 +180,19 @@ declare
     actor_id
   );
   client_namespace_prefix text := 'clients/' || client_id::text || '/';
+  namespace_prefix text;
 begin
   if actor_id is null or not exists (
     select 1 from public.cuentas where id = actor_id and rol = 'cliente' and activo
   ) then
     raise exception using errcode = 'insufficient_privilege', message = 'Only an active Cliente can change its logo';
   end if;
+  namespace_prefix := case
+    when actor_id = client_id then actor_namespace_prefix
+    else client_namespace_prefix
+  end;
   if object_path is null
-     or left(object_path, length(case when actor_id = client_id then actor_namespace_prefix else client_namespace_prefix end))
-          <> case when actor_id = client_id then actor_namespace_prefix else client_namespace_prefix end
+     or left(object_path, length(namespace_prefix)) <> namespace_prefix
      or not exists (select 1 from storage.objects where bucket_id = 'client-logos' and name = object_path) then
     raise exception using errcode = 'invalid_parameter_value', message = 'Logo object is not authorized';
   end if;

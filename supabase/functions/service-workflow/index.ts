@@ -235,6 +235,7 @@ export const serviceWorkflowHandler: RouteHandler = async ({
       limit_count: Number(query.get("limit") ?? 100), offset_count: Number(query.get("offset") ?? 0),
     })
     if (result.error) return result
+    if (segments[1] !== "export") return result
     const envelope = result.data as { items?: Record<string, unknown>[] }
     const format = query.get("format")
     if (format !== "json" && format !== "csv") return json(request, { error: "format must be json or csv" }, 400, correlationId)
