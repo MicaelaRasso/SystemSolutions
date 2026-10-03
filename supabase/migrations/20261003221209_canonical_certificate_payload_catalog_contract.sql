@@ -161,6 +161,7 @@ begin
      or jsonb_typeof(template_fields) <> 'array' then
     raise exception using errcode = 'invalid_parameter_value', message = 'A template version and field array are required';
   end if;
+  perform public.validate_certificate_template_fields(template_fields);
   insert into public.plantillas_certificado(version, estado, campos)
   values (btrim(template_version), 'borrador', template_fields)
   returning * into result;
@@ -186,6 +187,7 @@ begin
      or jsonb_typeof(template_fields) <> 'array' then
     raise exception using errcode = 'invalid_parameter_value', message = 'A template version and field array are required';
   end if;
+  perform public.validate_certificate_template_fields(template_fields);
   update public.plantillas_certificado
   set version = btrim(template_version), campos = template_fields
   where id = target and estado = 'borrador'
@@ -204,6 +206,55 @@ grant execute on function public.api_active_certificate_template() to authentica
 grant execute on function public.api_activate_certificate_template(uuid), public.api_certificate_templates(),
   public.api_create_certificate_template(text, jsonb), public.api_update_certificate_template(uuid, text, jsonb)
   to service_role;
+
+create or replace function public.validate_certificate_template_fields(template_fields jsonb)
+returns void
+language plpgsql
+immutable
+security definer
+set search_path = public
+as $$
+declare
+  field_definition jsonb;
+  option_definition jsonb;
+begin
+  if jsonb_typeof(template_fields) <> 'array' then
+    raise exception using errcode = 'invalid_parameter_value', message = 'Certificate template fields must be an array';
+  end if;
+  if exists (
+    select 1
+    from jsonb_array_elements(template_fields) field_definition
+    group by field_definition->>'clave'
+    having count(*) > 1
+  ) then
+    raise exception using errcode = 'invalid_parameter_value', message = 'Certificate template field keys must be unique';
+  end if;
+  for field_definition in select value from jsonb_array_elements(template_fields) loop
+    if jsonb_typeof(field_definition) is distinct from 'object'
+       or nullif(btrim(field_definition->>'clave'), '') is null
+       or nullif(btrim(field_definition->>'etiqueta'), '') is null
+       or nullif(btrim(field_definition->>'seccion'), '') is null
+       or field_definition->>'tipo' is null
+       or field_definition->>'tipo' not in ('text', 'textarea', 'number', 'date', 'select', 'multiselect', 'boolean')
+       or jsonb_typeof(field_definition->'orden') is distinct from 'number'
+       or field_definition->>'orden' !~ '^[0-9]+$'
+       or field_definition->>'obligatorio' is null
+       or field_definition->>'obligatorio' not in ('true', 'false')
+       or jsonb_typeof(field_definition->'opciones') is distinct from 'array' then
+      raise exception using errcode = 'invalid_parameter_value', message = 'Invalid certificate template field definition';
+    end if;
+    for option_definition in select value from jsonb_array_elements(field_definition->'opciones') loop
+      if jsonb_typeof(option_definition) is distinct from 'object'
+         or nullif(btrim(option_definition->>'id'), '') is null
+         or nullif(btrim(option_definition->>'label'), '') is null then
+        raise exception using errcode = 'invalid_parameter_value', message = 'Invalid certificate template field option';
+      end if;
+    end loop;
+  end loop;
+end;
+$$;
+
+revoke all on function public.validate_certificate_template_fields(jsonb) from public, anon, authenticated;
 
 -- The reference catalog is the initial active catalog. Administrators can
 -- reorder or deactivate these values without changing any captured certificate.
