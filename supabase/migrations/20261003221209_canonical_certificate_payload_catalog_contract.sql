@@ -205,6 +205,40 @@ grant execute on function public.api_activate_certificate_template(uuid), public
   public.api_create_certificate_template(text, jsonb), public.api_update_certificate_template(uuid, text, jsonb)
   to service_role;
 
+-- The reference catalog is the initial active catalog. Administrators can
+-- reorder or deactivate these values without changing any captured certificate.
+insert into public.catalogo_opciones(lista, valor, orden)
+select seed.lista, seed.valor, seed.orden
+from (values
+  ('unidad', 'Kg/Cm2', 0), ('unidad', 'psi', 1), ('unidad', 'BAR', 2),
+  ('unidad', 'mmH2O', 3), ('unidad', 'Otro', 4),
+  ('alcance', 'DESMONTAJE', 0), ('alcance', 'DESARME', 1), ('alcance', 'LIMPIEZA', 2),
+  ('alcance', 'VERIFICAR INTERNOS', 3), ('alcance', 'RECTIF. ASIENTO', 4),
+  ('alcance', 'RECTIF. OBTURADOR', 5), ('alcance', 'VERIFICAR O''RINGS', 6),
+  ('alcance', 'PRUEBA SET', 7), ('alcance', 'CALIBRACION', 8), ('alcance', 'PINTADO', 9),
+  ('alcance', 'PRECINTO/PLACA DATOS', 10),
+  ('repuestos', 'KIT O''RING', 0), ('repuestos', 'JUNTAS INTERNO', 1), ('repuestos', 'ASIENTO', 2),
+  ('repuestos', 'OBTURADOR', 3), ('repuestos', 'U''PACKING', 4), ('repuestos', 'RESORTE', 5),
+  ('repuestos', 'BONETE', 6), ('repuestos', 'TUERCAS', 7), ('repuestos', 'ESPARRAGOS', 8),
+  ('repuestos', 'JUNTAS PROCESO', 9)) as seed(lista, valor, orden)
+where not exists (
+  select 1 from public.catalogo_opciones current
+  where current.lista = seed.lista and current.valor = seed.valor
+);
+
+insert into public.patrones_ensayo(nombre, nro_serie, vencimiento)
+values
+  ('KELLER LEO 1', '122330', (current_date + interval '1 year')::date),
+  ('KELLER LEO 2', '116474', (current_date + interval '1 year')::date),
+  ('KELLER LEO 2', '140286', (current_date + interval '1 year')::date),
+  ('KELLER LEO 2', '140287', (current_date + interval '1 year')::date),
+  ('WIKA', '1A03L5X9T33', (current_date + interval '1 year')::date),
+  ('WIKA', '1A03L5XAS33', (current_date + interval '1 year')::date),
+  ('FLUKE 717', '300G', (current_date + interval '1 year')::date),
+  ('KELLER DRUCK', '22443', (current_date + interval '1 year')::date),
+  ('WIKA', '1A03ALKI5IH', (current_date + interval '1 year')::date)
+on conflict (nombre, nro_serie) do nothing;
+
 create or replace function public.api_certificate_capture_catalogs()
 returns jsonb
 language plpgsql
