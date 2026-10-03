@@ -3,5 +3,45 @@ import Link from "next/link"
 import { useParams } from "next/navigation"
 import { PageHeader } from "@/components/common/page-header"
 import { EmptyState, ErrorState } from "@/components/common/states"
+import { CertificateExpandedDetails } from "@/components/certificados/certificate-expanded-details"
 import { useEdgeAdminCertificate } from "@/lib/api/hooks"
-export default function Page() { const params = useParams<{ id: string }>(); const query = useEdgeAdminCertificate(params.id); if (query.isLoading) return <div className="h-48 animate-pulse rounded-xl bg-muted" />; if (query.isError) return <ErrorState error={query.error} onRetry={() => void query.refetch()} />; if (!query.data) return <EmptyState titulo="Certificado no encontrado" />; return <div className="space-y-6"><PageHeader titulo="Detalle del Certificado" acciones={<Link className="text-primary underline" href="/admin/certificados">Volver al historial</Link>} /><pre className="overflow-auto rounded-xl border bg-muted/30 p-4 text-xs">{JSON.stringify(query.data.certificate, null, 2)}</pre><section><h2 className="mb-2 font-semibold">Historial de la Válvula</h2><p className="text-sm text-muted-foreground">{query.data.history.length} registros relacionados.</p></section><section><h2 className="mb-2 font-semibold">Eventos de auditoría relacionados</h2>{query.data.audit_events.length === 0 ? <p className="text-sm text-muted-foreground">No hay eventos relacionados.</p> : <ul className="space-y-2">{query.data.audit_events.map((event) => <li key={event.id} className="rounded border p-3 text-sm">{event.accion} · {event.resultado} · {event.recibida_en}</li>)}</ul>}</section></div> }
+export default function Page() {
+  const params = useParams<{ id: string }>()
+  const query = useEdgeAdminCertificate(params.id)
+  if (query.isLoading) return <div className="h-48 animate-pulse rounded-xl bg-muted" />
+  if (query.isError) return <ErrorState error={query.error} onRetry={() => void query.refetch()} />
+  if (!query.data) return <EmptyState titulo="Certificado no encontrado" />
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        titulo="Detalle del Certificado"
+        acciones={
+          <Link className="text-primary underline" href="/admin/certificados">
+            Volver al historial
+          </Link>
+        }
+      />
+      <CertificateExpandedDetails certificate={query.data.certificate} />
+      <section>
+        <h2 className="mb-2 font-semibold">Historial de la Válvula</h2>
+        <p className="text-sm text-muted-foreground">
+          {query.data.history.length} registros relacionados.
+        </p>
+      </section>
+      <section>
+        <h2 className="mb-2 font-semibold">Eventos de auditoría relacionados</h2>
+        {query.data.audit_events.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No hay eventos relacionados.</p>
+        ) : (
+          <ul className="space-y-2">
+            {query.data.audit_events.map((event) => (
+              <li key={event.id} className="rounded border p-3 text-sm">
+                {event.accion} · {event.resultado} · {event.recibida_en}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  )
+}

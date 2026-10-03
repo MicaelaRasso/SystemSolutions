@@ -1,11 +1,17 @@
 import type { EdgeAccessClient } from "../services/edge"
 import {
   certificateDraftDtoSchema,
+  certificateCaptureCatalogsSchema,
+  certificateTemplateInputSchema,
+  certificateTemplateListDtoSchema,
+  certificateTemplateSchema,
   finalizedCertificateDtoSchema,
   pendingClientSignatureVisitsDtoSchema,
   updateCertificateDraftInputSchema,
   valveCertificateHistoryDtoSchema,
   visitSignatureDtoSchema,
+  type CertificateOptionValue,
+  type CertificateTemplateInput,
   type UpdateCertificateDraftInput,
   type VisitSignatureUploadInput,
 } from "./contracts"
@@ -21,10 +27,11 @@ export type CertificateEvidenceKey = (typeof CERTIFICATE_EVIDENCE_SECTIONS)[numb
 
 export function buildCertificateDraftPayload(input: {
   catalogVersion: string
-  maintenanceScope: string[]
-  replacementPartIds: string[]
+  maintenanceScope: CertificateOptionValue[]
+  replacementPartIds: CertificateOptionValue[]
   otherParts?: string
   observations?: string
+  customFields?: Record<string, unknown>
   evidence?: Partial<Record<CertificateEvidenceKey, unknown>>
 }) {
   const evidence = input.evidence ?? {}
@@ -35,6 +42,7 @@ export function buildCertificateDraftPayload(input: {
       items: input.replacementPartIds,
       otros: input.otherParts?.trim() || null,
     },
+    campos_personalizados: input.customFields ?? {},
     evidencia_fotografica: {
       desarmada: evidence.desarmada ?? null,
       ensamblada_prueba: evidence.ensamblada_prueba ?? null,
@@ -46,6 +54,7 @@ export function buildCertificateDraftPayload(input: {
 
 export const certificateQueryKeys = {
   all: ["edge", "certificates"] as const,
+  activeTemplate: () => [...certificateQueryKeys.all, "active-template"] as const,
   draft: (certificateId: string) => [...certificateQueryKeys.all, "draft", certificateId] as const,
   finalized: (certificateId: string) =>
     [...certificateQueryKeys.all, "finalized", certificateId] as const,
@@ -61,6 +70,29 @@ export function createCertificatesApi(edge: EdgeAccessClient) {
   const serviceWorkflow = createServiceWorkflowApi(edge)
 
   return {
+    activeTemplate: () => edge.request("certificate-templates/active", certificateTemplateSchema),
+    templates: () => edge.request("certificate-templates", certificateTemplateListDtoSchema),
+    captureCatalogs: () =>
+      edge.request("certificate-capture/catalogs", certificateCaptureCatalogsSchema),
+    createTemplate: async (input: CertificateTemplateInput) => {
+      const data = certificateTemplateInputSchema.parse(input)
+      return edge.request("certificate-templates", certificateTemplateSchema, {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    },
+    updateTemplate: async (id: string, input: CertificateTemplateInput) => {
+      const data = certificateTemplateInputSchema.parse(input)
+      return edge.request(`certificate-templates/${id}`, certificateTemplateSchema, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      })
+    },
+    activateTemplate: (id: string) =>
+      edge.request(`certificate-templates/${id}/activate`, certificateTemplateSchema, {
+        method: "POST",
+        body: JSON.stringify({}),
+      }),
     draft: (certificateId: string) =>
       edge.request(`certificates/${certificateId}`, certificateDraftDtoSchema),
     finalized: (certificateId: string) =>

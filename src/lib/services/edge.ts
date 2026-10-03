@@ -157,12 +157,17 @@ export class EdgeAccessClient {
     )
       return "identity-admin"
     if (route === "clients/me/pending-certificates") return "certificate-field"
-    if (route === "clients" || route.startsWith("clients/")) return "asset-access"
-    if (/^(?:operations|audit|admin)(?:\/|$)/.test(route) || route === "attachments") return "service-workflow"
     if (
-      route.startsWith("offline/") ||
-      /^(?:visits\/[^/]+\/(?:sync|claim|media))$/.test(route)
+      route === "certificate-templates/active" ||
+      route === "certificate-templates" ||
+      route.startsWith("certificate-templates/") ||
+      route === "certificate-capture/catalogs"
     )
+      return "certificate-field"
+    if (route === "clients" || route.startsWith("clients/")) return "asset-access"
+    if (/^(?:operations|audit|admin)(?:\/|$)/.test(route) || route === "attachments")
+      return "service-workflow"
+    if (route.startsWith("offline/") || /^(?:visits\/[^/]+\/(?:sync|claim|media))$/.test(route))
       return "offline-sync"
     if (
       route.startsWith("certificates/") ||

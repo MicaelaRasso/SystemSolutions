@@ -4,14 +4,15 @@ import { Ban, ChevronLeft, RotateCcw } from "lucide-react"
 import Link from "next/link"
 
 import { ConfirmDialog } from "@/components/common/confirm-dialog"
+import { CertificateCaptureForm } from "@/components/certificados/certificate-capture-form"
 import { ErrorState } from "@/components/common/states"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Textarea } from "@/components/ui/textarea"
 import { fmtFecha } from "@/lib/format"
 import {
   useAddEdgeWorkOrder,
+  useEdgeCertificateCaptureCatalogs,
   useEdgeCertificateDraft,
   useStartEdgeCertificateDraft,
   useUpdateEdgeCertificateDraft,
@@ -248,24 +249,10 @@ function OrdenesTrabajo({ operation }: { operation: OperationRead }) {
 
 function CertificateDraft({ workOrderId }: { workOrderId: string }) {
   const [certificateId, setCertificateId] = useState<string>()
-  const [payload, setPayload] = useState("{}")
-  const [payloadError, setPayloadError] = useState<string>()
   const start = useStartEdgeCertificateDraft()
   const draft = useEdgeCertificateDraft(certificateId)
+  const catalogs = useEdgeCertificateCaptureCatalogs()
   const save = useUpdateEdgeCertificateDraft()
-
-  function saveOpaquePayload() {
-    try {
-      const parsed: unknown = JSON.parse(payload)
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        throw new Error("El payload debe ser un objeto JSON")
-      }
-      setPayloadError(undefined)
-      save.mutate({ certificateId: certificateId!, input: parsed as Record<string, unknown> })
-    } catch (error) {
-      setPayloadError(error instanceof Error ? error.message : "JSON inválido")
-    }
-  }
 
   return (
     <div className="space-y-1">
@@ -297,21 +284,22 @@ function CertificateDraft({ workOrderId }: { workOrderId: string }) {
               ? "Borrador completo según la validación del servidor."
               : `Campos pendientes: ${draft.data.validation.missing_fields.join(", ") || "sin detalle"}`}
           </p>
-          <label className="block space-y-1 text-xs text-muted-foreground">
-            Payload JSON opaco
-            <Textarea
-              value={payload}
-              onChange={(event) => setPayload(event.target.value)}
-              rows={4}
-              spellCheck={false}
+          {catalogs.data ? (
+            <CertificateCaptureForm
+              key={`${certificateId}-${String(draft.data.certificate.updated_at ?? "loaded")}`}
+              template={catalogs.data.template}
+              catalogs={catalogs.data}
+              technicians={[]}
+              certificate={draft.data.certificate}
+              disabled={
+                String((draft.data.certificate as Record<string, unknown>).estado_captura) ===
+                "cerrado"
+              }
+              onSave={(input) => save.mutate({ certificateId: certificateId!, input })}
             />
-          </label>
-          <Button size="sm" variant="outline" disabled={save.isPending} onClick={saveOpaquePayload}>
-            Guardar borrador
-          </Button>
-          {payloadError && (
-            <p role="alert" className="text-xs text-destructive">
-              {payloadError}
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Cargando la plantilla y catálogos del certificado…
             </p>
           )}
           {save.isError && (

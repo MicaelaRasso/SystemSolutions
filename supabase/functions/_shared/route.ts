@@ -111,8 +111,7 @@ export const parseOperationsQuery = (request: Request): OperationsQuery => {
 }
 
 export const routeOwner = (method: string, route: string[]): FunctionName | null => {
-  if (method === "POST" && route.length === 1 && route[0] === "backups")
-    return "backup-export"
+  if (method === "POST" && route.length === 1 && route[0] === "backups") return "backup-export"
 
   if (
     (method === "GET" && (route.length === 0 || is(route, "context"))) ||
@@ -127,6 +126,19 @@ export const routeOwner = (method: string, route: string[]): FunctionName | null
     return "identity-admin"
 
   if (method === "GET" && is(route, "clients", "me", "pending-certificates"))
+    return "certificate-field"
+
+  if (
+    (method === "GET" && is(route, "certificate-templates", "active")) ||
+    (method === "GET" && is(route, "certificate-templates")) ||
+    (method === "POST" && is(route, "certificate-templates")) ||
+    (method === "PATCH" && route[0] === "certificate-templates" && route.length === 2) ||
+    (method === "POST" &&
+      route[0] === "certificate-templates" &&
+      route.length === 3 &&
+      route[2] === "activate") ||
+    (method === "GET" && is(route, "certificate-capture", "catalogs"))
+  )
     return "certificate-field"
 
   if (
@@ -164,7 +176,9 @@ export const routeOwner = (method: string, route: string[]): FunctionName | null
       ["accept", "reject", "cancel", "start", "complete", "work-orders"].includes(route[2])) ||
     (method === "PATCH" && route[0] === "work-orders" && route.length === 2) ||
     (method === "GET" && route[0] === "operations" && (route.length === 1 || route.length === 2)) ||
-    (method === "GET" && route[0] === "audit" && (route.length === 1 || (route.length === 2 && route[1] === "export"))) ||
+    (method === "GET" &&
+      route[0] === "audit" &&
+      (route.length === 1 || (route.length === 2 && route[1] === "export"))) ||
     (method === "GET" && route[0] === "audit" && route.length === 2) ||
     (method === "GET" && route[0] === "admin" && route.length >= 2) ||
     (method === "POST" && is(route, "attachments"))

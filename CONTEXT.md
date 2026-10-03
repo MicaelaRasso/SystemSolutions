@@ -114,8 +114,14 @@ The complete sequence of persisted certification records for a Válvula, includi
 ## Certificates and evidence
 
 **Plantilla de certificado**:
-The canonical certificate layout and field contract represented by `SYS_Certificado Modelo1`. Its sample values, marks, and annotations are not domain data; the PDF is a presentation produced from the certificate data, not a persisted certificate artifact.
+The versioned certificate layout and field contract represented initially by `SYS_Certificado Modelo1`. A Plantilla de certificado contains the configurable fields, labels, sections, order, field types, and required status used by new Borradores de certificado. Only one version is active at a time. A certificate preserves the version and field definition snapshot used at capture time; historical versions are not available for new work. Its sample values, marks, and annotations are not domain data; the PDF is a presentation produced from the certificate data, not a persisted certificate artifact.
 _Avoid_: example certificate, draft layout
+
+**Campo configurable de certificado**:
+A field definition belonging to a version of the Plantilla de certificado. It has a stable key, label, section, order, input type, optional catalog choices, and required status. Its captured value belongs to the certificate that used that template version.
+
+**Versión activa de la Plantilla de certificado**:
+The single Plantilla de certificado version available for creating new Borradores de certificado. Activating a new version moves the previous active version to historical status; it does not change existing drafts or closed certificates.
 
 **Técnico**:
 An individual belonging to the Taller Móvil who performs certificate work. A Taller Móvil may have multiple Técnicos and may temporarily use one shared account; a visit records the selected Técnico's name under `Ejecutó`. Any Técnico belonging to the assigned Taller Móvil may complete and sign the visit.

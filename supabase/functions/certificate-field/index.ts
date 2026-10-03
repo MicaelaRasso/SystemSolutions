@@ -38,6 +38,50 @@ export const certificateFieldHandler: RouteHandler = async ({
   const segments = route
 
   if (
+    segments[0] === "certificate-templates" &&
+    request.method === "GET" &&
+    segments[1] === "active" &&
+    segments.length === 2
+  )
+    return db.rpc("api_active_certificate_template")
+
+  if (segments[0] === "certificate-templates" && request.method === "GET" && segments.length === 1)
+    return db.rpc("api_certificate_templates")
+
+  if (segments[0] === "certificate-templates" && request.method === "POST" && segments.length === 1)
+    return db.rpc("api_create_certificate_template", {
+      template_version: body.version,
+      template_fields: body.campos ?? [],
+    })
+
+  if (
+    segments[0] === "certificate-templates" &&
+    request.method === "PATCH" &&
+    segments.length === 2
+  )
+    return db.rpc("api_update_certificate_template", {
+      target: segments[1],
+      template_version: body.version,
+      template_fields: body.campos ?? [],
+    })
+
+  if (
+    segments[0] === "certificate-templates" &&
+    request.method === "POST" &&
+    segments[2] === "activate" &&
+    segments.length === 3
+  )
+    return db.rpc("api_activate_certificate_template", { target: segments[1] })
+
+  if (
+    segments[0] === "certificate-capture" &&
+    segments[1] === "catalogs" &&
+    request.method === "GET" &&
+    segments.length === 2
+  )
+    return db.rpc("api_certificate_capture_catalogs")
+
+  if (
     segments[0] === "work-orders" &&
     request.method === "POST" &&
     segments[1] &&

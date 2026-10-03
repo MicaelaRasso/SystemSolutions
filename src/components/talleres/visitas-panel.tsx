@@ -1,23 +1,24 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState, type ComponentProps } from "react"
 import { ChevronDown, ChevronUp, CloudOff, FileCheck2, Lock, RefreshCw, Wifi } from "lucide-react"
 
 import { SignaturePad, dataUrlToFile } from "@/components/certificados/signature-pad"
+import { CertificateCaptureForm } from "@/components/certificados/certificate-capture-form"
 import { EmptyState, ErrorState } from "@/components/common/states"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { edgeApi } from "@/lib/api"
-import {
-  buildCertificateDraftPayload,
-  CERTIFICATE_EVIDENCE_SECTIONS,
-  type CertificateEvidenceKey,
-} from "@/lib/api/certificates"
-import type { VisitDto, WorkOrderDetailDto } from "@/lib/api/contracts"
+import { type CertificateEvidenceKey } from "@/lib/api/certificates"
+import { useEdgeCertificateCaptureCatalogs, useEdgeCertificateDraft } from "@/lib/api/hooks"
+import type {
+  CertificateCaptureCatalogsDto,
+  VisitDto,
+  WorkOrderDetailDto,
+} from "@/lib/api/contracts"
 import {
   IndexedDbOfflineStore,
   OfflineSyncCoordinator,
@@ -31,6 +32,7 @@ const DEVICE_ID_STORAGE_KEY = "systemsolutions.offline.device-id"
 type StoredVisitContext = VisitDto & {
   context?: unknown
   assigned_technicians?: { id?: string; name?: string; nombre?: string }[]
+  certificate_catalogs?: CertificateCaptureCatalogsDto
 }
 
 function deviceId() {
@@ -61,6 +63,11 @@ function workOrderName(order: WorkOrderDetailDto, context: StoredVisitContext) {
   const entry = context as unknown as { work_orders?: { valvula?: { nombre?: string } }[] }
   const valve = entry.work_orders?.find((item) => item === order)?.valvula
   return String(valve?.nombre ?? order.valvula_id ?? order.id)
+}
+
+function findValve(context: StoredVisitContext, valveId: string | undefined) {
+  const tree = context.context as { valvulas?: Record<string, unknown>[] } | undefined
+  return tree?.valvulas?.find((valve) => valve.id === valveId)
 }
 
 function createCoordinator(store: IndexedDbOfflineStore) {
@@ -95,7 +102,9 @@ function createCoordinator(store: IndexedDbOfflineStore) {
           }
           return {
             operationId: operation.operation_id,
-            kind: operation.kind as Parameters<typeof edgeApi.offline.syncVisit>[1]["operations"][number]["kind"],
+            kind: operation.kind as Parameters<
+              typeof edgeApi.offline.syncVisit
+            >[1]["operations"][number]["kind"],
             payload: operation.payload,
             schemaVersion: operation.schema_version,
             dependencies: operation.dependencies,
@@ -200,15 +209,26 @@ export function VisitasPanel() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           {connection === "offline" ? <CloudOff className="size-4" /> : <Wifi className="size-4" />}
-          {connection === "offline" ? "Trabajando offline" : connection === "loading" ? "Actualizando…" : "Conectado"}
+          {connection === "offline"
+            ? "Trabajando offline"
+            : connection === "loading"
+              ? "Actualizando…"
+              : "Conectado"}
         </div>
-        <Button variant="outline" onClick={() => void refresh()} disabled={connection === "loading"}>
+        <Button
+          variant="outline"
+          onClick={() => void refresh()}
+          disabled={connection === "loading"}
+        >
           <RefreshCw className="mr-2 size-4" /> Actualizar agenda
         </Button>
       </div>
       {error ? <ErrorState error={error} onRetry={() => void refresh()} /> : null}
       {visits.length === 0 && connection !== "loading" ? (
-        <EmptyState titulo="No hay visitas de servicio disponibles" descripcion="La agenda de los próximos dos días aparecerá aquí después de una autenticación online." />
+        <EmptyState
+          titulo="No hay visitas de servicio disponibles"
+          descripcion="La agenda de los próximos dos días aparecerá aquí después de una autenticación online."
+        />
       ) : null}
       <div className="grid gap-4 lg:grid-cols-2">
         {visits.map((visit) => (
@@ -254,8 +274,22 @@ function VisitCard({
             <CardTitle>{visitName(visit)}</CardTitle>
             <CardDescription>{visitDate(visit)} · Visita de servicio</CardDescription>
           </div>
-          <Badge variant={conflicts.length ? "destructive" : visit.estadoLocal === "completada_local" ? "secondary" : "outline"}>
-            {conflicts.length ? "Conflicto" : visit.estadoLocal === "completada_local" ? "Completada localmente" : pending.length ? "Pendiente de sincronización" : "Disponible"}
+          <Badge
+            variant={
+              conflicts.length
+                ? "destructive"
+                : visit.estadoLocal === "completada_local"
+                  ? "secondary"
+                  : "outline"
+            }
+          >
+            {conflicts.length
+              ? "Conflicto"
+              : visit.estadoLocal === "completada_local"
+                ? "Completada localmente"
+                : pending.length
+                  ? "Pendiente de sincronización"
+                  : "Disponible"}
           </Badge>
         </div>
       </CardHeader>
@@ -267,11 +301,18 @@ function VisitCard({
         </div>
         {conflicts.length ? (
           <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-            Conflicto de sincronización: se conservan los datos locales para resolución administrativa.
-            {conflicts.map((operation) => <p key={operation.operationId}>{operation.lastError}</p>)}
+            Conflicto de sincronización: se conservan los datos locales para resolución
+            administrativa.
+            {conflicts.map((operation) => (
+              <p key={operation.operationId}>{operation.lastError}</p>
+            ))}
           </div>
         ) : null}
-        {failed.length ? <p className="text-sm text-destructive">Hay cambios fallidos. Podés reintentar sin volver a capturar el trabajo.</p> : null}
+        {failed.length ? (
+          <p className="text-sm text-destructive">
+            Hay cambios fallidos. Podés reintentar sin volver a capturar el trabajo.
+          </p>
+        ) : null}
         <Button variant="outline" onClick={onOpen}>
           {open ? <ChevronUp className="mr-2 size-4" /> : <ChevronDown className="mr-2 size-4" />}
           {open ? "Cerrar visita" : "Abrir visita"}
@@ -297,6 +338,10 @@ function VisitEditor({
   const context = contextOf(visit)
   const coordinator = useMemo(() => createCoordinator(store), [store])
   const technicians = context.assigned_technicians ?? []
+  const catalogsQuery = useEdgeCertificateCaptureCatalogs(
+    typeof navigator !== "undefined" && navigator.onLine,
+  )
+  const catalogs = context.certificate_catalogs ?? catalogsQuery.data
   const closed = visit.estadoLocal === "completada_local"
 
   const claim = async () => {
@@ -333,12 +378,22 @@ function VisitEditor({
           signerName: technician,
           file,
         })
-        await coordinator.queue(visit.id, deviceId(), "complete_visit", {
-          local_completed_at: new Date().toISOString(),
-        }, [signatureOperation.operationId])
+        await coordinator.queue(
+          visit.id,
+          deviceId(),
+          "complete_visit",
+          {
+            local_completed_at: new Date().toISOString(),
+          },
+          [signatureOperation.operationId],
+        )
         await coordinator.markVisitLocallyComplete(visit.id)
       }
-      setMessage(navigator.onLine ? "Visita completada y enviada al backend." : "Visita completada localmente; queda pendiente de sincronización.")
+      setMessage(
+        navigator.onLine
+          ? "Visita completada y enviada al backend."
+          : "Visita completada localmente; queda pendiente de sincronización.",
+      )
       await onChanged()
     } catch (caught) {
       setMessage(caught instanceof Error ? caught.message : "No se pudo completar la visita")
@@ -350,31 +405,88 @@ function VisitEditor({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="font-medium">Trabajo de campo</p>
-          <p className="text-sm text-muted-foreground">Cada Orden de trabajo tiene un resultado independiente.</p>
+          <p className="text-sm text-muted-foreground">
+            Cada Orden de trabajo tiene un resultado independiente.
+          </p>
         </div>
-        {!visit.claimedByDeviceId ? <Button variant="outline" onClick={() => void claim()}>Reservar en este dispositivo</Button> : <Badge variant="outline">Reservada localmente</Badge>}
+        {!visit.claimedByDeviceId ? (
+          <Button variant="outline" onClick={() => void claim()}>
+            Reservar en este dispositivo
+          </Button>
+        ) : (
+          <Badge variant="outline">Reservada localmente</Badge>
+        )}
       </div>
       <div className="space-y-3">
         {(context.work_orders ?? []).map((order) => (
-          <WorkOrderEditor key={order.id} order={order} visit={visit} store={store} coordinator={coordinator} disabled={closed} onChanged={onChanged} onMessage={setMessage} />
+          <WorkOrderEditor
+            key={order.id}
+            order={order}
+            visit={visit}
+            store={store}
+            coordinator={coordinator}
+            catalogs={catalogs}
+            technicians={technicians}
+            disabled={closed}
+            onChanged={onChanged}
+            onMessage={setMessage}
+          />
         ))}
       </div>
       <Card size="sm">
-        <CardHeader><CardTitle className="text-sm">Cierre de la Visita de servicio</CardTitle><CardDescription>La firma del Técnico es obligatoria. La firma del Cliente puede llegar después desde su panel.</CardDescription></CardHeader>
+        <CardHeader>
+          <CardTitle className="text-sm">Cierre de la Visita de servicio</CardTitle>
+          <CardDescription>
+            La firma del Técnico es obligatoria. La firma del Cliente puede llegar después desde su
+            panel.
+          </CardDescription>
+        </CardHeader>
         <CardContent className="space-y-3">
           <Label htmlFor={`technician-${visit.id}`}>Técnico ejecutor</Label>
           {technicians.length ? (
-            <select id={`technician-${visit.id}`} className="h-8 w-full rounded-lg border bg-transparent px-2 text-sm" value={technician} onChange={(event) => setTechnician(event.target.value)} disabled={closed}>
+            <select
+              id={`technician-${visit.id}`}
+              className="h-8 w-full rounded-lg border bg-transparent px-2 text-sm"
+              value={technician}
+              onChange={(event) => setTechnician(event.target.value)}
+              disabled={closed}
+            >
               <option value="">Seleccionar Técnico</option>
-              {technicians.map((person) => <option key={person.id ?? person.name ?? person.nombre} value={person.name ?? person.nombre ?? ""}>{person.name ?? person.nombre}</option>)}
+              {technicians.map((person) => (
+                <option
+                  key={person.id ?? person.name ?? person.nombre}
+                  value={person.name ?? person.nombre ?? ""}
+                >
+                  {person.name ?? person.nombre}
+                </option>
+              ))}
             </select>
-          ) : <Input id={`technician-${visit.id}`} value={technician} onChange={(event) => setTechnician(event.target.value)} placeholder="Nombre del Técnico ejecutor" disabled={closed} />}
+          ) : (
+            <Input
+              id={`technician-${visit.id}`}
+              value={technician}
+              onChange={(event) => setTechnician(event.target.value)}
+              placeholder="Nombre del Técnico ejecutor"
+              disabled={closed}
+            />
+          )}
           <SignaturePad title="Firma del Técnico" onChange={setSignature} />
-          <Button onClick={() => void complete()} disabled={closed}>{closed ? "Visita cerrada" : "Completar visita"}</Button>
-          {closed ? <p className="flex items-center gap-2 text-sm text-muted-foreground"><Lock className="size-4" /> Los borradores están cerrados; la sincronización se muestra por separado.</p> : null}
+          <Button onClick={() => void complete()} disabled={closed}>
+            {closed ? "Visita cerrada" : "Completar visita"}
+          </Button>
+          {closed ? (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Lock className="size-4" /> Los borradores están cerrados; la sincronización se
+              muestra por separado.
+            </p>
+          ) : null}
         </CardContent>
       </Card>
-      {message ? <p className="text-sm text-muted-foreground" role="status">{message}</p> : null}
+      {message ? (
+        <p className="text-sm text-muted-foreground" role="status">
+          {message}
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -384,6 +496,8 @@ function WorkOrderEditor({
   visit,
   store,
   coordinator,
+  catalogs,
+  technicians,
   disabled,
   onChanged,
   onMessage,
@@ -392,24 +506,73 @@ function WorkOrderEditor({
   visit: VisitaOffline
   store: IndexedDbOfflineStore
   coordinator: OfflineSyncCoordinator
+  catalogs?: CertificateCaptureCatalogsDto
+  technicians: { id?: string; name?: string; nombre?: string }[]
   disabled: boolean
   onChanged: () => Promise<void>
   onMessage: (message: string) => void
 }) {
   const [reason, setReason] = useState(order.no_evaluada_razon ?? "")
-  const [certificateId, setCertificateId] = useState<string>(String((order as Record<string, unknown>).certificate_id ?? ""))
-  const [draft, setDraft] = useState({ observations: "", maintenanceScope: "", replacementParts: "", otherParts: "" })
-  const [evidence, setEvidence] = useState<Partial<Record<CertificateEvidenceKey, { media_id: string }>>>({})
+  const [certificateId, setCertificateId] = useState<string>(
+    String((order as Record<string, unknown>).certificate_id ?? ""),
+  )
+  const [localCertificate, setLocalCertificate] = useState<Record<string, unknown>>()
+  const [evidence, setEvidence] = useState<
+    Partial<Record<CertificateEvidenceKey, { media_id: string }>>
+  >({})
+  const draft = useEdgeCertificateDraft(certificateId || undefined)
+
+  useEffect(() => {
+    let cancelled = false
+    void store.listOperations(visit.id).then((operations) => {
+      const startOperation = operations.find(
+        (operation) =>
+          operation.kind === "start_certificate_draft" &&
+          operation.payload.work_order_id === order.id,
+      )
+      const queuedCertificateId =
+        typeof startOperation?.payload.certificate_id === "string"
+          ? startOperation.payload.certificate_id
+          : undefined
+      const updateOperation = operations.find(
+        (operation) =>
+          operation.kind === "update_certificate_draft" &&
+          operation.payload.certificate_id === (queuedCertificateId ?? certificateId),
+      )
+      const queuedData = updateOperation?.payload.data
+      if (cancelled) return
+      if (!certificateId && queuedCertificateId) setCertificateId(queuedCertificateId)
+      if (queuedData && typeof queuedData === "object" && !Array.isArray(queuedData))
+        setLocalCertificate((current) => ({
+          ...(current ?? {}),
+          ...(queuedData as Record<string, unknown>),
+        }))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [certificateId, order.id, store, visit.id])
 
   const updateOutcome = async (outcome: "evaluada" | "no_evaluada") => {
     if (disabled) return
     try {
       if (navigator.onLine) {
-        await edgeApi.workOrders.updateWorkOrder(order.id, { outcome, notEvaluatedReason: outcome === "no_evaluada" ? reason : undefined })
+        await edgeApi.workOrders.updateWorkOrder(order.id, {
+          outcome,
+          notEvaluatedReason: outcome === "no_evaluada" ? reason : undefined,
+        })
       } else {
-        await coordinator.queue(visit.id, deviceId(), "work_order_outcome", { work_order_id: order.id, outcome, not_evaluated_reason: outcome === "no_evaluada" ? reason : null })
+        await coordinator.queue(visit.id, deviceId(), "work_order_outcome", {
+          work_order_id: order.id,
+          outcome,
+          not_evaluated_reason: outcome === "no_evaluada" ? reason : null,
+        })
       }
-      onMessage(outcome === "evaluada" ? "Orden de trabajo marcada como evaluada." : "Orden de trabajo marcada como no evaluada.")
+      onMessage(
+        outcome === "evaluada"
+          ? "Orden de trabajo marcada como evaluada."
+          : "Orden de trabajo marcada como no evaluada.",
+      )
       await onChanged()
     } catch (caught) {
       onMessage(caught instanceof Error ? caught.message : "No se pudo guardar el resultado")
@@ -421,8 +584,15 @@ function WorkOrderEditor({
       if (navigator.onLine) {
         const result = await edgeApi.certificates.startCertificateDraft(order.id)
         setCertificateId(result.certificate.id)
+        setLocalCertificate(result.certificate)
       } else {
-        await coordinator.queue(visit.id, deviceId(), "start_certificate_draft", { work_order_id: order.id })
+        const localId = window.crypto.randomUUID()
+        setCertificateId(localId)
+        setLocalCertificate({ id: localId, estado: "borrador", estado_captura: "abierto" })
+        await coordinator.queue(visit.id, deviceId(), "start_certificate_draft", {
+          work_order_id: order.id,
+          certificate_id: localId,
+        })
       }
       onMessage("Borrador de certificado iniciado.")
       await onChanged()
@@ -431,19 +601,18 @@ function WorkOrderEditor({
     }
   }
 
-  const saveDraft = async () => {
+  const saveDraft = async (
+    payload: Parameters<NonNullable<ComponentProps<typeof CertificateCaptureForm>["onSave"]>>[0],
+  ) => {
     if (!certificateId || disabled) return
     try {
-      const payload = buildCertificateDraftPayload({
-        catalogVersion: String((order as Record<string, unknown>).repuestos_catalog_version ?? "SYS_Certificado_Modelo1"),
-        maintenanceScope: draft.maintenanceScope.split(",").map((value) => value.trim()).filter(Boolean),
-        replacementPartIds: draft.replacementParts.split(",").map((value) => value.trim()).filter(Boolean),
-        otherParts: draft.otherParts,
-        observations: draft.observations,
-        evidence,
-      })
       if (navigator.onLine) await edgeApi.certificates.updateDraft(certificateId, payload)
-      else await coordinator.queue(visit.id, deviceId(), "update_certificate_draft", { certificate_id: certificateId, ...payload })
+      else
+        await coordinator.queue(visit.id, deviceId(), "update_certificate_draft", {
+          certificate_id: certificateId,
+          data: payload,
+        })
+      setLocalCertificate((current) => ({ ...(current ?? {}), ...payload }))
       onMessage("Borrador guardado.")
       await onChanged()
     } catch (caught) {
@@ -454,34 +623,98 @@ function WorkOrderEditor({
   const capturePhoto = async (section: CertificateEvidenceKey, file: File | undefined) => {
     if (!file || disabled) return
     const mediaId = window.crypto.randomUUID()
-    await store.saveMedia?.({ id: mediaId, mediaId, visitId: visit.id, operationId: mediaId, kind: "photo", blob: file, file, contentType: file.type, fileName: file.name, createdAt: new Date().toISOString() })
+    await store.saveMedia?.({
+      id: mediaId,
+      mediaId,
+      visitId: visit.id,
+      operationId: mediaId,
+      kind: "photo",
+      blob: file,
+      file,
+      contentType: file.type,
+      fileName: file.name,
+      createdAt: new Date().toISOString(),
+    })
     setEvidence((current) => ({ ...current, [section]: { media_id: mediaId } }))
-    await coordinator.queue(visit.id, deviceId(), "upload_photo", { media_id: mediaId, certificate_id: certificateId || null, category: section, content_type: file.type }, [], { mediaIds: [mediaId] })
+    await coordinator.queue(
+      visit.id,
+      deviceId(),
+      "upload_photo",
+      {
+        media_id: mediaId,
+        certificate_id: certificateId || null,
+        category: section,
+        content_type: file.type,
+      },
+      [],
+      { mediaIds: [mediaId] },
+    )
     onMessage(`Foto de ${section} guardada localmente y lista para sincronizar.`)
     await onChanged()
   }
 
   return (
     <Card size="sm" className="bg-muted/20">
-      <CardHeader><CardTitle className="text-sm">{workOrderName(order, contextOf(visit))}</CardTitle><CardDescription>Estado: {order.estado ?? "pendiente"}</CardDescription></CardHeader>
+      <CardHeader>
+        <CardTitle className="text-sm">{workOrderName(order, contextOf(visit))}</CardTitle>
+        <CardDescription>Estado: {order.estado ?? "pendiente"}</CardDescription>
+      </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" disabled={disabled} onClick={() => void updateOutcome("evaluada")}>Evaluada</Button>
-          <Button size="sm" variant="outline" disabled={disabled} onClick={() => void updateOutcome("no_evaluada")}>No evaluada</Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={disabled}
+            onClick={() => void updateOutcome("evaluada")}
+          >
+            Evaluada
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={disabled}
+            onClick={() => void updateOutcome("no_evaluada")}
+          >
+            No evaluada
+          </Button>
         </div>
-        <Input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Motivo si no fue evaluada" disabled={disabled} />
-        {!certificateId ? <Button size="sm" variant="secondary" disabled={disabled || order.estado !== "evaluada"} onClick={() => void startDraft()}><FileCheck2 className="mr-2 size-4" /> Iniciar Borrador de certificado</Button> : null}
+        <Input
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          placeholder="Motivo si no fue evaluada"
+          disabled={disabled}
+        />
+        {!certificateId ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={disabled || order.estado !== "evaluada"}
+            onClick={() => void startDraft()}
+          >
+            <FileCheck2 className="mr-2 size-4" /> Iniciar Borrador de certificado
+          </Button>
+        ) : null}
         {certificateId ? (
           <div className="space-y-3 rounded-md border bg-background p-3">
             <p className="text-sm font-medium">Borrador de certificado · {certificateId}</p>
-            <Textarea value={draft.observations} onChange={(event) => setDraft((current) => ({ ...current, observations: event.target.value }))} placeholder="Observaciones del campo" disabled={disabled} />
-            <Input value={draft.maintenanceScope} onChange={(event) => setDraft((current) => ({ ...current, maintenanceScope: event.target.value }))} placeholder="Alcance de mantenimiento (separado por coma)" disabled={disabled} />
-            <Input value={draft.replacementParts} onChange={(event) => setDraft((current) => ({ ...current, replacementParts: event.target.value }))} placeholder="IDs de categorías de Repuestos (separados por coma)" disabled={disabled} />
-            <Input value={draft.otherParts} onChange={(event) => setDraft((current) => ({ ...current, otherParts: event.target.value }))} placeholder="Otros repuestos (opcional)" disabled={disabled} />
-            <div className="grid gap-2 sm:grid-cols-3">
-              {CERTIFICATE_EVIDENCE_SECTIONS.map(({ key, label }) => <Label key={key} className="rounded-md border p-2 text-xs"><span>{label}</span><Input type="file" accept="image/*" className="mt-2 h-auto" onChange={(event) => void capturePhoto(key, event.target.files?.[0])} disabled={disabled} /></Label>)}
-            </div>
-            <Button size="sm" onClick={() => void saveDraft()} disabled={disabled}>Guardar Borrador de certificado</Button>
+            {catalogs ? (
+              <CertificateCaptureForm
+                key={`${certificateId}-${String(draft.data?.certificate.updated_at ?? "local")}`}
+                template={catalogs.template}
+                catalogs={catalogs}
+                technicians={technicians}
+                certificate={draft.data?.certificate ?? localCertificate}
+                valve={findValve(contextOf(visit), order.valvula_id)}
+                evidence={evidence}
+                disabled={disabled}
+                onCapturePhoto={(section, file) => void capturePhoto(section, file)}
+                onSave={(payload) => void saveDraft(payload)}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Cargando la plantilla y catálogos del certificado…
+              </p>
+            )}
           </div>
         ) : null}
       </CardContent>

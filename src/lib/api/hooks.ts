@@ -17,6 +17,7 @@ import type {
   ScheduleVisitInput,
   SyncVisitInput,
   UpdateCertificateDraftInput,
+  CertificateTemplateInput,
   UpdateDescendantInput,
   UpdateServiceRequestInput,
   UpdateValveInput,
@@ -84,6 +85,50 @@ export const useEdgePendingClientSignatureVisits = () =>
     queryFn: edgeApi.certificates.pendingClientSignatureVisits,
   })
 
+export const useEdgeActiveCertificateTemplate = () =>
+  useQuery({
+    queryKey: certificateQueryKeys.activeTemplate(),
+    queryFn: edgeApi.certificates.activeTemplate,
+  })
+
+export const useEdgeCertificateCaptureCatalogs = (enabled = true) =>
+  useQuery({
+    queryKey: [...certificateQueryKeys.all, "capture-catalogs"],
+    queryFn: edgeApi.certificates.captureCatalogs,
+    enabled,
+  })
+
+export const useEdgeCertificateTemplates = () =>
+  useQuery({
+    queryKey: [...certificateQueryKeys.all, "templates"],
+    queryFn: edgeApi.certificates.templates,
+  })
+
+export const useCreateEdgeCertificateTemplate = () => {
+  const invalidate = useInvalidate(certificateInvalidations)
+  return useMutation({
+    mutationFn: (input: CertificateTemplateInput) => edgeApi.certificates.createTemplate(input),
+    onSuccess: invalidate,
+  })
+}
+
+export const useUpdateEdgeCertificateTemplate = () => {
+  const invalidate = useInvalidate(certificateInvalidations)
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: CertificateTemplateInput }) =>
+      edgeApi.certificates.updateTemplate(id, input),
+    onSuccess: invalidate,
+  })
+}
+
+export const useActivateEdgeCertificateTemplate = () => {
+  const invalidate = useInvalidate(certificateInvalidations)
+  return useMutation({
+    mutationFn: (id: string) => edgeApi.certificates.activateTemplate(id),
+    onSuccess: invalidate,
+  })
+}
+
 export const useEdgeVisit = (visitId: string | undefined) =>
   useQuery({
     queryKey: serviceWorkflowQueryKeys.visit(visitId ?? ""),
@@ -105,15 +150,29 @@ export const useEdgeOperation = (operationId: string | undefined) =>
   })
 
 export const useEdgeAdminMetrics = (from: string, to: string) =>
-  useQuery({ queryKey: ["edge", "admin-metrics", from, to], queryFn: () => edgeApi.observability.metrics(from, to), enabled: Boolean(from && to) })
+  useQuery({
+    queryKey: ["edge", "admin-metrics", from, to],
+    queryFn: () => edgeApi.observability.metrics(from, to),
+    enabled: Boolean(from && to),
+  })
 export const useEdgeAuditEvents = (action?: string) => {
   const filters: AuditFilters = action ? { action } : {}
-  return useQuery({ queryKey: ["edge", "audit", filters], queryFn: () => edgeApi.observability.audit.list(filters) })
+  return useQuery({
+    queryKey: ["edge", "audit", filters],
+    queryFn: () => edgeApi.observability.audit.list(filters),
+  })
 }
 export const useEdgeAdminCertificates = (q?: string) =>
-  useQuery({ queryKey: ["edge", "admin-certificates", q], queryFn: () => edgeApi.observability.certificates.list(q ? { q } : {}) })
+  useQuery({
+    queryKey: ["edge", "admin-certificates", q],
+    queryFn: () => edgeApi.observability.certificates.list(q ? { q } : {}),
+  })
 export const useEdgeAdminCertificate = (id: string | undefined) =>
-  useQuery({ queryKey: ["edge", "admin-certificate", id], queryFn: () => edgeApi.observability.certificates.get(id!), enabled: Boolean(id) })
+  useQuery({
+    queryKey: ["edge", "admin-certificate", id],
+    queryFn: () => edgeApi.observability.certificates.get(id!),
+    enabled: Boolean(id),
+  })
 
 export const useEdgeCertificateDraft = (certificateId: string | undefined) =>
   useQuery({

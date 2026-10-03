@@ -132,7 +132,134 @@ export const updateDescendantInputSchema = z.object({
 export type UpdateDescendantInput = z.infer<typeof updateDescendantInputSchema>
 
 const serviceRequestRowSchema = edgeRecordSchema
+
+/**
+ * A catalog value captured in a certificate keeps both its stable identity and
+ * the label shown to the Técnico. Legacy drafts may still contain the label as
+ * a string; the union lets the reader remain backward compatible while new
+ * capture flows use the structured value.
+ */
+export const certificateOptionSchema = z
+  .object({
+    id: edgeIdSchema,
+    label: z.string().trim().min(1),
+  })
+  .strict()
+export type CertificateOption = z.infer<typeof certificateOptionSchema>
+
+export const certificateOptionValueSchema = z.union([
+  certificateOptionSchema,
+  z.string().trim().min(1),
+])
+export type CertificateOptionValue = z.infer<typeof certificateOptionValueSchema>
+
+export const certificateTemplateFieldTypeSchema = z.enum([
+  "text",
+  "textarea",
+  "number",
+  "date",
+  "select",
+  "multiselect",
+  "boolean",
+])
+export type CertificateTemplateFieldType = z.infer<typeof certificateTemplateFieldTypeSchema>
+
+export const certificateTemplateFieldSchema = z
+  .object({
+    clave: z.string().trim().min(1),
+    etiqueta: z.string().trim().min(1),
+    tipo: certificateTemplateFieldTypeSchema,
+    seccion: z.string().trim().min(1),
+    orden: z.number().int().nonnegative(),
+    obligatorio: z.boolean(),
+    opciones: z.array(certificateOptionSchema).default([]),
+  })
+  .strict()
+
+export const certificateTemplateSchema = z
+  .object({
+    id: edgeIdSchema,
+    version: z.string().trim().min(1),
+    estado: z.enum(["borrador", "activa", "historica"]),
+    campos: z.array(certificateTemplateFieldSchema),
+  })
+  .passthrough()
+export type CertificateTemplateDto = z.infer<typeof certificateTemplateSchema>
+export const certificateTemplateListDtoSchema = z.array(certificateTemplateSchema)
+
+export const certificateTemplateInputSchema = z
+  .object({
+    version: z.string().trim().min(1),
+    campos: z.array(certificateTemplateFieldSchema),
+  })
+  .strict()
+export type CertificateTemplateInput = z.infer<typeof certificateTemplateInputSchema>
+
+export const certificateStandardOptionSchema = certificateOptionSchema.extend({
+  nro_serie: z.string().optional(),
+  vencimiento: z.string().optional(),
+})
+
+export const certificateCaptureCatalogsSchema = z.object({
+  template: certificateTemplateSchema,
+  maintenance: z.array(certificateOptionSchema),
+  replacement_parts: z.array(certificateOptionSchema),
+  units: z.array(certificateOptionSchema),
+  standards: z.array(certificateStandardOptionSchema),
+})
+export type CertificateCaptureCatalogsDto = z.infer<typeof certificateCaptureCatalogsSchema>
+
+export const certificateReplacementPartsSchema = z
+  .object({
+    catalog_version: z.string().trim().min(1),
+    items: z.array(certificateOptionValueSchema),
+    otros: z.string().nullable().optional(),
+  })
+  .strict()
+
+export const certificateEvidenceSchema = z
+  .object({
+    desarmada: z.unknown().nullable(),
+    ensamblada_prueba: z.unknown().nullable(),
+    placa_precinto: z.unknown().nullable(),
+  })
+  .strict()
+
+/**
+ * Canonical certificate capture contract. The database stores these sections
+ * in separate columns, while this shape is the single browser-facing payload
+ * used for draft updates. Template version is server-owned and is returned on
+ * the certificate row rather than accepted as a client update field.
+ */
+export const certificatePayloadSchema = z
+  .object({
+    fecha_ejecucion: z.string().nullable().optional(),
+    tecnico_ejecutor: z.string().nullable().optional(),
+    datos_tecnicos: z.record(z.string(), z.unknown()).optional(),
+    campos_personalizados: z.record(z.string(), z.unknown()).optional(),
+    alcance_mantenimiento: z.array(certificateOptionValueSchema).optional(),
+    repuestos: certificateReplacementPartsSchema.optional(),
+    evidencia_fotografica: certificateEvidenceSchema.optional(),
+    observaciones: z.string().nullable().optional(),
+  })
+  .strict()
+
 const certificateRowSchema = edgeRecordSchema
+  .extend({
+    plantilla_version: z.string().min(1).optional(),
+    plantilla_version_id: edgeIdSchema.nullable().optional(),
+    plantilla_snapshot: z.record(z.string(), z.unknown()).optional(),
+    contexto_captura: z.record(z.string(), z.unknown()).optional(),
+    fecha_ejecucion: z.string().nullable().optional(),
+    tecnico_ejecutor: z.string().nullable().optional(),
+    datos_tecnicos: z.record(z.string(), z.unknown()).optional(),
+    campos_personalizados: z.record(z.string(), z.unknown()).optional(),
+    alcance_mantenimiento: z.array(certificateOptionValueSchema).optional(),
+    repuestos: certificateReplacementPartsSchema.optional(),
+    evidencia_fotografica: certificateEvidenceSchema.optional(),
+    observaciones: z.string().nullable().optional(),
+  })
+  .passthrough()
 
 export const operationStatusSchema = z.enum([
   "solicitada",
@@ -227,9 +354,7 @@ export type PendingClientSignatureVisitDto = z.infer<typeof pendingClientSignatu
 export const pendingClientSignatureVisitsDtoSchema = z.object({
   visits: z.array(pendingClientSignatureVisitDtoSchema),
 })
-export type PendingClientSignatureVisitsDto = z.infer<
-  typeof pendingClientSignatureVisitsDtoSchema
->
+export type PendingClientSignatureVisitsDto = z.infer<typeof pendingClientSignatureVisitsDtoSchema>
 
 export const visitTransitionDtoSchema = z.object({ visit: visitRowSchema }).or(visitDtoSchema)
 export const scheduleVisitInputSchema = z.object({
@@ -249,15 +374,18 @@ export const workOrderDtoSchema = z.object({ work_order: workOrderDetailDtoSchem
 export const certificateDraftDtoSchema = z.object({
   certificate: certificateRowSchema,
   validation: z
-    .object({ complete: z.boolean(), missing_fields: z.array(z.string()) })
+    .object({
+      complete: z.boolean(),
+      missing_fields: z.array(z.string()),
+      invalid_fields: z.array(z.string()).optional(),
+    })
     .passthrough(),
 })
 export type CertificateDraftDto = z.infer<typeof certificateDraftDtoSchema>
 
-// Certificate payload is JSONB and has no stable frontend contract yet. Keep
-// it opaque until the capture screen is specified; this still validates the
-// route envelope and prevents unchecked response casts.
-export const updateCertificateDraftInputSchema = z.record(z.string(), z.unknown())
+/** Partial updates retain the canonical field shape but remain compatible with
+ * the existing PATCH semantics, where each section may be sent independently. */
+export const updateCertificateDraftInputSchema = certificatePayloadSchema.partial()
 export type UpdateCertificateDraftInput = z.infer<typeof updateCertificateDraftInputSchema>
 
 export const finalizedCertificateDtoSchema = z.object({
@@ -389,6 +517,7 @@ export const offlineMediaUploadDtoSchema = z.object({
 export type OfflineMediaUploadDto = z.infer<typeof offlineMediaUploadDtoSchema>
 
 export const offlineWorkingSetDtoSchema = z.object({
+  certificate_catalogs: certificateCaptureCatalogsSchema.optional(),
   visits: z.array(
     z
       .object({
@@ -414,10 +543,10 @@ export const clientDtoSchema = z
     telefono: z.string(),
     email: z.string(),
     direccion: z.string(),
-    logo_url: z.union([
-      z.string(),
-      z.object({ bucket: z.string(), path: z.string() }),
-    ]).nullable().optional(),
+    logo_url: z
+      .union([z.string(), z.object({ bucket: z.string(), path: z.string() })])
+      .nullable()
+      .optional(),
     aviso_vencimiento: z.boolean(),
     activo: z.boolean(),
     creado_en: edgeTimestampSchema,
@@ -553,26 +682,51 @@ export const operationDetailDtoSchema = z
   .strict()
 export type OperationDetailDto = z.infer<typeof operationDetailDtoSchema>
 
-export const auditEventDtoSchema = z.object({
-  id: edgeIdSchema,
-  actor_cuenta_id: edgeIdSchema.nullable().optional(),
-  actor_email: z.string().optional(),
-  actor_rol: z.string().optional(),
-  accion: z.string(),
-  tipo_objetivo: z.string(),
-  objetivo_id: edgeIdSchema.nullable().optional(),
-  resultado: z.enum(["exitoso", "fallido"]),
-  recibida_en: edgeTimestampSchema,
-  evento_dispositivo_en: edgeTimestampSchema.nullable().optional(),
-  identidad_correlacion: z.string().nullable().optional(),
-  resumen_cambio: z.record(z.string(), z.unknown()),
-  identificadores_relacionados: z.record(z.string(), z.unknown()),
-}).passthrough()
+export const auditEventDtoSchema = z
+  .object({
+    id: edgeIdSchema,
+    actor_cuenta_id: edgeIdSchema.nullable().optional(),
+    actor_email: z.string().optional(),
+    actor_rol: z.string().optional(),
+    accion: z.string(),
+    tipo_objetivo: z.string(),
+    objetivo_id: edgeIdSchema.nullable().optional(),
+    resultado: z.enum(["exitoso", "fallido"]),
+    recibida_en: edgeTimestampSchema,
+    evento_dispositivo_en: edgeTimestampSchema.nullable().optional(),
+    identidad_correlacion: z.string().nullable().optional(),
+    resumen_cambio: z.record(z.string(), z.unknown()),
+    identificadores_relacionados: z.record(z.string(), z.unknown()),
+  })
+  .passthrough()
 export type AuditEventDto = z.infer<typeof auditEventDtoSchema>
-export const auditListDtoSchema = z.object({ items: auditEventDtoSchema.array(), total: z.number(), limit: z.number(), offset: z.number(), has_more: z.boolean() })
-export const adminMetricsDtoSchema = z.object({ from: z.string(), to: z.string(), finalized_certificates: z.number(), completed_visits: z.number(), pending_certificates: z.number(), expiring_certificates: z.number(), unassigned_visits: z.number() })
-export const adminCertificateListDtoSchema = z.object({ items: z.array(certificateRowSchema), total: z.number(), limit: z.number(), offset: z.number() })
-export const adminCertificateDetailDtoSchema = z.object({ certificate: certificateRowSchema, history: certificateRowSchema.array(), audit_events: auditEventDtoSchema.array() })
+export const auditListDtoSchema = z.object({
+  items: auditEventDtoSchema.array(),
+  total: z.number(),
+  limit: z.number(),
+  offset: z.number(),
+  has_more: z.boolean(),
+})
+export const adminMetricsDtoSchema = z.object({
+  from: z.string(),
+  to: z.string(),
+  finalized_certificates: z.number(),
+  completed_visits: z.number(),
+  pending_certificates: z.number(),
+  expiring_certificates: z.number(),
+  unassigned_visits: z.number(),
+})
+export const adminCertificateListDtoSchema = z.object({
+  items: z.array(certificateRowSchema),
+  total: z.number(),
+  limit: z.number(),
+  offset: z.number(),
+})
+export const adminCertificateDetailDtoSchema = z.object({
+  certificate: certificateRowSchema,
+  history: certificateRowSchema.array(),
+  audit_events: auditEventDtoSchema.array(),
+})
 
 // Response-schema names remain as aliases for callers that consumed the first
 // adapter draft; the canonical surface is expressed by the DTO names above.
