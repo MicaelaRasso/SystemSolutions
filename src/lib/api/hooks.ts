@@ -7,6 +7,7 @@ import { certificateInvalidations, certificateQueryKeys } from "./certificates"
 import { hierarchyInvalidations, hierarchyQueryKeys } from "./hierarchy"
 import { identityInvalidations, identityQueryKeys } from "./identity"
 import { offlineInvalidations, offlineQueryKeys } from "./offline"
+import { getOfflineDeviceId } from "../offline/device"
 import { serviceWorkflowInvalidations, serviceWorkflowQueryKeys } from "./service-workflow"
 import { operationQueryKeys, type OperationFilters } from "./operations"
 import type { AuditFilters } from "./observability"
@@ -199,7 +200,7 @@ export const useEdgeFinalizedCertificate = (certificateId: string | undefined) =
 export const useEdgeOfflineWorkingSet = () =>
   useQuery({
     queryKey: offlineQueryKeys.workingSet(),
-    queryFn: edgeApi.offline.workingSet,
+    queryFn: () => edgeApi.offline.workingSet(getOfflineDeviceId()),
     enabled: false,
   })
 

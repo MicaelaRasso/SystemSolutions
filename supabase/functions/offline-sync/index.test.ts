@@ -88,3 +88,57 @@ describe("offline-sync media route", () => {
     )
   })
 })
+
+describe("offline-sync working set route", () => {
+  it("records the working device when loading the offline working set", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { visits: [] }, error: null })
+
+    await expect(
+      handler(
+        context(
+          new Request("https://example.test/functions/v1/offline-sync/offline/working-set", {
+            method: "POST",
+          }),
+          ["offline", "working-set"],
+          rpc,
+          { device_id: deviceId },
+        ),
+      ),
+    ).resolves.toMatchObject({ data: { visits: [] }, error: null })
+    expect(rpc).toHaveBeenCalledWith("api_offline_working_set_for_device", {
+      target_device: deviceId,
+    })
+  })
+
+  it("rejects a working set request without a UUID device identity", async () => {
+    const rpc = vi.fn()
+    await expect(
+      handler(
+        context(
+          new Request("https://example.test/functions/v1/offline-sync/offline/working-set", {
+            method: "POST",
+          }),
+          ["offline", "working-set"],
+          rpc,
+          { device_id: "invalid" },
+        ),
+      ),
+    ).rejects.toThrow("A valid device_id is required")
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it("keeps the legacy GET working-set route available", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { visits: [] }, error: null })
+    await expect(
+      handler(
+        context(
+          new Request("https://example.test/functions/v1/offline-sync/offline/working-set"),
+          ["offline", "working-set"],
+          rpc,
+          {},
+        ),
+      ),
+    ).resolves.toMatchObject({ data: { visits: [] }, error: null })
+    expect(rpc).toHaveBeenCalledWith("api_offline_working_set")
+  })
+})

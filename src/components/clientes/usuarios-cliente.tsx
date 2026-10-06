@@ -1,7 +1,7 @@
 "use client"
 
 import { zodResolver } from "@hookform/resolvers/zod"
-import { AlertTriangle, Pencil, Plus, Trash2, Users } from "lucide-react"
+import { AlertTriangle, Ban, Pencil, Plus, Users } from "lucide-react"
 import { useMemo, useState } from "react"
 import { Controller, useForm } from "react-hook-form"
 
@@ -69,8 +69,8 @@ export function UsuariosCliente({ empresaId }: { empresaId: ID }) {
     return m
   }, [arbol.data])
 
-  const eliminar = useServiceMutation((id: ID) => services.usuarios.delete(id), {
-    exito: "Usuario eliminado",
+  const deshabilitar = useServiceMutation((id: ID) => services.usuarios.delete(id), {
+    exito: "Cuenta deshabilitada",
     invalidar: [["usuarios"], ["empresas"]],
   })
   const activar = useServiceMutation(
@@ -130,7 +130,7 @@ export function UsuariosCliente({ empresaId }: { empresaId: ID }) {
                 <TableHead>Usuario</TableHead>
                 <TableHead>Accesos</TableHead>
                 <TableHead className="hidden md:table-cell">Alta</TableHead>
-                <TableHead>Activo</TableHead>
+                <TableHead>Estado de la cuenta</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
@@ -148,12 +148,21 @@ export function UsuariosCliente({ empresaId }: { empresaId: ID }) {
                     {fmtFecha(u.creadoEn)}
                   </TableCell>
                   <TableCell>
-                    <Switch
-                      checked={u.activo}
-                      disabled={activar.isPending}
-                      onCheckedChange={(activo) => activar.mutate({ id: u.id, activo })}
-                      aria-label={`${u.activo ? "Desactivar" : "Activar"} a ${nombreCompleto(u)}`}
-                    />
+                    <div className="flex items-center gap-2">
+                      <Badge variant={u.estadoCuenta === "activa" ? "default" : "secondary"}>
+                        {u.estadoCuenta === "pendiente"
+                          ? "Pendiente"
+                          : u.estadoCuenta === "deshabilitada"
+                            ? "Deshabilitada"
+                            : "Activa"}
+                      </Badge>
+                      <Switch
+                        checked={u.activo}
+                        disabled={activar.isPending || u.estadoCuenta === "pendiente"}
+                        onCheckedChange={(activo) => activar.mutate({ id: u.id, activo })}
+                        aria-label={`${u.activo ? "Deshabilitar" : "Reactivar"} a ${nombreCompleto(u)}`}
+                      />
+                    </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-1">
@@ -171,20 +180,20 @@ export function UsuariosCliente({ empresaId }: { empresaId: ID }) {
                           </Button>
                         }
                       />
-                      <ConfirmDialog
+                      {u.estadoCuenta === "activa" && <ConfirmDialog
                         trigger={
                           <Button
                             variant="ghost"
                             size="icon"
-                            aria-label={`Eliminar a ${nombreCompleto(u)}`}
+                            aria-label={`Deshabilitar a ${nombreCompleto(u)}`}
                           >
-                            <Trash2 />
+                            <Ban />
                           </Button>
                         }
-                        titulo={`¿Eliminar a ${nombreCompleto(u)}?`}
-                        descripcion="Pierde el acceso al portal. Si solo querés suspenderlo, desactivalo."
-                        onConfirm={() => eliminar.mutateAsync(u.id)}
-                      />
+                        titulo={`¿Deshabilitar la cuenta de ${nombreCompleto(u)}?`}
+                        descripcion="Se conserva su identidad y su historial. Podés reactivarla más adelante."
+                        onConfirm={() => deshabilitar.mutateAsync(u.id)}
+                      />}
                     </div>
                   </TableCell>
                 </TableRow>

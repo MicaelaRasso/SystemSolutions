@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest"
 
+import type { CertificateCaptureCatalogsDto } from "../api/contracts"
 import type { OfflineMedia, OfflineStore, OperacionOffline, VisitaOffline } from "./sync"
-import { OfflineSyncCoordinator, queueOfflineSignatureCapture } from "./sync"
+import {
+  OfflineSyncCoordinator,
+  certificateCatalogsForVisit,
+  pinVisitCertificateCatalogs,
+  queueOfflineSignatureCapture,
+  refreshedVisitCatalogs,
+  syncPendingVisitStartsBeforeRefresh,
+} from "./sync"
 
 class MemoryStore implements OfflineStore {
   operations = new Map<string, OperacionOffline>()
@@ -54,6 +62,103 @@ const clock = (() => {
     id: () => `operation-${sequence++}`,
   }
 })()
+
+const catalogSnapshot = (version: string, label: string): CertificateCaptureCatalogsDto => ({
+  template: { id: "template-1", version: `template-${version}`, estado: "activa", campos: [] },
+  maintenance: [],
+  replacement_catalog_version: version,
+  replacement_parts: [{ id: "part-1", label }],
+  units: [],
+  standards: [],
+})
+
+const startOperation = (visitId: string): OperacionOffline => ({
+  operationId: `start-${visitId}`,
+  visitId,
+  kind: "start_visit",
+  payload: { replacement_catalog_version_id: "catalog-monday", device_id: "device-1" },
+  dependencies: [],
+  schemaVersion: 2,
+  createdAt: "2026-10-05T09:00:00.000Z",
+  deviceId: "device-1",
+  estado: "guardada_local",
+  attempts: 0,
+})
+
+describe("visit replacement catalog snapshots", () => {
+  it("keeps Monday's downloaded replacement version when Wednesday starts offline and refresh sees Tuesday's edit", () => {
+    const monday = catalogSnapshot("catalog-monday", "Monday label")
+    const tuesday = catalogSnapshot("catalog-tuesday", "Renamed Tuesday")
+    const visit: VisitaOffline = {
+      id: "visit-offline-start",
+      context: { certificate_catalogs: monday },
+      cachedAt: "2026-10-05T09:00:00.000Z",
+      estadoLocal: "disponible",
+      synchronizationPending: false,
+    }
+
+    const started = pinVisitCertificateCatalogs(visit)
+    const refreshed = refreshedVisitCatalogs({
+      previous: { ...started, estadoLocal: "en_curso_local" },
+      refreshedContext: { visit: { id: visit.id, estado: "aceptada" } },
+      refreshedCatalogs: tuesday,
+    })
+    const savedVisit = { ...visit, ...refreshed, estadoLocal: "en_curso_local" as const }
+
+    expect(started.pinnedCertificateCatalogs).toEqual({
+      replacementCatalogVersion: "catalog-monday",
+      replacementParts: [{ id: "part-1", label: "Monday label" }],
+    })
+    expect(certificateCatalogsForVisit(savedVisit)?.replacement_catalog_version).toBe(
+      "catalog-monday",
+    )
+    expect(certificateCatalogsForVisit(savedVisit)?.replacement_parts).toEqual([
+      { id: "part-1", label: "Monday label" },
+    ])
+    expect(certificateCatalogsForVisit(savedVisit)?.template.version).toBe("template-catalog-tuesday")
+  })
+
+  it("uses the newest download before start and refuses an offline start without a downloaded revision", () => {
+    const visit: VisitaOffline = {
+      id: "visit-before-start",
+      context: { certificate_catalogs: catalogSnapshot("catalog-tuesday", "Tuesday label") },
+      cachedAt: "2026-10-06T09:00:00.000Z",
+      estadoLocal: "disponible",
+      synchronizationPending: false,
+    }
+
+    expect(pinVisitCertificateCatalogs(visit).pinnedCertificateCatalogs?.replacementCatalogVersion)
+      .toBe("catalog-tuesday")
+    expect(() =>
+      pinVisitCertificateCatalogs({ ...visit, context: {} }),
+    ).toThrow("No hay un catálogo de repuestos descargado")
+  })
+
+  it("synchronizes queued offline starts before downloading a newer working set", async () => {
+    const store = new MemoryStore()
+    await store.saveVisit({
+      id: "visit-offline-start",
+      context: { certificate_catalogs: catalogSnapshot("catalog-monday", "Monday label") },
+      cachedAt: "2026-10-05T09:00:00.000Z",
+      estadoLocal: "en_curso_local",
+      synchronizationPending: true,
+    })
+    await store.saveOperation(startOperation("visit-offline-start"))
+    const order: string[] = []
+
+    await syncPendingVisitStartsBeforeRefresh(store, async (visitId) => {
+      order.push(`sync:${visitId}`)
+      return [{ ...startOperation(visitId), estado: "sincronizada" }]
+    })
+    order.push("download:catalog-tuesday")
+
+    expect(order).toEqual(["sync:visit-offline-start", "download:catalog-tuesday"])
+    expect((await store.listOperations("visit-offline-start"))[0]?.payload).toMatchObject({
+      replacement_catalog_version_id: "catalog-monday",
+      device_id: "device-1",
+    })
+  })
+})
 
 describe("OfflineSyncCoordinator", () => {
   it("sends dependencies in order and compacts acknowledged payloads to receipts", async () => {

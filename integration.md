@@ -86,7 +86,7 @@ Solicitud de servicio y, cuando corresponde, la Visita de servicio.
 | `POST /attachments` | `service-workflow` | `services.tareas.subirAdjunto` (compatibilidad) | Carga Edge de adjuntos genéricos; no pertenece a `edgeApi.operations`. |
 | `GET /valves/:id/certificates`, `GET/PATCH /certificates/:id`, `GET /certificates/:id/finalized`, `POST /work-orders/:id/certificate-draft` | `certificate-field` | `certificates` | Disponible según el DTO implementado; no implica una pantalla de captura completa. |
 | `POST /visits/:id/signatures` | `certificate-field` | `certificates`, `signatures` | Parcial: registra la referencia y los datos de la firma; no carga bytes de media. |
-| `GET /offline/working-set`, `POST /visits/:id/sync` | `offline-sync` | `offline` | Disponible como working set y lote; la UI persiste acknowledgements, reintenta fallos y conserva conflictos para su revisión. |
+| `GET/POST /offline/working-set`, `POST /visits/:id/sync` | `offline-sync` | `offline` | El POST registra la versión de catálogo descargada por dispositivo; el GET sigue disponible por compatibilidad. El lote conserva acknowledgements y conflictos. |
 | `POST /backups` | `backup-export` | `backups` | Disponible sólo para el Súper Administrador. Genera una descarga ZIP inmediata completa o por rango inclusivo, con manifest, checksums, advertencias de media y metadata de generación; nunca retiene el archivo. |
 
 Las URLs directas se pueden configurar con `NEXT_PUBLIC_IDENTITY_ADMIN_URL`,
@@ -166,13 +166,10 @@ adaptador:
 
 1. **Alcance de Cuenta:** el contexto define un login por Cliente, mientras el
    inventario propone múltiples Cuentas de Cliente con alcances.
-2. **Administración de catálogos:** `Repuestos` es un catálogo versionado sin
-   mantenimiento runtime en el MVP, pero el inventario propone administración
-   genérica.
-3. **Eliminación de activos:** falta definir borrado lógico/archivo, reglas de
+2. **Eliminación de activos:** falta definir borrado lógico/archivo, reglas de
    integridad y comportamiento ante Solicitudes, Visitas, Certificados e
    historial preservado.
-4. **Contrato de media:** faltan owner, secciones, MIME/tamaño, nombres,
+3. **Contrato de media:** faltan owner, secciones, MIME/tamaño, nombres,
    idempotencia, reemplazo y reglas posteriores al cierre del Certificado.
 
 ## Fase 1 — Compuerta Edge-only (implementada)
@@ -265,15 +262,83 @@ El flujo conectado a `service-workflow` cubre:
 4. Ordenes de trabajo por Válvula y su resultado independiente.
 5. Estados diferenciados de Solicitud, Visita, Orden y Borrador de Certificado.
 
-## Fase 6 — Borrador de Certificado (alcance implementado)
+## Fase 6 — Contrato de captura del Certificado
 
-1. Iniciar un Borrador de Certificado desde una Orden de trabajo.
-2. Leer y guardar el Borrador mediante `GET/PATCH /certificates/:id`.
-3. Mantener el payload JSONB como contrato opaco hasta que se defina el
-   formulario de campos.
+Una Orden de trabajo evaluada puede iniciar un Borrador de certificado. Al
+crearlo, el backend fija `plantilla_version_id`, `plantilla_version` y
+`plantilla_snapshot` con los campos de la versión activa. Una versión nueva no
+altera los borradores existentes ni los certificados cerrados. El navegador
+lee la plantilla y los catálogos mediante `GET /certificate-capture/catalogs`,
+y lee/guarda el borrador mediante `GET/PATCH /certificates/:id`.
 
-La captura detallada de campos, media, firmas, cierre, PDF y finalización no
-forma parte de este corte y permanece explícitamente fuera de alcance.
+El payload de `PATCH` usa estas secciones; `plantilla_version` y
+`plantilla_snapshot` son propiedad del backend y no se aceptan en el cambio:
+
+```json
+{
+  "fecha_ejecucion": "2026-10-05",
+  "tecnico_ejecutor": "Nombre Apellido",
+  "datos_tecnicos": {
+    "valvula": {},
+    "ensayos": {
+      "sp_inicial": { "valor": 12.5, "unidad": "bar" },
+      "sp_apertura": { "valor": 13, "unidad": "bar" },
+      "presion_cierre": { "valor": 11, "unidad": "bar" },
+      "patron": { "id": "<uuid>", "label": "Patrón mostrado" }
+    }
+  },
+  "campos_personalizados": {},
+  "alcance_mantenimiento": [{ "id": "<uuid>", "label": "Acción mostrada" }],
+  "repuestos": {
+    "catalog_version": "<uuid-de-version-de-repuestos>",
+    "items": [{ "id": "<uuid>", "label": "Repuesto mostrado" }],
+    "otros": null
+  },
+  "evidencia_fotografica": {
+    "desarmada": null,
+    "ensamblada_prueba": null,
+    "placa_precinto": null
+  },
+  "observaciones": null
+}
+```
+
+Cada definición de `plantilla_snapshot.campos` tiene `clave`, `etiqueta`,
+`seccion`, `orden`, `tipo`, `obligatorio` y `opciones` opcionales con `id` y
+`label`. Los valores personalizados se indexan por `clave`. Las opciones nuevas
+guardan su ID estable y la etiqueta mostrada; los borradores anteriores con
+cadenas simples siguen siendo legibles. El backend rechaza secciones y campos
+personalizados no admitidos. La validación de cierre exige fecha, Técnico,
+resultados y unidades de ensayo, patrón y los campos obligatorios de la
+plantilla. Los Certificados cerrados conservan estos valores sin permitir su
+edición.
+
+### Versión de Repuestos fijada por Visita
+
+Las altas, ediciones, cambios de orden y desactivaciones de `repuestos`
+publican una nueva versión inmutable con las opciones activas y sus etiquetas.
+`GET /certificate-capture/catalogs` devuelve `replacement_catalog_version`
+(UUID) y `replacement_parts` (lista ordenada de `{id,label}`). Esta versión es
+independiente de `plantilla_version`.
+
+Para preparar trabajo offline, el Taller Móvil llama
+`POST /offline/working-set` con `{ "device_id": "<uuid>" }`. La respuesta
+incluye `certificate_catalogs` por Visita y registra qué versión descargó ese
+dispositivo. La antigua ruta `GET /offline/working-set` sigue disponible para
+compatibilidad, pero no registra una versión de dispositivo para inicio offline.
+
+Al iniciar una Visita, `POST /visits/:id/start` acepta
+`{ "device_id": "<uuid>", "replacement_catalog_version_id": "<uuid>" }`.
+El backend exige que la versión coincida con la última descargada por ese
+dispositivo para esa Visita, y la fija en la Visita. Para iniciar offline, el
+lote de `POST /visits/:id/sync` incluye primero una operación `start_visit` con
+ese mismo payload y dependencias posteriores; se sincroniza antes de solicitar
+un working set nuevo. Una edición posterior del catálogo no sustituye la
+versión fijada. Los borradores nuevos toman ese UUID en
+`repuestos.catalog_version`, y el backend rechaza opciones ajenas a la
+instantánea. Los certificados previos mantienen sus versiones y etiquetas
+heredadas. El inicio con cuerpo vacío sigue fijando la versión activa actual
+para clientes antiguos conectados.
 
 ## Fase 7 — Trabajo offline (implementada)
 
@@ -413,7 +478,7 @@ las mutaciones a la superficie de la entidad correspondiente.
 | Iniciar, leer y guardar un Borrador de Certificado                | `POST /work-orders/:workOrderId/certificate-draft`, `GET/PATCH /certificates/:certificateId` | **Disponible.** Sólo se implementa el plumbing de inicio/lectura/guardado; el payload JSONB permanece opaco. |
 | Enviar Firma de una Visita                                        | `POST /visits/:visitId/signatures`                                                           | **Parcial.** La RPC registra una referencia de Storage, pero falta la ruta Edge de carga del archivo que produzca esa referencia.             |
 | Cargar fotos/evidencias para certificado o visita                 | Ruta Edge multipart, por ejemplo `POST /visits/:visitId/evidence`                            | **Ausente.**                                                                                                                                  |
-| Obtener la ventana de trabajo offline de dos días                 | `GET /offline/working-set`                                                                   | **Disponible** y ya la consume `/taller/sincronizacion` cuando la fuente es Supabase.                                                         |
+| Obtener la ventana de trabajo offline de dos días                 | `POST /offline/working-set` con `device_id`; `GET` heredado                                | **Disponible.** El POST devuelve el catálogo por Visita y registra la descarga del dispositivo.                                               |
 | Sincronizar lote idempotente de operaciones offline de una Visita | `POST /visits/:visitId/sync`                                                                 | **Disponible.** La UI envía lotes, persiste acknowledgements, reintenta y conserva conflictos sin resolverlos.                                  |
 
 ### Pantallas sin flujo de datos implementado

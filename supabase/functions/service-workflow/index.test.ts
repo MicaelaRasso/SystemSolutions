@@ -4,6 +4,8 @@ import type { RouteHandler } from "../_shared/transport.ts"
 
 const operationId = "00000000-0000-0000-0000-000000000001"
 const clientId = "00000000-0000-0000-0000-000000000002"
+const replacementCatalogVersionId = "00000000-0000-0000-0000-000000000003"
+const deviceId = "00000000-0000-0000-0000-000000000004"
 
 const operation = {
   id: operationId,
@@ -319,6 +321,38 @@ describe("service-workflow mutation routes", () => {
       },
     },
     {
+      name: "assigns an unassigned visit",
+      method: "POST",
+      route: ["visits", operationId, "assign"],
+      body: { taller_movil_id: clientId, starts_at: null, ends_at: null, reason: "Cobertura disponible" },
+      rpcName: "api_assign_visit",
+      rpcArgs: { visit_id: operationId, provider_id: clientId, action_reason: "Cobertura disponible", visit_starts_at: null, visit_ends_at: null },
+    },
+    {
+      name: "unassigns a visit",
+      method: "POST",
+      route: ["visits", operationId, "unassign"],
+      body: { reason: "Cambio operativo" },
+      rpcName: "api_unassign_visit",
+      rpcArgs: { visit_id: operationId, action_reason: "Cambio operativo" },
+    },
+    {
+      name: "reassigns a visit",
+      method: "POST",
+      route: ["visits", operationId, "reassign"],
+      body: { taller_movil_id: clientId, starts_at: null, ends_at: null, reason: "Cambio de cobertura" },
+      rpcName: "api_reassign_visit",
+      rpcArgs: { visit_id: operationId, provider_id: clientId, action_reason: "Cambio de cobertura", visit_starts_at: null, visit_ends_at: null },
+    },
+    {
+      name: "cancels a visit as an administrator",
+      method: "POST",
+      route: ["visits", operationId, "cancel-administrator"],
+      body: { reason: "El Cliente modificó su agenda" },
+      rpcName: "api_admin_cancel_visit",
+      rpcArgs: { visit_id: operationId, action_reason: "El Cliente modificó su agenda" },
+    },
+    {
       name: "accepts a visit",
       method: "POST",
       route: ["visits", operationId, "accept"],
@@ -344,6 +378,18 @@ describe("service-workflow mutation routes", () => {
     },
     {
       name: "starts a visit",
+      method: "POST",
+      route: ["visits", operationId, "start"],
+      body: { replacement_catalog_version_id: replacementCatalogVersionId, device_id: deviceId },
+      rpcName: "api_start_visit_with_catalog",
+      rpcArgs: {
+        visit_id: operationId,
+        replacement_catalog_version_id: replacementCatalogVersionId,
+        target_device: deviceId,
+      },
+    },
+    {
+      name: "starts a visit through the legacy current-catalog API",
       method: "POST",
       route: ["visits", operationId, "start"],
       body: {},

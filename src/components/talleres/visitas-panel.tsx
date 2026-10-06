@@ -19,15 +19,19 @@ import type {
   VisitDto,
   WorkOrderDetailDto,
 } from "@/lib/api/contracts"
+import { certificateTemplateSchema } from "@/lib/api/contracts"
 import {
   IndexedDbOfflineStore,
   OfflineSyncCoordinator,
+  certificateCatalogsForVisit,
+  pinVisitCertificateCatalogs,
   queueOfflineSignatureCapture,
+  refreshedVisitCatalogs,
+  syncPendingVisitStartsBeforeRefresh,
   type OperacionOffline,
   type VisitaOffline,
 } from "@/lib/offline/sync"
-
-const DEVICE_ID_STORAGE_KEY = "systemsolutions.offline.device-id"
+import { getOfflineDeviceId as deviceId } from "@/lib/offline/device"
 
 type StoredVisitContext = VisitDto & {
   context?: unknown
@@ -35,12 +39,9 @@ type StoredVisitContext = VisitDto & {
   certificate_catalogs?: CertificateCaptureCatalogsDto
 }
 
-function deviceId() {
-  const existing = window.localStorage.getItem(DEVICE_ID_STORAGE_KEY)
-  if (existing) return existing
-  const value = window.crypto.randomUUID()
-  window.localStorage.setItem(DEVICE_ID_STORAGE_KEY, value)
-  return value
+type CachedWorkOrder = WorkOrderDetailDto & {
+  certificate_id?: string | null
+  certificate?: Record<string, unknown> | null
 }
 
 function contextOf(visit: VisitaOffline) {
@@ -123,6 +124,12 @@ function createCoordinator(store: IndexedDbOfflineStore) {
   })
 }
 
+async function pendingStartOperationIds(store: IndexedDbOfflineStore, visitId: string) {
+  return (await store.listOperations(visitId))
+    .filter((operation) => operation.kind === "start_visit" && operation.estado !== "sincronizada")
+    .map((operation) => operation.operationId)
+}
+
 export function VisitasPanel() {
   const [visits, setVisits] = useState<VisitaOffline[]>([])
   const [operations, setOperations] = useState<Record<string, OperacionOffline[]>>({})
@@ -152,7 +159,10 @@ export function VisitasPanel() {
     setError(undefined)
     try {
       const store = new IndexedDbOfflineStore()
-      const workingSet = await edgeApi.offline.workingSet()
+      await syncPendingVisitStartsBeforeRefresh(store, (visitId) =>
+        createCoordinator(store).sync(visitId, deviceId()),
+      )
+      const workingSet = await edgeApi.offline.workingSet(deviceId())
       const serverIds = new Set(workingSet.visits.map((entry) => entry.visit.id))
       const cached = await store.listVisits()
       for (const old of cached) {
@@ -163,16 +173,25 @@ export function VisitasPanel() {
       }
       for (const entry of workingSet.visits) {
         const old = await store.getVisit(entry.visit.id)
+        const pendingOperations = await store.listOperations(entry.visit.id)
+        const entryCatalogs = entry.certificate_catalogs ?? workingSet.certificate_catalogs
+        const catalogState = refreshedVisitCatalogs({
+          previous: old,
+          refreshedContext: { ...entry, certificate_catalogs: entryCatalogs },
+          refreshedCatalogs: entryCatalogs,
+        })
         await store.saveVisit({
           id: entry.visit.id,
-          context: entry,
+          ...catalogState,
           cachedAt: new Date().toISOString(),
           estadoLocal: old?.estadoLocal ?? "disponible",
           synchronizationPending: old?.synchronizationPending ?? false,
+          backendStatus: entry.visit.estado ?? old?.backendStatus,
+          visitAcknowledgement: old?.visitAcknowledgement,
           claimedByDeviceId: old?.claimedByDeviceId,
           claimedAt: old?.claimedAt,
         })
-        const pending = (await store.listOperations(entry.visit.id)).some(
+        const pending = pendingOperations.some(
           (operation) => operation.estado !== "sincronizada",
         )
         if (pending) await createCoordinator(store).sync(entry.visit.id, deviceId())
@@ -341,8 +360,62 @@ function VisitEditor({
   const catalogsQuery = useEdgeCertificateCaptureCatalogs(
     typeof navigator !== "undefined" && navigator.onLine,
   )
-  const catalogs = context.certificate_catalogs ?? catalogsQuery.data
+  const catalogs = certificateCatalogsForVisit(
+    visit,
+    context.certificate_catalogs ?? catalogsQuery.data,
+  )
   const closed = visit.estadoLocal === "completada_local"
+  const started =
+    visit.estadoLocal === "en_curso_local" ||
+    visit.backendStatus === "en_curso" ||
+    context.visit?.estado === "en_curso"
+
+  const start = async () => {
+    try {
+      const localVisit = (await store.getVisit(visit.id)) ?? visit
+      const downloadedCatalogs =
+        (contextOf(localVisit) as StoredVisitContext).certificate_catalogs ??
+        context.certificate_catalogs
+      const pinnedVisit = pinVisitCertificateCatalogs(localVisit, downloadedCatalogs)
+      const replacementCatalogVersionId =
+        pinnedVisit.pinnedCertificateCatalogs?.replacementCatalogVersion
+      if (!replacementCatalogVersionId) throw new Error("No hay una versión de repuestos descargada")
+      const currentDeviceId = deviceId()
+      if (navigator.onLine) {
+        if (pinnedVisit.claimedByDeviceId !== currentDeviceId)
+          await coordinator.claimVisit(visit.id, currentDeviceId)
+        const reservedVisit = (await store.getVisit(visit.id)) ?? pinnedVisit
+        const response = await edgeApi.visits.startVisit(
+          visit.id,
+          replacementCatalogVersionId,
+          currentDeviceId,
+        )
+        await store.saveVisit({
+          ...reservedVisit,
+          pinnedCertificateCatalogs: pinnedVisit.pinnedCertificateCatalogs,
+          backendStatus: response.visit.estado ?? "en_curso",
+          estadoLocal: "en_curso_local",
+        })
+        setMessage("Visita iniciada con el catálogo de repuestos descargado.")
+      } else {
+        await coordinator.queue(visit.id, currentDeviceId, "start_visit", {
+          replacement_catalog_version_id: replacementCatalogVersionId,
+          device_id: currentDeviceId,
+        })
+        const queuedVisit = (await store.getVisit(visit.id)) ?? pinnedVisit
+        await store.saveVisit({
+          ...queuedVisit,
+          pinnedCertificateCatalogs: pinnedVisit.pinnedCertificateCatalogs,
+          estadoLocal: "en_curso_local",
+          synchronizationPending: true,
+        })
+        setMessage("Visita iniciada offline con el catálogo de repuestos descargado.")
+      }
+      await onChanged()
+    } catch (caught) {
+      setMessage(caught instanceof Error ? caught.message : "No se pudo iniciar la visita")
+    }
+  }
 
   const claim = async () => {
     try {
@@ -377,6 +450,7 @@ function VisitEditor({
           party: "tecnico",
           signerName: technician,
           file,
+          dependencies: await pendingStartOperationIds(store, visit.id),
         })
         await coordinator.queue(
           visit.id,
@@ -385,7 +459,7 @@ function VisitEditor({
           {
             local_completed_at: new Date().toISOString(),
           },
-          [signatureOperation.operationId],
+          [signatureOperation.operationId, ...(await pendingStartOperationIds(store, visit.id))],
         )
         await coordinator.markVisitLocallyComplete(visit.id)
       }
@@ -417,6 +491,25 @@ function VisitEditor({
           <Badge variant="outline">Reservada localmente</Badge>
         )}
       </div>
+      {!started ? (
+        <div className="space-y-2 rounded-md border p-3">
+          <p className="text-sm text-muted-foreground">
+            Al iniciar la Visita de servicio se fija la última versión de repuestos descargada.
+          </p>
+          <Button
+            type="button"
+            onClick={() => void start()}
+            disabled={!context.certificate_catalogs || closed}
+          >
+            Iniciar Visita de servicio
+          </Button>
+          {!context.certificate_catalogs ? (
+            <p className="text-xs text-muted-foreground">
+              Actualizá la agenda mientras estás online para descargar el catálogo de repuestos.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <div className="space-y-3">
         {(context.work_orders ?? []).map((order) => (
           <WorkOrderEditor
@@ -427,13 +520,13 @@ function VisitEditor({
             coordinator={coordinator}
             catalogs={catalogs}
             technicians={technicians}
-            disabled={closed}
+            disabled={closed || !started}
             onChanged={onChanged}
             onMessage={setMessage}
           />
         ))}
       </div>
-      <Card size="sm">
+      {started ? <Card size="sm">
         <CardHeader>
           <CardTitle className="text-sm">Cierre de la Visita de servicio</CardTitle>
           <CardDescription>
@@ -449,7 +542,7 @@ function VisitEditor({
               className="h-8 w-full rounded-lg border bg-transparent px-2 text-sm"
               value={technician}
               onChange={(event) => setTechnician(event.target.value)}
-              disabled={closed}
+              disabled={closed || !started}
             >
               <option value="">Seleccionar Técnico</option>
               {technicians.map((person) => (
@@ -467,11 +560,11 @@ function VisitEditor({
               value={technician}
               onChange={(event) => setTechnician(event.target.value)}
               placeholder="Nombre del Técnico ejecutor"
-              disabled={closed}
+              disabled={closed || !started}
             />
           )}
           <SignaturePad title="Firma del Técnico" onChange={setSignature} />
-          <Button onClick={() => void complete()} disabled={closed}>
+          <Button onClick={() => void complete()} disabled={closed || !started}>
             {closed ? "Visita cerrada" : "Completar visita"}
           </Button>
           {closed ? (
@@ -481,7 +574,7 @@ function VisitEditor({
             </p>
           ) : null}
         </CardContent>
-      </Card>
+      </Card> : null}
       {message ? (
         <p className="text-sm text-muted-foreground" role="status">
           {message}
@@ -502,7 +595,7 @@ function WorkOrderEditor({
   onChanged,
   onMessage,
 }: {
-  order: WorkOrderDetailDto
+  order: CachedWorkOrder
   visit: VisitaOffline
   store: IndexedDbOfflineStore
   coordinator: OfflineSyncCoordinator
@@ -514,13 +607,27 @@ function WorkOrderEditor({
 }) {
   const [reason, setReason] = useState(order.no_evaluada_razon ?? "")
   const [certificateId, setCertificateId] = useState<string>(
-    String((order as Record<string, unknown>).certificate_id ?? ""),
+    order.certificate_id ?? "",
   )
-  const [localCertificate, setLocalCertificate] = useState<Record<string, unknown>>()
+  const [localCertificate, setLocalCertificate] = useState<Record<string, unknown> | undefined>(
+    order.certificate ?? undefined,
+  )
   const [evidence, setEvidence] = useState<
     Partial<Record<CertificateEvidenceKey, { media_id: string }>>
   >({})
   const draft = useEdgeCertificateDraft(certificateId || undefined)
+  const currentCertificate = draft.data?.certificate ?? localCertificate
+  const snapshot = currentCertificate?.plantilla_snapshot
+  const boundTemplate = useMemo(() => {
+    if (!catalogs || !snapshot || typeof snapshot !== "object" || Array.isArray(snapshot))
+      return catalogs?.template
+    const parsed = certificateTemplateSchema.safeParse({
+      ...catalogs.template,
+      ...snapshot,
+      estado: "historica",
+    })
+    return parsed.success ? parsed.data : catalogs.template
+  }, [catalogs, snapshot])
 
   useEffect(() => {
     let cancelled = false
@@ -534,14 +641,31 @@ function WorkOrderEditor({
         typeof startOperation?.payload.certificate_id === "string"
           ? startOperation.payload.certificate_id
           : undefined
-      const updateOperation = operations.find(
-        (operation) =>
-          operation.kind === "update_certificate_draft" &&
-          operation.payload.certificate_id === (queuedCertificateId ?? certificateId),
-      )
+      const queuedTemplateSnapshot = startOperation?.payload.template_snapshot
+      const updateOperation = operations
+        .filter(
+          (operation) =>
+            operation.kind === "update_certificate_draft" &&
+            operation.payload.certificate_id === (queuedCertificateId ?? certificateId),
+        )
+        .sort(
+          (a, b) =>
+            a.createdAt.localeCompare(b.createdAt) ||
+            a.operationId.localeCompare(b.operationId),
+        )
+        .at(-1)
       const queuedData = updateOperation?.payload.data
       if (cancelled) return
-      if (!certificateId && queuedCertificateId) setCertificateId(queuedCertificateId)
+      if (!certificateId && queuedCertificateId) {
+        setCertificateId(queuedCertificateId)
+        setLocalCertificate((current) => ({
+          ...(current ?? {}),
+          id: queuedCertificateId,
+          estado: "borrador",
+          estado_captura: "abierto",
+          plantilla_snapshot: queuedTemplateSnapshot,
+        }))
+      }
       if (queuedData && typeof queuedData === "object" && !Array.isArray(queuedData))
         setLocalCertificate((current) => ({
           ...(current ?? {}),
@@ -562,11 +686,12 @@ function WorkOrderEditor({
           notEvaluatedReason: outcome === "no_evaluada" ? reason : undefined,
         })
       } else {
+        const dependencies = await pendingStartOperationIds(store, visit.id)
         await coordinator.queue(visit.id, deviceId(), "work_order_outcome", {
           work_order_id: order.id,
           outcome,
           not_evaluated_reason: outcome === "no_evaluada" ? reason : null,
-        })
+        }, dependencies)
       }
       onMessage(
         outcome === "evaluada"
@@ -588,11 +713,36 @@ function WorkOrderEditor({
       } else {
         const localId = window.crypto.randomUUID()
         setCertificateId(localId)
-        setLocalCertificate({ id: localId, estado: "borrador", estado_captura: "abierto" })
-        await coordinator.queue(visit.id, deviceId(), "start_certificate_draft", {
-          work_order_id: order.id,
-          certificate_id: localId,
+        setLocalCertificate({
+          id: localId,
+          estado: "borrador",
+          estado_captura: "abierto",
+          plantilla_version: catalogs?.template.version,
+          plantilla_snapshot: catalogs
+            ? {
+                id: catalogs.template.id,
+                version: catalogs.template.version,
+                campos: catalogs.template.campos,
+              }
+            : undefined,
         })
+        await coordinator.queue(
+          visit.id,
+          deviceId(),
+          "start_certificate_draft",
+          {
+            work_order_id: order.id,
+            certificate_id: localId,
+            template_snapshot: catalogs
+              ? {
+                  id: catalogs.template.id,
+                  version: catalogs.template.version,
+                  campos: catalogs.template.campos,
+                }
+              : null,
+          },
+          await pendingStartOperationIds(store, visit.id),
+        )
       }
       onMessage("Borrador de certificado iniciado.")
       await onChanged()
@@ -607,11 +757,25 @@ function WorkOrderEditor({
     if (!certificateId || disabled) return
     try {
       if (navigator.onLine) await edgeApi.certificates.updateDraft(certificateId, payload)
-      else
-        await coordinator.queue(visit.id, deviceId(), "update_certificate_draft", {
-          certificate_id: certificateId,
-          data: payload,
-        })
+      else {
+        const priorOperations = (await store.listOperations(visit.id))
+          .filter(
+            (operation) =>
+              operation.payload.certificate_id === certificateId &&
+              ["start_certificate_draft", "update_certificate_draft"].includes(operation.kind),
+          )
+          .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        const previous = priorOperations.at(-1)
+        const dependencies = await pendingStartOperationIds(store, visit.id)
+        if (previous) dependencies.push(previous.operationId)
+        await coordinator.queue(
+          visit.id,
+          deviceId(),
+          "update_certificate_draft",
+          { certificate_id: certificateId, data: payload },
+          [...new Set(dependencies)],
+        )
+      }
       setLocalCertificate((current) => ({ ...(current ?? {}), ...payload }))
       onMessage("Borrador guardado.")
       await onChanged()
@@ -646,7 +810,7 @@ function WorkOrderEditor({
         category: section,
         content_type: file.type,
       },
-      [],
+      await pendingStartOperationIds(store, visit.id),
       { mediaIds: [mediaId] },
     )
     onMessage(`Foto de ${section} guardada localmente y lista para sincronizar.`)
@@ -688,7 +852,7 @@ function WorkOrderEditor({
           <Button
             size="sm"
             variant="secondary"
-            disabled={disabled || order.estado !== "evaluada"}
+            disabled={disabled || order.estado !== "evaluada" || !catalogs}
             onClick={() => void startDraft()}
           >
             <FileCheck2 className="mr-2 size-4" /> Iniciar Borrador de certificado
@@ -697,13 +861,13 @@ function WorkOrderEditor({
         {certificateId ? (
           <div className="space-y-3 rounded-md border bg-background p-3">
             <p className="text-sm font-medium">Borrador de certificado · {certificateId}</p>
-            {catalogs ? (
+            {catalogs && boundTemplate ? (
               <CertificateCaptureForm
                 key={`${certificateId}-${String(draft.data?.certificate.updated_at ?? "local")}`}
-                template={catalogs.template}
+                template={boundTemplate}
                 catalogs={catalogs}
                 technicians={technicians}
-                certificate={draft.data?.certificate ?? localCertificate}
+                certificate={currentCertificate}
                 valve={findValve(contextOf(visit), order.valvula_id)}
                 evidence={evidence}
                 disabled={disabled}

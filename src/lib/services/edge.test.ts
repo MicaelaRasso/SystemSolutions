@@ -68,6 +68,7 @@ describe("EdgeAccessClient", () => {
             rol: "administrador_regular",
             taller_movil_id: null,
             cliente: false,
+            estado: "activa",
           }),
           { status: 200 },
         ),
@@ -149,6 +150,7 @@ describe("EdgeAccessClient", () => {
             rol: "administrador_regular",
             taller_movil_id: null,
             cliente: false,
+            estado: "activa",
           },
         ]),
         { status: 200 },
@@ -231,6 +233,7 @@ describe("EdgeAccessClient", () => {
           rol: "administrador_regular",
           taller_movil_id: null,
           cliente: false,
+          estado: "activa",
         }),
         { status: 200 },
       ),
@@ -280,6 +283,7 @@ describe("EdgeAccessClient", () => {
           rol: "administrador_regular",
           taller_movil_id: null,
           cliente: false,
+          estado: "activa",
         }),
         { status: 200 },
       ),
@@ -329,6 +333,7 @@ describe("EdgeAccessClient", () => {
             rol: "taller_movil",
             taller_movil_id: "workshop-1",
             cliente: false,
+            estado: "activa",
           }),
           { status: 200 },
         ),
@@ -341,5 +346,30 @@ describe("EdgeAccessClient", () => {
       rol: "taller",
       tallerId: "workshop-1",
     })
+  })
+
+  it("rejects an account context that is not active", async () => {
+    const getSession = vi.fn().mockResolvedValue({
+      data: { session: { access_token: "session-token", user: { id: "pending-account" } } },
+      error: null,
+    })
+    const client = new EdgeAccessClient({
+      baseUrl: "https://example.test",
+      request: vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            cuenta_id: "pending-account",
+            rol: "cliente",
+            taller_movil_id: null,
+            cliente: true,
+            estado: "pendiente",
+          }),
+          { status: 200 },
+        ),
+      ),
+      auth: () => ({ auth: { getSession } }) as never,
+    })
+
+    await expect(client.authenticatedUser()).rejects.toMatchObject({ code: "unauthorized" })
   })
 })

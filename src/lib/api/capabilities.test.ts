@@ -66,7 +66,7 @@ describe("capability Edge clients", () => {
     })
 
     const offline = client({ visits: [] })
-    await createOfflineApi(offline.edge).workingSet()
+    await createOfflineApi(offline.edge).workingSet("device-1")
 
     expect(yacimientos.request).toHaveBeenCalledWith(
       "https://example.test/functions/v1/asset-access/yacimientos",
@@ -94,7 +94,10 @@ describe("capability Edge clients", () => {
     )
     expect(offline.request).toHaveBeenCalledWith(
       "https://example.test/functions/v1/offline-sync/offline/working-set",
-      expect.anything(),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ device_id: "device-1" }),
+      }),
     )
   })
 
@@ -136,6 +139,23 @@ describe("capability Edge clients", () => {
     expect(request.mock.calls.map(([url]) => String(url))).toEqual([
       "https://example.test/functions/v1/service-workflow/visits/visit-1",
     ])
+  })
+
+  it("starts a visit with the replacement catalog and device that were downloaded", async () => {
+    const { edge, request } = client({ visit: { id: "visit-1", estado: "en_curso" } })
+
+    await createVisitsApi(edge).startVisit("visit-1", "catalog-version-1", "device-1")
+
+    expect(request).toHaveBeenCalledWith(
+      "https://example.test/functions/v1/service-workflow/visits/visit-1/start",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          replacement_catalog_version_id: "catalog-version-1",
+          device_id: "device-1",
+        }),
+      }),
+    )
   })
 
   it("maps only the supported Yacimiento tree fields to the legacy view model", async () => {
@@ -284,6 +304,49 @@ describe("capability Edge clients", () => {
           ends_at: "2026-10-01T12:00:00Z",
         }),
       }),
+    )
+  })
+
+  it("serializes administrator visit lifecycle actions with a required reason", async () => {
+    const request = vi.fn<typeof fetch>().mockImplementation(async () =>
+      new Response(JSON.stringify({ visit: { id: "visit-1" }, work_orders: [] }), { status: 200 }),
+    )
+    const edge = new EdgeAccessClient({ baseUrl: "https://example.test", request })
+    const api = createServiceWorkflowApi(edge)
+
+    await api.assignVisit("visit-1", { tallerMovilId: "workshop-1", reason: "Cobertura" })
+    await api.unassignVisit("visit-1", { reason: "Cambio operativo" })
+    await api.reassignVisit("visit-1", {
+      tallerMovilId: "workshop-2",
+      reason: "Cambio de cobertura",
+    })
+    await api.cancelVisitAsAdministrator("visit-1", { reason: "Solicitud del Cliente" })
+
+    expect(request).toHaveBeenNthCalledWith(
+      1,
+      "https://example.test/functions/v1/service-workflow/visits/visit-1/assign",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ taller_movil_id: "workshop-1", starts_at: null, ends_at: null, reason: "Cobertura" }),
+      }),
+    )
+    expect(request).toHaveBeenNthCalledWith(
+      2,
+      "https://example.test/functions/v1/service-workflow/visits/visit-1/unassign",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ reason: "Cambio operativo" }) }),
+    )
+    expect(request).toHaveBeenNthCalledWith(
+      3,
+      "https://example.test/functions/v1/service-workflow/visits/visit-1/reassign",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ taller_movil_id: "workshop-2", starts_at: null, ends_at: null, reason: "Cambio de cobertura" }),
+      }),
+    )
+    expect(request).toHaveBeenNthCalledWith(
+      4,
+      "https://example.test/functions/v1/service-workflow/visits/visit-1/cancel-administrator",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ reason: "Solicitud del Cliente" }) }),
     )
   })
 

@@ -19,6 +19,11 @@ export type TransportContext = {
 
 export type RouteHandler = (context: TransportContext) => Promise<Response | RpcResult>
 
+export type HandleRequestDependencies = {
+  authenticateRequest?: typeof authenticateRequest
+  createServiceRoleClient?: typeof createServiceRoleClient
+}
+
 const logFailure = (
   metadata: RequestMetadata,
   actor: AuthenticatedActor | undefined,
@@ -38,6 +43,7 @@ export const handleRequest = async (
   request: Request,
   functionName: FunctionName,
   handler: RouteHandler,
+  dependencies: HandleRequestDependencies = {},
 ): Promise<Response> => {
   const id = correlationId(request.headers)
   const route = parseRoute(request, functionName)
@@ -47,14 +53,41 @@ export const handleRequest = async (
 
   let actor: AuthenticatedActor | undefined
   try {
-    actor = await authenticateRequest(request)
-    const db = await createServiceRoleClient({
+    actor = await (dependencies.authenticateRequest ?? authenticateRequest)(request)
+    const db = await (dependencies.createServiceRoleClient ?? createServiceRoleClient)({
       actorId: actor.id,
       correlationId: id,
       functionName,
     })
 
     if (!canHandleRoute(functionName, request.method, route)) return routeNotFound(request, id)
+
+    // Some handlers call Storage before making a PostgREST request. Verify the
+    // current Cuenta state centrally so those side effects receive the same
+    // immediate disablement behavior as database-backed handlers.
+    const accountContext = await db.rpc("api_context")
+    if (accountContext.error) {
+      const denied = accountContext.error.code === "42501" ||
+        accountContext.error.code === "insufficient_privilege"
+      const inactive = accountContext.error.message?.includes("Cuenta is not active") ?? false
+      if (denied) {
+        const message = inactive ? "Cuenta is not active" : "Application access denied"
+        return errorJson(request, { message }, 403, id)
+      }
+      return errorJson(request, { message: "Unable to verify account access" }, 503, id)
+    }
+
+    const contextRows = Array.isArray(accountContext.data)
+      ? accountContext.data
+      : accountContext.data && typeof accountContext.data === "object"
+        ? [accountContext.data]
+        : []
+    const currentContext = contextRows.find(
+      (row) => row && typeof row === "object" && (row as { cuenta_id?: unknown }).cuenta_id === actor?.id,
+    ) as { estado?: unknown } | undefined
+    if (currentContext?.estado !== "activa") {
+      return errorJson(request, { message: "Cuenta is not active" }, 403, id)
+    }
 
     const body = request.method === "GET" ? {} : await parseBody(request)
     const outcome = await handler({

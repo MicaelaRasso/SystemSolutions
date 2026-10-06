@@ -287,8 +287,8 @@ export const serviceWorkflowHandler: RouteHandler = async ({
     return db.rpc("api_schedule_visit", {
       request_id: segments[1],
       provider_id: body.taller_movil_id,
-      visit_starts_at: body.starts_at,
-      visit_ends_at: body.ends_at,
+      visit_starts_at: body.starts_at ?? null,
+      visit_ends_at: body.ends_at ?? null,
     })
   if (segments[0] === "requests" && request.method === "GET" && !segments[1])
     return db.rpc("api_service_requests")
@@ -310,6 +310,44 @@ export const serviceWorkflowHandler: RouteHandler = async ({
     return db.rpc("api_visits")
   if (segments[0] === "visits" && request.method === "GET" && segments[1] && !segments[2])
     return db.rpc("api_visit", { visit_id: segments[1] })
+  if (
+    segments[0] === "visits" && request.method === "POST" &&
+    segments[1] && segments[2] === "assign"
+  )
+    return db.rpc("api_assign_visit", {
+      visit_id: segments[1],
+      provider_id: body.taller_movil_id,
+      action_reason: body.reason,
+      visit_starts_at: body.starts_at ?? null,
+      visit_ends_at: body.ends_at ?? null,
+    })
+  if (
+    segments[0] === "visits" && request.method === "POST" &&
+    segments[1] && segments[2] === "unassign"
+  )
+    return db.rpc("api_unassign_visit", {
+      visit_id: segments[1],
+      action_reason: body.reason,
+    })
+  if (
+    segments[0] === "visits" && request.method === "POST" &&
+    segments[1] && segments[2] === "reassign"
+  )
+    return db.rpc("api_reassign_visit", {
+      visit_id: segments[1],
+      provider_id: body.taller_movil_id,
+      action_reason: body.reason,
+      visit_starts_at: body.starts_at,
+      visit_ends_at: body.ends_at,
+    })
+  if (
+    segments[0] === "visits" && request.method === "POST" &&
+    segments[1] && segments[2] === "cancel-administrator"
+  )
+    return db.rpc("api_admin_cancel_visit", {
+      visit_id: segments[1],
+      action_reason: body.reason,
+    })
   if (
     segments[0] === "visits" &&
     request.method === "POST" &&
@@ -336,8 +374,21 @@ export const serviceWorkflowHandler: RouteHandler = async ({
     request.method === "POST" &&
     segments[1] &&
     segments[2] === "start"
-  )
-    return db.rpc("api_start_visit", { visit_id: segments[1] })
+  ) {
+    const replacementCatalogVersionId = typeof body.replacement_catalog_version_id === "string"
+      ? body.replacement_catalog_version_id
+      : ""
+    const deviceId = typeof body.device_id === "string" ? body.device_id : ""
+    if (!replacementCatalogVersionId && !deviceId)
+      return db.rpc("api_start_visit", { visit_id: segments[1] })
+    if (!isUuid(replacementCatalogVersionId) || !isUuid(deviceId))
+      throw new HttpError(400, "A valid replacement catalog version and device_id are required")
+    return db.rpc("api_start_visit_with_catalog", {
+      visit_id: segments[1],
+      replacement_catalog_version_id: replacementCatalogVersionId,
+      target_device: deviceId,
+    })
+  }
   if (
     segments[0] === "visits" &&
     request.method === "POST" &&

@@ -277,13 +277,13 @@ el contrato de API y PostgreSQL conserva RLS y autorización de dominio. Véase
 | Login y sesión | Supabase Auth con cookies SSR; rol y Cuenta desde `GET /context` de `identity-admin` |
 | CRUD de clientes, estructura, catálogos, tareas, cronograma | Edge Function autenticada; PostgreSQL aplica RLS y autorización de dominio |
 | Filtrado de datos por cliente (RN-09, RNF-01) | Edge Function + políticas RLS (el front no confía en su propio filtro) |
-| Alta de usuarios (admin, taller, cliente) | Edge Function `crear-usuario` (usa service role) |
+| Alta de usuarios (admin, taller, cliente) | Edge Function `crear-usuario` (usa service role); Supabase envía el correo de creación de cuenta |
 | Nro de solicitud | Edge Function; secuencia / trigger en Postgres |
 | Sincronización de certificados | Edge Function `sync-certificado`: idempotente por `localId`, asigna nro correlativo en transacción, sube fotos/firmas a Storage |
 | Generación de PDF + nombre normalizado | Edge Function `generar-certificado-pdf` (disparada por el sync y por correcciones) |
 | Descarga de PDF | Edge Function autorizada entrega o transmite el archivo; no hay URL de Storage para el navegador |
 | Corrección 24 h + auditoría | Edge Function `corregir-certificado` |
-| Aviso de vencimiento 30 días | Edge Function `avisos-vencimiento` programada (cron), email desde systemsrl.com.ar |
+| Aviso de vencimiento 30 días | Fuera del MVP; véase ADR-0011 |
 | Backups | Capability autenticada de Edge Function `backup`: exportación completa o por rango, sin retención ni restauración |
 | Logos, fotos, adjuntos | Edge Function autorizada gestiona Supabase Storage (buckets por tipo) |
 

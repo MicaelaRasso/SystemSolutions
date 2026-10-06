@@ -48,8 +48,10 @@ export function TareaDetalle({ id }: { id: string }) {
   const error = supabase ? operacion.error : tareaLegacy.error
   const refetch = supabase ? operacion.refetch : tareaLegacy.refetch
   const cambiarEstado = useServiceMutation(
-    (estado: "cancelada" | "pendiente") =>
-      supabase && estado === "cancelada" ? cancelarVisita(id) : cambiarEstadoTarea(id, estado),
+    (input: { estado: "cancelada" | "pendiente"; reason?: string }) =>
+      supabase && input.estado === "cancelada"
+        ? cancelarVisita(id, input.reason ?? "")
+        : cambiarEstadoTarea(id, input.estado),
     { invalidar: INVALIDAR_TAREAS },
   )
 
@@ -114,7 +116,7 @@ export function TareaDetalle({ id }: { id: string }) {
           <Button
             variant="outline"
             disabled={cambiarEstado.isPending}
-            onClick={() => cambiarEstado.mutate("pendiente")}
+            onClick={() => cambiarEstado.mutate({ estado: "pendiente" })}
           >
             <RotateCcw />
             Reabrir tarea
@@ -129,9 +131,15 @@ export function TareaDetalle({ id }: { id: string }) {
                 </Button>
               }
               titulo={`¿Cancelar la solicitud N° ${tarea.nroSolicitud}?`}
-              descripcion="Queda en el historial como cancelada y sale de la agenda del taller. Se puede reabrir."
+              descripcion="Queda en el historial como cancelada y sale de la agenda del taller."
               confirmar="Cancelar tarea"
-              onConfirm={() => cambiarEstado.mutateAsync("cancelada")}
+              onConfirm={() => {
+                const reason = supabase
+                  ? window.prompt("Motivo de cancelación de la visita")?.trim()
+                  : undefined
+                if (supabase && !reason) return Promise.resolve()
+                return cambiarEstado.mutateAsync({ estado: "cancelada", reason })
+              }}
             />
           )
         )}

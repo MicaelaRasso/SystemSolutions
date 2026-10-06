@@ -1,6 +1,6 @@
 begin;
 
-select plan(54);
+select plan(66);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000001101', 'workflow-client-a@example.test'),
@@ -184,6 +184,11 @@ select lives_ok(
 
 select public.test_workflow_set_actor('00000000-0000-0000-0000-000000001105');
 select set_config(
+  'request.headers',
+  '{"x-systemsolutions-actor-id":"00000000-0000-0000-0000-000000001105","x-systemsolutions-correlation-id":"schedule-audit-correlation"}',
+  true
+);
+select set_config(
   'app.workflow_primary_visit_id',
   (public.api_schedule_visit(
     current_setting('app.workflow_request_id')::uuid,
@@ -193,6 +198,55 @@ select set_config(
   )->'visit'->>'id'),
   true
 );
+select is(
+  (select count(*) from public.registros_auditoria
+   where visita_id = current_setting('app.workflow_primary_visit_id')::uuid
+     and accion = 'visita_programada'),
+  1::bigint,
+  'scheduling writes one successful audit event in the visit transaction'
+);
+select ok(
+  exists (
+    select 1 from public.registros_auditoria
+    where visita_id = current_setting('app.workflow_primary_visit_id')::uuid
+      and accion = 'visita_programada'
+      and actor_cuenta_id = '00000000-0000-0000-0000-000000001105'::uuid
+      and resultado = 'exitoso'
+      and recibida_en is not null
+      and identidad_correlacion = 'schedule-audit-correlation'
+  ),
+  'schedule audit preserves the Administrador, success outcome, server receipt time, and correlation identity'
+);
+select ok(
+  (public.api_audit_events(visit_filter => current_setting('app.workflow_primary_visit_id')::uuid)->'items')
+    @> '[{"accion":"visita_programada"}]'::jsonb,
+  'an authorized Administrador can retrieve the scheduled visit audit event through the observability read surface'
+);
+select throws_ok(
+  $$update public.registros_auditoria set resultado = 'fallido' where visita_id = current_setting('app.workflow_primary_visit_id')::uuid and accion = 'visita_programada'$$,
+  '42501', 'Registro de auditoría is append-only', 'audit events cannot be edited'
+);
+select throws_ok(
+  $$delete from public.registros_auditoria where visita_id = current_setting('app.workflow_primary_visit_id')::uuid and accion = 'visita_programada'$$,
+  '42501', 'Registro de auditoría is append-only', 'audit events cannot be deleted'
+);
+select set_config(
+  'app.workflow_audit_count_before_read',
+  (select count(*)::text from public.registros_auditoria where visita_id = current_setting('app.workflow_primary_visit_id')::uuid),
+  true
+);
+select public.api_visit(current_setting('app.workflow_primary_visit_id')::uuid);
+select is(
+  (select count(*)::text from public.registros_auditoria where visita_id = current_setting('app.workflow_primary_visit_id')::uuid),
+  current_setting('app.workflow_audit_count_before_read'),
+  'ordinary visit reads do not create audit records'
+);
+select public.test_workflow_set_actor('00000000-0000-0000-0000-000000001101');
+select throws_ok(
+  $$select public.api_audit_events(visit_filter => current_setting('app.workflow_primary_visit_id')::uuid)$$,
+  '42501', 'Only an active Administrador can read audit data', 'a Cliente cannot read the administrative audit surface'
+);
+select public.test_workflow_set_actor('00000000-0000-0000-0000-000000001105');
 select is(
   jsonb_array_length(public.api_visit(current_setting('app.workflow_primary_visit_id')::uuid)->'work_orders'),
   2,
@@ -343,14 +397,50 @@ select is(
   1::bigint,
   'an unevaluated Válvula creates no certificate'
 );
+select throws_ok(
+  $$select public.api_complete_visit(current_setting('app.workflow_primary_visit_id')::uuid)$$,
+  '23514', 'A Técnico signature is required to complete a visit', 'a failed completion does not succeed without a Técnico signature'
+);
+select is(
+  (select count(*) from public.registros_auditoria
+   where visita_id = current_setting('app.workflow_primary_visit_id')::uuid
+     and accion = 'visita_completada'),
+  0::bigint,
+  'a failed completion transaction leaves no successful completion event'
+);
 select lives_ok(
   $$select public.api_submit_visit_signature(current_setting('app.workflow_primary_visit_id')::uuid, 'tecnico'::public.parte_firma_visita, 'Tecnico A', 'certificates', 'workflow/primary-tech.png')$$,
   'a Técnico signature authorizes visit completion'
+);
+insert into public.operaciones_sync(
+  operation_id, visita_id, kind, payload, device_timestamp, server_received_at
+) values (
+  '00000000-0000-0000-0000-000000001901',
+  current_setting('app.workflow_primary_visit_id')::uuid,
+  'complete_visit', '{}', '2099-01-10 12:34:56+00', now()
+);
+select set_config(
+  'request.headers',
+  '{"x-systemsolutions-actor-id":"00000000-0000-0000-0000-000000001103","x-systemsolutions-correlation-id":"completion-audit-correlation"}',
+  true
 );
 select is(
   (public.api_complete_visit(current_setting('app.workflow_primary_visit_id')::uuid)->'visit'->>'estado'),
   'completada',
   'the Taller Móvil can complete the visit'
+);
+select ok(
+  exists (
+    select 1 from public.registros_auditoria
+    where visita_id = current_setting('app.workflow_primary_visit_id')::uuid
+      and accion = 'visita_completada'
+      and actor_cuenta_id = '00000000-0000-0000-0000-000000001103'::uuid
+      and resultado = 'exitoso'
+      and recibida_en is not null
+      and evento_dispositivo_en = '2099-01-10 12:34:56+00'::timestamptz
+      and identidad_correlacion = 'completion-audit-correlation'
+  ),
+  'completion audit preserves the Técnico, server receipt time, offline device event time, and correlation identity'
 );
 select is(
   (select estado_captura from public.certificados where id = current_setting('app.workflow_certificate_id')::uuid),
@@ -381,14 +471,18 @@ select is(
   'cancelada',
   'the owning Cliente can cancel before the execution day'
 );
-select ok(
-  exists (
-    select 1 from public.asignaciones_servicio
-    where yacimiento_id = '00000000-0000-0000-0000-000000001302'::uuid
-      and taller_movil_id = '00000000-0000-0000-0000-000000001201'::uuid
-      and estado = 'activa'
-  ),
-  'cancelling a visit does not end active Yacimiento/Taller access'
+select is(
+  (select count(*) from public.asignaciones_servicio
+   where yacimiento_id = '00000000-0000-0000-0000-000000001302'::uuid
+     and taller_movil_id = '00000000-0000-0000-0000-000000001201'::uuid
+     and estado = 'activa'),
+  0::bigint,
+  'cancelling a visit ends its active Yacimiento/Taller access'
+);
+select is(
+  (select estado from public.solicitudes_servicio where id = current_setting('app.workflow_access_request_id')::uuid),
+  'cancelada',
+  'Cliente cancellation closes the service request'
 );
 
 select set_config(
@@ -424,11 +518,12 @@ select is(
 
 select public.test_workflow_set_actor('00000000-0000-0000-0000-000000001105');
 select is(
-  (public.api_schedule_visit(
-    current_setting('app.workflow_rejection_request_id')::uuid,
+  (public.api_assign_visit(
+    current_setting('app.workflow_rejection_visit_id')::uuid,
     '00000000-0000-0000-0000-000000001201'::uuid,
-    '2099-01-21 09:00:00+00'::timestamptz,
-    '2099-01-21 12:00:00+00'::timestamptz
+    'Reasignación luego del rechazo',
+    null,
+    null
   )->'visit'->>'rejected_at'),
   null,
   'administrator reassignment clears the old rejection marker'
@@ -468,6 +563,12 @@ select lives_ok(
 select throws_ok(
   $$select public.api_schedule_visit(current_setting('app.workflow_parallel_request_conflict')::uuid, '00000000-0000-0000-0000-000000001202'::uuid, '2099-02-01 09:30:00+00'::timestamptz, '2099-02-01 10:30:00+00'::timestamptz)$$,
   '23P01', NULL, 'the same Equipo cannot belong to overlapping simultaneous visits'
+);
+select is(
+  (select count(*) from public.registros_auditoria
+   where identificadores_relacionados->>'solicitud_id' = current_setting('app.workflow_parallel_request_conflict')),
+  0::bigint,
+  'a failed scheduling transaction leaves no successful audit event'
 );
 
 select * from extensions.finish(true);

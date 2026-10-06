@@ -140,13 +140,21 @@ function visitWindow(date: string, time?: string) {
   }
 }
 
-function timeFromTimestamp(value: string) {
-  return new Intl.DateTimeFormat("en-GB", {
+function visitWindowOnDate(date: string, startsAt: string, endsAt: string) {
+  const time = new Intl.DateTimeFormat("en-GB", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
     timeZone: "America/Argentina/Buenos_Aires",
-  }).format(new Date(value))
+  }).format(new Date(startsAt))
+  const start = new Date(`${date}T${time}:00-03:00`)
+  const duration = new Date(endsAt).getTime() - new Date(startsAt).getTime()
+  if (Number.isNaN(start.getTime()) || !Number.isFinite(duration) || duration <= 0)
+    throw new Error("La fecha u horario de la visita no es válido")
+  return {
+    startsAt: start.toISOString(),
+    endsAt: new Date(start.getTime() + duration).toISOString(),
+  }
 }
 
 function responseRequestId(response: ServiceRequest) {
@@ -164,8 +172,16 @@ async function solicitudIdDeOperacion(operationId: ID) {
 export async function guardarSolicitudYVisita(
   operation: OperationRead | undefined,
   data: TareaInput,
+  assignmentReason?: string,
 ): Promise<OperationRead | undefined> {
   const requestId = operation ? await solicitudIdDeOperacion(operation.operation.id) : undefined
+  const currentWorkshopId = operation?.operation.taller_movil?.id
+  const changesAssignment =
+    !!operation && (data.tallerId || undefined) !== currentWorkshopId
+  const actionReason = assignmentReason?.trim()
+  if (changesAssignment && !actionReason)
+    throw new Error("Indica el motivo del cambio de asignación")
+
   const context = operation ? undefined : await edgeApi.identity.context()
   const isAdministrator =
     context?.rol === "administrador_regular" || context?.rol === "super_administrador"
@@ -179,10 +195,25 @@ export async function guardarSolicitudYVisita(
       : await edgeApi.serviceRequests.createRequest(serviceSelection(data))
   const canonicalRequestId = responseRequestId(response)
 
-  if (!data.tallerId) {
-    return undefined
+  if (operation) {
+    const visitId = operation.operation.id
+    if (!data.tallerId && currentWorkshopId)
+      await edgeApi.serviceWorkflow.unassignVisit(visitId, { reason: actionReason! })
+    else if (data.tallerId && !currentWorkshopId)
+      await edgeApi.serviceWorkflow.assignVisit(visitId, {
+        tallerMovilId: data.tallerId,
+        reason: actionReason!,
+      })
+    else if (data.tallerId && currentWorkshopId !== data.tallerId)
+      await edgeApi.serviceWorkflow.reassignVisit(visitId, {
+        tallerMovilId: data.tallerId,
+        reason: actionReason!,
+      })
+    else return operation
+    return edgeApi.operations.get(visitId)
   }
 
+  if (!data.tallerId) return undefined
   const scheduled = await edgeApi.serviceWorkflow.schedule(canonicalRequestId, {
     tallerMovilId: data.tallerId,
     ...visitWindow(data.fechaEjecucion, data.horario),
@@ -203,17 +234,44 @@ export async function reasignarVisita(
   id: ID,
   tallerId: ID | undefined,
   fecha: string,
-  horario?: string,
+  reason?: string,
 ) {
-  if (!tallerId) throw new Error("La desasignación de una visita no está disponible en esta API")
+  const actionReason = reason?.trim()
+  if (!actionReason) throw new Error("Indica el motivo del cambio de asignación")
   const operation = await edgeApi.operations.get(id)
-  const requestId = await solicitudIdDeOperacion(operation.operation.id)
-  const scheduled = await edgeApi.serviceWorkflow.schedule(requestId, {
-    tallerMovilId: tallerId,
-    ...visitWindow(fecha, horario ?? timeFromTimestamp(operation.operation.starts_at)),
-  })
-  const operationId = stringField(scheduled.visit, "id")
-  return operationId ? edgeApi.operations.get(operationId) : operation
+  const visitId = operation.operation.id
+  const currentWorkshopId = operation.operation.taller_movil?.id
+  const currentDate = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: "America/Argentina/Buenos_Aires",
+  }).format(new Date(operation.operation.starts_at))
+  const scheduleChanged = fecha !== currentDate
+  const newWindow = scheduleChanged
+    ? visitWindowOnDate(fecha, operation.operation.starts_at, operation.operation.ends_at)
+    : undefined
+  if (!tallerId) {
+    if (scheduleChanged)
+      throw new Error("La desasignación conserva la fecha y el horario de la visita")
+    if (!currentWorkshopId) return operation
+    await edgeApi.serviceWorkflow.unassignVisit(visitId, { reason: actionReason })
+  } else if (!currentWorkshopId) {
+    await edgeApi.serviceWorkflow.assignVisit(visitId, {
+      tallerMovilId: tallerId,
+      reason: actionReason,
+      ...newWindow,
+    })
+  } else if (currentWorkshopId !== tallerId || scheduleChanged) {
+    await edgeApi.serviceWorkflow.reassignVisit(visitId, {
+      tallerMovilId: tallerId,
+      reason: actionReason,
+      ...newWindow,
+    })
+  } else {
+    return operation
+  }
+  return edgeApi.operations.get(visitId)
 }
 
 export async function reasignarTarea(id: ID, tallerId: ID | undefined, fecha: string) {
@@ -225,19 +283,23 @@ export async function reasignarTarea(id: ID, tallerId: ID | undefined, fecha: st
   return services.tareas.get(saved.id)
 }
 
-export async function cancelarVisita(id: ID) {
-  await edgeApi.visits.transition(id, "cancel")
+export async function cancelarVisita(id: ID, reason: string) {
+  await edgeApi.serviceWorkflow.cancelVisitAsAdministrator(id, { reason })
   return edgeApi.operations.get(id)
 }
 
-export async function cambiarEstadoTarea(id: ID, estado: "cancelada" | "pendiente") {
+export async function cambiarEstadoTarea(
+  id: ID,
+  estado: "cancelada" | "pendiente",
+  reason?: string,
+) {
   if (!usaSupabase()) {
     const saved = await services.tareas.update(id, { estado })
     return services.tareas.get(saved.id)
   }
   if (estado === "pendiente")
     throw new Error("La reapertura de una visita no está disponible en esta API")
-  return cancelarVisita(id)
+  return cancelarVisita(id, reason ?? "")
 }
 
 export function subirAdjunto(archivo: File): Promise<Adjunto> {

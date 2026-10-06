@@ -86,6 +86,12 @@ export const offlineSyncHandler: RouteHandler = async ({ request, route, body, d
   if (segments[0] === "offline" && segments[1] === "working-set" && request.method === "GET")
     return db.rpc("api_offline_working_set")
 
+  if (segments[0] === "offline" && segments[1] === "working-set" && request.method === "POST") {
+    const deviceId = typeof body.device_id === "string" ? body.device_id : ""
+    if (!isUuid(deviceId)) throw new HttpError(400, "A valid device_id is required")
+    return db.rpc("api_offline_working_set_for_device", { target_device: deviceId })
+  }
+
   return routeNotFound(request, correlationId)
 }
 

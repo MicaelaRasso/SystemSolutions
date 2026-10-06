@@ -48,6 +48,7 @@ const toUsuario = (dto: z.infer<typeof accountDtoSchema>): Usuario => ({
   nombre: dto.nombre,
   apellido: dto.apellido,
   rol: roleMap[dto.rol],
+  estadoCuenta: dto.estado,
   empresaId: dto.rol === "cliente" ? undefined : undefined,
   activo: dto.activo,
   creadoEn: dto.creado_en,

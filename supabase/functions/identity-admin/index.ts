@@ -58,13 +58,7 @@ serveFunction("identity-admin", async ({ request, route, body, db, correlationId
   }
 
   if (route[0] === "accounts" && request.method === "DELETE" && route.length === 2) {
-    const auth = await createAuthAdmin()
-    const accountId = route[1]
-    const removed = await db.rpc("api_delete_account", { target: accountId })
-    if (removed.error) return removed
-    const deleted = await auth.auth.admin.deleteUser(accountId)
-    if (deleted.error) throw new Error(deleted.error.message)
-    return { data: null, error: null }
+    return db.rpc("api_delete_account", { target: route[1] })
   }
 
   if (route[0] === "mobile-workshops" && request.method === "GET" && route.length === 1)

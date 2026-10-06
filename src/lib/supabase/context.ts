@@ -7,6 +7,7 @@ export type EdgeContext = {
   rol: "cliente" | "taller_movil" | "administrador_regular" | "super_administrador"
   taller_movil_id: string | null
   cliente: boolean
+  estado: "pendiente" | "activa" | "deshabilitada"
 }
 
 const roleMap: Record<EdgeContext["rol"], Rol> = {
@@ -24,7 +25,11 @@ function isEdgeContext(value: unknown): value is EdgeContext {
     typeof context.rol === "string" &&
     context.rol in roleMap &&
     (typeof context.taller_movil_id === "string" || context.taller_movil_id === null) &&
-    typeof context.cliente === "boolean"
+    typeof context.cliente === "boolean" &&
+    (context.estado === "pendiente" ||
+      context.estado === "activa" ||
+      context.estado === "deshabilitada") &&
+    context.estado === "activa"
   )
 }
 

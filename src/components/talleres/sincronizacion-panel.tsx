@@ -9,23 +9,15 @@ import { edgeApi, type SyncVisitInput } from "@/lib/api"
 import {
   IndexedDbOfflineStore,
   OfflineSyncCoordinator,
+  refreshedVisitCatalogs,
+  syncPendingVisitStartsBeforeRefresh,
   type OperacionOffline,
   type VisitaOffline,
 } from "@/lib/offline/sync"
+import { getOfflineDeviceId } from "@/lib/offline/device"
 
 type EstadoConexion = "online" | "offline" | "actualizando" | "error"
 type OperacionesPorVisita = Record<string, OperacionOffline[]>
-
-const DEVICE_ID_STORAGE_KEY = "systemsolutions.offline.device-id"
-
-function getDeviceId() {
-  const stored = window.localStorage.getItem(DEVICE_ID_STORAGE_KEY)
-  if (stored) return stored
-
-  const deviceId = window.crypto.randomUUID()
-  window.localStorage.setItem(DEVICE_ID_STORAGE_KEY, deviceId)
-  return deviceId
-}
 
 function createCoordinator(store: IndexedDbOfflineStore) {
   return new OfflineSyncCoordinator(store, {
@@ -83,24 +75,37 @@ export function SincronizacionPanel() {
     setError(undefined)
     try {
       const store = new IndexedDbOfflineStore()
-      const workingSet = await edgeApi.offline.workingSet()
+      await syncPendingVisitStartsBeforeRefresh(store, (visitId) =>
+        createCoordinator(store).sync(visitId, getOfflineDeviceId()),
+      )
+      const workingSet = await edgeApi.offline.workingSet(getOfflineDeviceId())
       const nextVisits: VisitaOffline[] = []
       const nextOperations: OperacionesPorVisita = {}
       for (const entry of workingSet.visits) {
         const id = entry.visit.id
         if (!id) continue
         const previous = await store.getVisit(id)
+        const catalogs = entry.certificate_catalogs ?? workingSet.certificate_catalogs
+        const catalogState = refreshedVisitCatalogs({
+          previous,
+          refreshedContext: { ...entry, certificate_catalogs: catalogs },
+          refreshedCatalogs: catalogs,
+        })
         const visit: VisitaOffline = {
           id,
-          context: entry.context,
+          ...catalogState,
           cachedAt: new Date().toISOString(),
           estadoLocal: previous?.estadoLocal ?? "disponible",
           synchronizationPending: previous?.synchronizationPending ?? false,
+          backendStatus: entry.visit.estado ?? previous?.backendStatus,
+          visitAcknowledgement: previous?.visitAcknowledgement,
+          claimedByDeviceId: previous?.claimedByDeviceId,
+          claimedAt: previous?.claimedAt,
         }
         await store.saveVisit(visit)
         // Reconnect refresh also replays queued work. Stable operation ids make
         // replay safe when a previous request reached the server but lost its reply.
-        nextOperations[id] = await createCoordinator(store).sync(id, getDeviceId())
+        nextOperations[id] = await createCoordinator(store).sync(id, getOfflineDeviceId())
         nextVisits.push((await store.getVisit(id)) ?? visit)
       }
       setVisits(nextVisits)
@@ -127,7 +132,7 @@ export function SincronizacionPanel() {
 
     try {
       const store = new IndexedDbOfflineStore()
-      const operations = await createCoordinator(store).sync(visitId, getDeviceId())
+      const operations = await createCoordinator(store).sync(visitId, getOfflineDeviceId())
       setOperationsByVisit((current) => ({ ...current, [visitId]: operations }))
       setConnection(navigator.onLine ? "online" : "offline")
     } catch (caught) {

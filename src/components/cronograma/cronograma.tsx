@@ -61,12 +61,14 @@ export function Cronograma() {
 
   const invalidarNominas = [["nominas"]]
   const reasignar = useServiceMutation<
-    { id: string; tallerId: string | undefined; fecha: string },
+    { id: string; tallerId: string | undefined; fecha: string; reason: string },
     OperationRead | TareaResumen
   >(
-    ({ id, tallerId, fecha }: { id: string; tallerId: string | undefined; fecha: string }) =>
-      supabase ? reasignarVisita(id, tallerId, fecha) : reasignarTarea(id, tallerId, fecha),
-    { exito: "Tarea reprogramada", invalidar: INVALIDAR_TAREAS },
+    ({ id, tallerId, fecha, reason }) =>
+      supabase
+        ? reasignarVisita(id, tallerId, fecha, reason)
+        : reasignarTarea(id, tallerId, fecha),
+    { exito: supabase ? "Asignación de visita actualizada" : "Tarea reprogramada", invalidar: INVALIDAR_TAREAS },
   )
   const guardarNomina = useServiceMutation(
     ({ tallerId, fecha, ids }: { tallerId: string; fecha: string; ids: string[] }) =>
@@ -117,7 +119,11 @@ export function Cronograma() {
     if (!tarea || !esMovible(tarea)) return
     const tallerId = columna === SIN_TALLER ? undefined : columna
     if (tarea.tallerId === tallerId && tarea.fechaEjecucion === fecha) return
-    reasignar.mutate({ id, tallerId, fecha })
+    const reason = supabase
+      ? window.prompt("Motivo del cambio de asignación de la visita")?.trim()
+      : ""
+    if (supabase && !reason) return
+    reasignar.mutate({ id, tallerId, fecha, reason: reason ?? "" })
   }
 
   const tareasPendientes = operaciones.isPending
@@ -291,9 +297,18 @@ export function Cronograma() {
                             tarea={t}
                             talleres={(talleres.data ?? []).filter((x) => x.activo)}
                             onVer={() => setAbierta(t)}
-                            onAsignar={(tallerId) =>
-                              reasignar.mutate({ id: t.id, tallerId, fecha: t.fechaEjecucion })
-                            }
+                            onAsignar={(tallerId) => {
+                              const reason = supabase
+                                ? window.prompt("Motivo del cambio de asignación de la visita")?.trim()
+                                : ""
+                              if (supabase && !reason) return
+                              reasignar.mutate({
+                                id: t.id,
+                                tallerId,
+                                fecha: t.fechaEjecucion,
+                                reason: reason ?? "",
+                              })
+                            }}
                             permitirDesasignar={!supabase}
                             onDragStart={() => setArrastrando(t.id)}
                             onDragEnd={() => {

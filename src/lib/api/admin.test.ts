@@ -42,3 +42,25 @@ describe("Cliente logo API mapping", () => {
     })
   })
 })
+
+describe("Cuenta lifecycle mapping", () => {
+  it("preserves the backend Cuenta state for administrative screens", async () => {
+    const request = vi.fn().mockResolvedValue([
+      {
+        id: "account-1",
+        email: "pending@example.test",
+        nombre: "Ada",
+        apellido: "Lovelace",
+        rol: "cliente",
+        activo: false,
+        estado: "pendiente",
+        creado_en: "2026-10-05T00:00:00Z",
+      },
+    ])
+    const api = createAdminApi({ request } as unknown as EdgeAccessClient)
+
+    await expect(api.accounts.list("client-1")).resolves.toMatchObject([
+      { id: "account-1", activo: false, estadoCuenta: "pendiente" },
+    ])
+  })
+})

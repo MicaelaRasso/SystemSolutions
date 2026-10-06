@@ -10,6 +10,7 @@ export type ID = string
 // ---------------------------------------------------------------------------
 
 export type Rol = "superadmin" | "admin" | "taller" | "cliente"
+export type EstadoCuenta = "pendiente" | "activa" | "deshabilitada"
 
 export interface Usuario {
   id: ID
@@ -17,6 +18,7 @@ export interface Usuario {
   nombre: string
   apellido: string
   rol: Rol
+  estadoCuenta?: EstadoCuenta
   /** Solo rol cliente: empresa a la que pertenece. */
   empresaId?: ID
   /** Solo rol taller: taller móvil asociado a la cuenta. */

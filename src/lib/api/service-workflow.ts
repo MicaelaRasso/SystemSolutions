@@ -6,6 +6,8 @@ import {
   scheduleVisitInputSchema,
   updateServiceRequestInputSchema,
   updateWorkOrderInputSchema,
+  visitAdministrationInputSchema,
+  visitAssignmentInputSchema,
   visitDtoSchema,
   visitTransitionDtoSchema,
   workOrderDtoSchema,
@@ -81,6 +83,58 @@ export function createServiceWorkflowApi(edge: EdgeAccessClient) {
       return edge.request(`visits/${visitId}/${action}`, visitTransitionDtoSchema, {
         method: "POST",
         body: "{}",
+      })
+    },
+
+    startVisit(visitId: string, replacementCatalogVersionId: string, deviceId: string) {
+      return edge.request(`visits/${visitId}/start`, visitTransitionDtoSchema, {
+        method: "POST",
+        body: json({
+          replacement_catalog_version_id: replacementCatalogVersionId,
+          device_id: deviceId,
+        }),
+      })
+    },
+
+    async assignVisit(visitId: string, input: { tallerMovilId: string; reason: string }) {
+      const data = visitAssignmentInputSchema.parse(input)
+      return edge.request(`visits/${visitId}/assign`, visitTransitionDtoSchema, {
+        method: "POST",
+        body: json({
+          taller_movil_id: data.tallerMovilId,
+          starts_at: data.startsAt ?? null,
+          ends_at: data.endsAt ?? null,
+          reason: data.reason,
+        }),
+      })
+    },
+
+    async unassignVisit(visitId: string, input: { reason: string }) {
+      const data = visitAdministrationInputSchema.parse(input)
+      return edge.request(`visits/${visitId}/unassign`, visitTransitionDtoSchema, {
+        method: "POST",
+        body: json({ reason: data.reason }),
+      })
+    },
+
+    async reassignVisit(visitId: string, input: { tallerMovilId: string; reason: string }) {
+      const data = visitAssignmentInputSchema.parse(input)
+      return edge.request(`visits/${visitId}/reassign`, visitTransitionDtoSchema, {
+        method: "POST",
+        body: json({
+          taller_movil_id: data.tallerMovilId,
+          starts_at: data.startsAt ?? null,
+          ends_at: data.endsAt ?? null,
+          reason: data.reason,
+        }),
+      })
+    },
+
+    async cancelVisitAsAdministrator(visitId: string, input: { reason: string }) {
+      const data = visitAdministrationInputSchema.parse(input)
+      return edge.request(`visits/${visitId}/cancel-administrator`, visitTransitionDtoSchema, {
+        method: "POST",
+        body: json({ reason: data.reason }),
       })
     },
 

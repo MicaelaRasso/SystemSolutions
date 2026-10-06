@@ -36,6 +36,7 @@ export type EdgeContext = {
   rol: "cliente" | "taller_movil" | "administrador_regular" | "super_administrador"
   taller_movil_id: string | null
   cliente: boolean
+  estado: "pendiente" | "activa" | "deshabilitada"
 }
 
 const roleMap: Record<EdgeContext["rol"], Usuario["rol"]> = {
@@ -55,7 +56,10 @@ function isEdgeContext(value: unknown): value is EdgeContext {
       context.rol === "administrador_regular" ||
       context.rol === "super_administrador") &&
     (typeof context.taller_movil_id === "string" || context.taller_movil_id === null) &&
-    typeof context.cliente === "boolean"
+    typeof context.cliente === "boolean" &&
+    (context.estado === "pendiente" ||
+      context.estado === "activa" ||
+      context.estado === "deshabilitada")
   )
 }
 
@@ -125,8 +129,9 @@ export class EdgeAccessClient {
           ? authUser.user_metadata.apellido
           : "",
       rol: roleMap[context.rol],
+      estadoCuenta: context.estado,
       tallerId: context.taller_movil_id ?? undefined,
-      activo: true,
+      activo: context.estado === "activa",
       creadoEn: "",
     }
   }
@@ -220,7 +225,7 @@ export class EdgeAccessClient {
     if (error || !data.user || !data.session) {
       throw new ServiceError(error?.message ?? "Email o contraseña incorrectos", "unauthorized")
     }
-    const user = this.userFromContext(await this.call<EdgeContext>("context"), data.user)
+    const user = this.userFromContext(await this.context(), data.user)
     this.currentUser = user
     return user
   }
@@ -230,6 +235,8 @@ export class EdgeAccessClient {
     const context = Array.isArray(response) ? response[0] : response
     if (!isEdgeContext(context))
       throw new ServiceError("La Edge Function devolvió un contexto inválido", "network")
+    if (context.estado !== "activa")
+      throw new ServiceError("La cuenta no está activa", "unauthorized")
     return context
   }
 

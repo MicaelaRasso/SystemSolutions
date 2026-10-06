@@ -16,6 +16,7 @@ export const edgeContextSchema = z.object({
   rol: z.enum(["cliente", "taller_movil", "administrador_regular", "super_administrador"]),
   taller_movil_id: edgeIdSchema.nullable(),
   cliente: z.boolean(),
+  estado: z.enum(["pendiente", "activa", "deshabilitada"]),
 })
 export type EdgeContextDto = z.infer<typeof edgeContextSchema>
 export const edgeContextResponseSchema = z
@@ -203,6 +204,7 @@ export const certificateStandardOptionSchema = certificateOptionSchema.extend({
 export const certificateCaptureCatalogsSchema = z.object({
   template: certificateTemplateSchema,
   maintenance: z.array(certificateOptionSchema),
+  replacement_catalog_version: edgeIdSchema,
   replacement_parts: z.array(certificateOptionSchema),
   units: z.array(certificateOptionSchema),
   standards: z.array(certificateStandardOptionSchema),
@@ -364,6 +366,17 @@ export const scheduleVisitInputSchema = z.object({
 })
 export type ScheduleVisitInput = z.infer<typeof scheduleVisitInputSchema>
 
+export const visitAdministrationInputSchema = z.object({
+  reason: z.string().trim().min(1),
+})
+export const visitAssignmentInputSchema = visitAdministrationInputSchema.extend({
+  tallerMovilId: edgeIdSchema,
+  startsAt: edgeTimestampSchema.nullable().optional(),
+  endsAt: edgeTimestampSchema.nullable().optional(),
+})
+export type VisitAdministrationInput = z.infer<typeof visitAdministrationInputSchema>
+export type VisitAssignmentInput = z.infer<typeof visitAssignmentInputSchema>
+
 export const updateWorkOrderInputSchema = z.object({
   outcome: z.enum(["evaluada", "no_evaluada"]),
   notEvaluatedReason: z.string().trim().min(1).optional(),
@@ -456,6 +469,7 @@ export const offlineOperationInputSchema = z.object({
     "capture_evidence",
     "upload_evidence",
     "finalize_certificate",
+    "start_visit",
     "claim_visit",
     "complete_visit",
   ]),
@@ -524,6 +538,7 @@ export const offlineWorkingSetDtoSchema = z.object({
         visit: visitRowSchema,
         work_orders: z.array(workOrderRowSchema),
         context: yacimientoTreeDtoSchema,
+        certificate_catalogs: certificateCaptureCatalogsSchema.optional(),
       })
       .passthrough(),
   ),
@@ -565,6 +580,7 @@ export const accountDtoSchema = z
     apellido: z.string(),
     rol: z.enum(["cliente", "taller_movil", "administrador_regular", "super_administrador"]),
     activo: z.boolean(),
+    estado: z.enum(["pendiente", "activa", "deshabilitada"]),
     creado_en: edgeTimestampSchema,
   })
   .passthrough()
@@ -576,6 +592,7 @@ export const workshopDtoSchema = z
     nombre: z.string(),
     color: z.string(),
     activo: z.boolean(),
+    estado_cuenta: z.enum(["pendiente", "activa", "deshabilitada"]).nullable().optional(),
     usuario_id: edgeIdSchema.nullable().optional(),
     email: z.string(),
   })

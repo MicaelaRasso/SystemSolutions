@@ -130,6 +130,15 @@ export function TareaForm({
         detalle: data.detalle.trim(),
         adjuntos,
       }
+      if (supabase && operation) {
+        const assignmentChanged =
+          (payload.tallerId || undefined) !== operation.operation.taller_movil?.id
+        if (assignmentChanged) {
+          const reason = window.prompt("Motivo del cambio de asignación de la visita")?.trim()
+          if (!reason) throw new Error("Indica el motivo del cambio de asignación")
+          return guardarSolicitudYVisita(operation, payload, reason)
+        }
+      }
       return supabase ? guardarSolicitudYVisita(operation, payload) : guardarTarea(tarea, payload)
     },
     { invalidar: INVALIDAR_TAREAS },

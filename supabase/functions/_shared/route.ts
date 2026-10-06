@@ -173,7 +173,18 @@ export const routeOwner = (method: string, route: string[]): FunctionName | null
     (method === "POST" &&
       route[0] === "visits" &&
       route.length === 3 &&
-      ["accept", "reject", "cancel", "start", "complete", "work-orders"].includes(route[2])) ||
+      [
+        "accept",
+        "reject",
+        "cancel",
+        "cancel-administrator",
+        "assign",
+        "unassign",
+        "reassign",
+        "start",
+        "complete",
+        "work-orders",
+      ].includes(route[2])) ||
     (method === "PATCH" && route[0] === "work-orders" && route.length === 2) ||
     (method === "GET" && route[0] === "operations" && (route.length === 1 || route.length === 2)) ||
     (method === "GET" &&
@@ -208,7 +219,7 @@ export const routeOwner = (method: string, route: string[]): FunctionName | null
     (method === "POST" && route[0] === "visits" && route.length === 3 && route[2] === "sync") ||
     (method === "POST" && route[0] === "visits" && route.length === 3 && route[2] === "claim") ||
     (method === "POST" && route[0] === "visits" && route.length === 3 && route[2] === "media") ||
-    (method === "GET" && is(route, "offline", "working-set"))
+    ((method === "GET" || method === "POST") && is(route, "offline", "working-set"))
   )
     return "offline-sync"
 

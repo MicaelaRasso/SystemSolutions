@@ -1,0 +1,5 @@
+# Service and certificate lifecycle boundaries
+
+**Status: accepted**
+
+System Solutions treats `Tarea` as a frontend projection, not a domain entity. The canonical lifecycle is separated into `Solicitud de servicio`, `Visita de servicio`, `Orden de trabajo`, and `Certificado`: a request may remain pending without a visit, unassignment retains a scheduled visit for reassignment, one visit may produce multiple certificates through independent valve work orders, and every work order plus its evaluated certificate data must be resolved before visit completion. Regular and Super administradores may perform lifecycle administration, with reasons recorded for destructive or exceptional actions. Closed certificates are immutable; an Administrador authorizes corrections that create a new work order, visit, and certificate, while certificate finalization is also publication and historical records have no archival state. A pending replacement does not replace the prior finalized certificate until the replacement is finalized.

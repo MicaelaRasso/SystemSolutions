@@ -59,7 +59,11 @@ type CertificateCaptureFormProps = {
   template: CertificateTemplateDto
   catalogs: Pick<
     CertificateCaptureCatalogsDto,
-    "maintenance" | "replacement_parts" | "units" | "standards"
+    | "maintenance"
+    | "replacement_catalog_version"
+    | "replacement_parts"
+    | "units"
+    | "standards"
   >
   technicians: { id?: string; name?: string; nombre?: string; apellido?: string }[]
   certificate?: Record<string, unknown>
@@ -101,10 +105,10 @@ function optionValue(
     return options.find((option) => option.label === value) ?? value
   if (value && typeof value === "object" && typeof (value as { id?: unknown }).id === "string") {
     const id = String((value as { id: string }).id)
-    return (
-      options.find((option) => option.id === id) ??
-      ({ id, label: textValue((value as { label?: unknown }).label) } as CertificateOption)
-    )
+    const savedLabel = textValue((value as { label?: unknown }).label)
+    return savedLabel
+      ? { id, label: savedLabel }
+      : options.find((option) => option.id === id) ?? { id, label: id }
   }
   return null
 }
@@ -302,6 +306,11 @@ export function CertificateCaptureForm({
   onSave,
 }: CertificateCaptureFormProps) {
   const [form, setForm] = useState(() => initialState(certificate, valve, catalogs))
+  const [replacementCatalogVersion] = useState(() => {
+    const savedParts = objectValue(certificate?.repuestos)
+    const savedVersion = textValue(savedParts.catalog_version).trim()
+    return savedVersion || catalogs.replacement_catalog_version
+  })
   const [errors, setErrors] = useState<string[]>([])
 
   const customFields = useMemo(
@@ -368,7 +377,7 @@ export function CertificateCaptureForm({
       campos_personalizados: form.customFields,
       alcance_mantenimiento: form.maintenance,
       repuestos: {
-        catalog_version: template.version,
+        catalog_version: replacementCatalogVersion,
         items: form.replacements,
         otros: form.otherParts.trim() || null,
       },
@@ -685,6 +694,11 @@ function OptionChecklist({
   disabled: boolean
   onChange: (values: CertificateOptionValue[]) => void
 }) {
+  const savedInactive = values.filter((value) =>
+    typeof value === "string"
+      ? !options.some((option) => option.id === value || option.label === value)
+      : !options.some((option) => option.id === value.id),
+  )
   return (
     <div className="space-y-2">
       <p className="text-sm font-medium">{title}</p>
@@ -699,8 +713,20 @@ function OptionChecklist({
             {option.label}
           </label>
         ))}
+        {savedInactive.map((value, index) => (
+          <label key={`saved-${index}`} className="flex items-center gap-2 text-sm">
+            <Checkbox
+              checked
+              onCheckedChange={() =>
+                onChange(values.filter((item) => item !== value))
+              }
+              disabled={disabled}
+            />{" "}
+            {typeof value === "string" ? value : value.label} (guardada; ya no activa)
+          </label>
+        ))}
       </div>
-      {options.length === 0 ? (
+      {options.length === 0 && savedInactive.length === 0 ? (
         <p className="text-xs text-muted-foreground">No hay opciones activas configuradas.</p>
       ) : null}
     </div>

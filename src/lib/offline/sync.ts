@@ -1,3 +1,5 @@
+import type { CertificateCaptureCatalogsDto } from "../api/contracts"
+
 export const OFFLINE_SCHEMA_VERSION = 2
 
 export type EstadoOperacionLocal =
@@ -38,6 +40,7 @@ export interface OperacionOffline {
 export interface VisitaOffline {
   id: string
   context: unknown
+  pinnedCertificateCatalogs?: PinnedCertificateCatalogs
   cachedAt: string
   cachedVersion?: number
   backendStatus?: string
@@ -46,6 +49,11 @@ export interface VisitaOffline {
   visitAcknowledgement?: VisitAcknowledgement
   claimedByDeviceId?: string
   claimedAt?: string
+}
+
+export interface PinnedCertificateCatalogs {
+  replacementCatalogVersion: string
+  replacementParts: CertificateCaptureCatalogsDto["replacement_parts"]
 }
 
 export interface MediaOffline {
@@ -97,6 +105,112 @@ export interface WorkingSetStore extends OfflineStore {
   listVisits(): Promise<VisitaOffline[]>
   deleteVisit(visitId: string): Promise<void>
   removeVisit?(visitId: string): Promise<void>
+}
+
+type VisitContextWithCatalogs = {
+  certificate_catalogs?: CertificateCaptureCatalogsDto
+  visit?: { estado?: string }
+}
+
+const visitContext = (context: unknown): VisitContextWithCatalogs | undefined =>
+  context && typeof context === "object" && !Array.isArray(context)
+    ? (context as VisitContextWithCatalogs)
+    : undefined
+
+const pinnedCatalogsFrom = (
+  catalogs: CertificateCaptureCatalogsDto | undefined,
+): PinnedCertificateCatalogs | undefined =>
+  catalogs
+    ? {
+        replacementCatalogVersion: catalogs.replacement_catalog_version,
+        replacementParts: catalogs.replacement_parts.map(({ id, label }) => ({ id, label })),
+      }
+    : undefined
+
+export function pinVisitCertificateCatalogs(
+  visit: VisitaOffline,
+  catalogs?: CertificateCaptureCatalogsDto,
+): VisitaOffline {
+  if (visit.pinnedCertificateCatalogs) return visit
+  const available = catalogs ?? visitContext(visit.context)?.certificate_catalogs
+  const snapshot = pinnedCatalogsFrom(available)
+  if (!snapshot)
+    throw new Error("No hay un catálogo de repuestos descargado para iniciar la Visita de servicio")
+  return { ...visit, pinnedCertificateCatalogs: snapshot }
+}
+
+export function certificateCatalogsForVisit(
+  visit: VisitaOffline,
+  fallback?: CertificateCaptureCatalogsDto,
+): CertificateCaptureCatalogsDto | undefined {
+  const base = visitContext(visit.context)?.certificate_catalogs ?? fallback
+  if (!base || !visit.pinnedCertificateCatalogs) return base
+  return {
+    ...base,
+    replacement_catalog_version: visit.pinnedCertificateCatalogs.replacementCatalogVersion,
+    replacement_parts: visit.pinnedCertificateCatalogs.replacementParts,
+  }
+}
+
+export function refreshedVisitCatalogs(input: {
+  previous?: VisitaOffline
+  refreshedContext: unknown
+  refreshedCatalogs?: CertificateCaptureCatalogsDto
+}): Pick<VisitaOffline, "context" | "pinnedCertificateCatalogs"> {
+  const previousContext = visitContext(input.previous?.context)
+  const refreshed = visitContext(input.refreshedContext) ?? {}
+  const backendWasStarted = input.previous?.backendStatus === "en_curso"
+  const serverStarted = backendWasStarted || refreshed.visit?.estado === "en_curso"
+  let pinned = input.previous?.pinnedCertificateCatalogs
+
+  if (!pinned && input.previous?.estadoLocal === "en_curso_local") {
+    pinned = pinnedCatalogsFrom(previousContext?.certificate_catalogs)
+  }
+  if (!pinned && serverStarted) {
+    const source = backendWasStarted
+      ? previousContext?.certificate_catalogs
+      : refreshed.certificate_catalogs ?? input.refreshedCatalogs
+    pinned = pinnedCatalogsFrom(source)
+  }
+
+  const catalogs = input.refreshedCatalogs ?? refreshed.certificate_catalogs
+  const availableCatalogs = pinned
+    ? {
+        ...(catalogs ?? previousContext?.certificate_catalogs),
+        replacement_catalog_version: pinned.replacementCatalogVersion,
+        replacement_parts: pinned.replacementParts,
+      }
+    : catalogs ?? previousContext?.certificate_catalogs
+
+  return {
+    context: {
+      ...(input.refreshedContext && typeof input.refreshedContext === "object"
+        ? (input.refreshedContext as Record<string, unknown>)
+        : {}),
+      ...(availableCatalogs ? { certificate_catalogs: availableCatalogs } : {}),
+    },
+    pinnedCertificateCatalogs: pinned,
+  }
+}
+
+export async function syncPendingVisitStartsBeforeRefresh(
+  store: WorkingSetStore,
+  syncVisit: (visitId: string) => Promise<OperacionOffline[]>,
+): Promise<void> {
+  const visits = await store.listVisits()
+  for (const visit of visits) {
+    const operations = await store.listOperations(visit.id)
+    const pendingStarts = operations.filter(
+      (operation) => operation.kind === "start_visit" && operation.estado !== "sincronizada",
+    )
+    if (pendingStarts.length === 0) continue
+    const remaining = await syncVisit(visit.id)
+    for (const operation of pendingStarts) {
+      const result = remaining.find(({ operationId }) => operationId === operation.operationId)
+      if (result?.estado !== "sincronizada")
+        throw new Error("No se pudo confirmar el inicio offline antes de descargar el catálogo")
+    }
+  }
 }
 
 export interface SyncTransport {
@@ -186,7 +300,15 @@ export const migratePendingOperation = (operation: OperacionOffline): OperacionO
 
 export const reconcileWorkingSet = async (
   store: WorkingSetStore,
-  workingSet: { visits: Array<{ visit: Record<string, unknown>; work_orders: unknown[]; context: unknown }> },
+  workingSet: {
+    certificate_catalogs?: CertificateCaptureCatalogsDto
+    visits: Array<{
+      visit: Record<string, unknown>
+      work_orders: unknown[]
+      context: unknown
+      certificate_catalogs?: CertificateCaptureCatalogsDto
+    }>
+  },
   clock: OfflineClock = systemClock,
 ) => {
   const serverVisits = new Set(workingSet.visits.map((entry) => String(entry.visit.id)))
@@ -197,9 +319,15 @@ export const reconcileWorkingSet = async (
     const existing = await store.getVisit(visitId)
     const localOperations = await store.listOperations(visitId)
     const pending = localOperations.some((operation) => operation.estado !== "sincronizada")
+    const catalogs = entry.certificate_catalogs ?? workingSet.certificate_catalogs
+    const catalogState = refreshedVisitCatalogs({
+      previous: existing,
+      refreshedContext: { ...entry, certificate_catalogs: catalogs },
+      refreshedCatalogs: catalogs,
+    })
     await store.saveVisit({
       id: visitId,
-      context: entry,
+      ...catalogState,
       cachedAt: clock.now(),
       cachedVersion: Number(entry.visit.sync_version) || undefined,
       backendStatus: String(entry.visit.estado ?? existing?.backendStatus ?? ""),
@@ -230,6 +358,7 @@ export async function queueOfflineSignatureCapture(input: {
   signerName: string
   file: Blob
   mediaId?: string
+  dependencies?: string[]
 }) {
   if (!input.store.saveMedia) throw new Error("El almacenamiento offline de medios no está disponible")
   const mediaId = input.mediaId ?? crypto.randomUUID()
@@ -253,7 +382,7 @@ export async function queueOfflineSignatureCapture(input: {
       category: `firma_${input.party}`,
       content_type: input.file.type,
     },
-    [],
+    input.dependencies ?? [],
     { mediaIds: [mediaId] },
   )
   const signatureOperation = await input.coordinator.queue(
@@ -267,7 +396,7 @@ export async function queueOfflineSignatureCapture(input: {
       media_id: mediaId,
       capture_method: "technician_pwa",
     },
-    [mediaOperation.operationId],
+    [...(input.dependencies ?? []), mediaOperation.operationId],
   )
   return { mediaId, mediaOperation, signatureOperation }
 }
@@ -345,7 +474,6 @@ export class OfflineSyncCoordinator {
       visit.claimedAt = this.clock.now()
     }
     visit.claimedByDeviceId = deviceId
-    if (visit.estadoLocal === "disponible") visit.estadoLocal = "en_curso_local"
     await this.store.saveVisit(visit)
     return visit
   }

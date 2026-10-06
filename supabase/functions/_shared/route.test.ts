@@ -24,11 +24,16 @@ describe("shared route ownership", () => {
     ["PUT", ["clients", "me", "logo"], "asset-access"],
     ["DELETE", ["clients", "me", "logo"], "asset-access"],
     ["POST", ["admin", "requests"], "service-workflow"],
+    ["POST", ["visits", "v-1", "assign"], "service-workflow"],
+    ["POST", ["visits", "v-1", "unassign"], "service-workflow"],
+    ["POST", ["visits", "v-1", "reassign"], "service-workflow"],
+    ["POST", ["visits", "v-1", "cancel-administrator"], "service-workflow"],
     ["GET", ["certificates", "c-1", "download"], "certificate-field"],
     ["POST", ["visits", "v-1", "sync"], "offline-sync"],
     ["POST", ["visits", "v-1", "claim"], "offline-sync"],
     ["POST", ["visits", "v-1", "media"], "offline-sync"],
     ["GET", ["offline", "working-set"], "offline-sync"],
+    ["POST", ["offline", "working-set"], "offline-sync"],
     ["POST", ["backups"], "backup-export"],
   ])("assigns %s /%s to %s", (method, route, owner) => {
     expect(routeOwner(method, route)).toBe(owner)

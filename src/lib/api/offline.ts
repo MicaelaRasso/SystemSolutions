@@ -17,7 +17,11 @@ export const offlineInvalidations = [offlineQueryKeys.all] as const
 
 export function createOfflineApi(edge: EdgeAccessClient) {
   return {
-    workingSet: () => edge.request("offline/working-set", offlineWorkingSetDtoSchema),
+    workingSet: (deviceId: string) =>
+      edge.request("offline/working-set", offlineWorkingSetDtoSchema, {
+        method: "POST",
+        body: JSON.stringify({ device_id: deviceId }),
+      }),
 
     claimVisit(visitId: string, deviceId: string) {
       return edge.request(`visits/${visitId}/claim`, offlineClaimVisitDtoSchema, {
