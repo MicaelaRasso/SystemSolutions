@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/common/page-header"
 import { EmptyState, ErrorState } from "@/components/common/states"
 import { useEdgeAdminMetrics } from "@/lib/api/hooks"
+import { SyncConflictsPanel } from "@/components/admin/sync-conflicts-panel"
 
 const monthBounds = () => { const now = new Date(); const from = new Date(now.getFullYear(), now.getMonth(), 1); const to = new Date(now.getFullYear(), now.getMonth() + 1, 0); return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) } }
 
@@ -25,5 +26,6 @@ export function AdminDashboard() {
     {query.isError && <ErrorState error={query.error} onRetry={() => void query.refetch()} />}
     {query.data && <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">{cards.map(([title, value]) => <Card key={title}><CardHeader><CardTitle className="text-sm text-muted-foreground">{title}</CardTitle></CardHeader><CardContent><p className="text-3xl font-semibold">{value}</p></CardContent></Card>)}</div>}
     {query.data && cards.every(([, value]) => value === 0) && <EmptyState titulo="Sin actividad en el período" descripcion="Elegí otro período para consultar métricas operativas." />}
+    <SyncConflictsPanel />
   </div>
 }

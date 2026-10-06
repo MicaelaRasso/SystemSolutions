@@ -52,6 +52,57 @@ autorización de dominio como barrera final.
 - La aplicación usa Supabase Auth y las capacidades Edge en todos los entornos;
   no existe un modo de datos simulado.
 
+## Contratos de Phase 2 (2026-10-06)
+
+Estos contratos son las adiciones vigentes de Phase 2. Las tablas posteriores
+de este documento conservan inventarios históricos; si difieren, prevalece esta
+sección y el código de las rutas.
+
+- `POST /visits/:visitId/complete` exige resultado explícito para cada Orden de
+  trabajo, un Borrador de certificado completo por cada orden evaluada, ninguna
+  orden no evaluada con Certificado y la Firma del Técnico. La finalización
+  cierra la captura; un Certificado completo sin Firma del Cliente queda
+  pendiente. La PWA aplica un preflight equivalente antes de cerrar una visita
+  localmente y hace depender la operación de finalización de los cambios de
+  trabajo pendientes.
+- `POST /certificates/:certificateId/corrections` autoriza una corrección para
+  un Certificado cerrado. El cuerpo requiere `provider_id`, `starts_at`,
+  `ends_at` y `reason`. La respuesta identifica el nuevo `request_id`,
+  `visit_id`, `work_order_id` y `correction_id`. La solicitud, Visita y Orden
+  siguen el flujo ordinario; el Certificado nuevo se crea al evaluar la orden
+  y conserva el vínculo con el Certificado original.
+- `POST /visits/:visitId/sync` conserva el UUID de media del dispositivo, su
+  timestamp de captura y el método de Firma canónico. Las referencias de
+  Storage deben coincidir con el UUID y la parte firmante; repetir una operación
+  aceptada devuelve su recibo guardado.
+- `GET /conflicts` y `GET /conflicts/:conflictId` permiten a Administradores
+  revisar conflictos. `POST /conflicts/:conflictId/resolve` acepta `{action,
+  reason}` con `action` igual a `accept`, `reject` o `correction`. La acción
+  `correction` también requiere `provider_id`, `starts_at` y `ends_at`, y permite
+  `source_certificate_id` cuando el payload original no lo identifica. El
+  payload original permanece disponible; sólo operaciones cuyo destino siga
+  abierto y autorizado se pueden aceptar. El dashboard administrativo existente
+  conecta la consulta y las acciones de resolución; `GET
+  /offline/conflict-outcomes` devuelve la decisión al Taller Móvil asignado y el
+  panel de sincronización existente la presenta.
+- `GET /audit` mantiene sus filtros `from`, `to`, `actor_id`, `action`,
+  `target_type`, `outcome`, `client_id`, `yacimiento_id`, `visit_id` y
+  `certificate_id`; detalle conserva resumen, identificadores relacionados,
+  hora de recepción del servidor, hora de dispositivo y correlación. El log es
+  append-only. Administradores regulares ven eventos operativos; Súper
+  Administradores ven todas las categorías.
+
+Las nuevas migraciones de Phase 2 están versionadas en
+`supabase/migrations/20261006130839_operational_audit_base.sql`,
+`20261006130927_service_visit_completion_gate.sql`,
+`20261006130942_administrator_certificate_corrections.sql`,
+`20261006131500_offline_evidence_sync.sql` y
+`20261006131720_sync_conflict_resolution.sql`. Los contratos de SQL y Edge
+tienen pruebas nuevas. Las pruebas de Edge y adaptadores se ejecutaron durante
+la implementación; las pruebas SQL aún no se han ejecutado contra una base
+local porque Docker no está disponible en el entorno. La implementación sigue
+pendiente de revisión y los issues de Phase 2 permanecen abiertos.
+
 ### APIs administrativas conectadas
 
 El adaptador `services.edge` conecta las pantallas administrativas con sus

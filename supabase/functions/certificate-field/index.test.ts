@@ -48,6 +48,22 @@ const context = (
 })
 
 describe("certificate signature upload seam", () => {
+  it("requires an administrator correction reason and routes the new visit authorization", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { correction_id: visitId }, error: null })
+    const route = ["certificates", visitId, "corrections"]
+
+    await expect(handler(context({ provider_id: visitId, starts_at: "2099-03-10T09:00:00Z", ends_at: "2099-03-10T10:00:00Z", reason: "  Recalibración  " }, rpc, route))).resolves.toEqual({ data: { correction_id: visitId }, error: null })
+    expect(rpc).toHaveBeenCalledWith("api_authorize_certificate_correction", {
+      source_certificate_id: visitId,
+      provider_id: visitId,
+      visit_starts_at: "2099-03-10T09:00:00Z",
+      visit_ends_at: "2099-03-10T10:00:00Z",
+      action_reason: "Recalibración",
+    })
+    await expect(handler(context({ provider_id: visitId, starts_at: "2099-03-10T09:00:00Z", ends_at: "2099-03-10T10:00:00Z", reason: " " }, rpc, route))).rejects.toThrow("A source certificate")
+    expect(rpc).toHaveBeenCalledTimes(1)
+  })
+
   it("routes Cliente certificate downloads through the scoped export RPC", async () => {
     const rpc = vi.fn().mockResolvedValue({ data: { certificate: { id: "certificate-1" } }, error: null })
 

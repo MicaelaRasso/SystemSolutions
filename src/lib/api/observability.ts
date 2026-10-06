@@ -1,7 +1,20 @@
 import type { EdgeAccessClient } from "../services/edge"
 import { adminCertificateDetailDtoSchema, adminCertificateListDtoSchema, adminMetricsDtoSchema, auditEventDtoSchema, auditListDtoSchema, type AuditEventDto } from "./contracts"
 
-export type AuditFilters = { from?: string; to?: string; actorId?: string; action?: string; targetType?: string; outcome?: "exitoso" | "fallido"; clientId?: string; yacimientoId?: string; visitId?: string; certificateId?: string; limit?: number; offset?: number }
+export type AuditFilters = {
+  from?: string
+  to?: string
+  actorId?: string
+  action?: string
+  targetType?: string
+  outcome?: "exitoso" | "fallido"
+  clientId?: string
+  yacimientoId?: string
+  visitId?: string
+  certificateId?: string
+  limit?: number
+  offset?: number
+}
 const params = (filters: AuditFilters = {}) => {
   const query = new URLSearchParams()
   const map: Record<string, string | number | undefined> = { from: filters.from, to: filters.to, actor_id: filters.actorId, action: filters.action, target_type: filters.targetType, outcome: filters.outcome, client_id: filters.clientId, yacimiento_id: filters.yacimientoId, visit_id: filters.visitId, certificate_id: filters.certificateId, limit: filters.limit, offset: filters.offset }

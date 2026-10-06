@@ -34,6 +34,10 @@ describe("shared route ownership", () => {
     ["POST", ["visits", "v-1", "media"], "offline-sync"],
     ["GET", ["offline", "working-set"], "offline-sync"],
     ["POST", ["offline", "working-set"], "offline-sync"],
+    ["GET", ["offline", "conflict-outcomes"], "offline-sync"],
+    ["GET", ["conflicts"], "offline-sync"],
+    ["GET", ["conflicts", "00000000-0000-0000-0000-000000000001"], "offline-sync"],
+    ["POST", ["conflicts", "00000000-0000-0000-0000-000000000001", "resolve"], "offline-sync"],
     ["POST", ["backups"], "backup-export"],
   ])("assigns %s /%s to %s", (method, route, owner) => {
     expect(routeOwner(method, route)).toBe(owner)

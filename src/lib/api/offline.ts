@@ -15,6 +15,8 @@ export const offlineQueryKeys = {
 
 export const offlineInvalidations = [offlineQueryKeys.all] as const
 
+const photoCategories = new Set(["desarmada", "ensamblada_prueba", "placa_precinto"])
+
 export function createOfflineApi(edge: EdgeAccessClient) {
   return {
     workingSet: (deviceId: string) =>
@@ -43,6 +45,14 @@ export function createOfflineApi(edge: EdgeAccessClient) {
         fileName?: string
       },
     ) {
+      if (input.kind === "photo" && (!input.category || !photoCategories.has(input.category)))
+        throw new Error("A valid certificate evidence category is required")
+      if (
+        input.kind === "signature" &&
+        (!input.party || (input.category && input.category !== `firma_${input.party}`))
+      )
+        throw new Error("A signature category must match its party")
+
       const form = new FormData()
       form.set("device_id", input.deviceId)
       form.set("operation_id", input.operationId)

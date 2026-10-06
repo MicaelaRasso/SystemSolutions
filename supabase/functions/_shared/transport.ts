@@ -39,6 +39,73 @@ const logFailure = (
   )
 }
 
+type RejectedSensitiveAttempt = {
+  action: "access_denied" | "sensitive_export_denied" | "account_admin_denied" | "conflict_resolution_denied"
+  targetType: string
+  targetId: string | null
+}
+
+const UUID_SEGMENT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+const rejectedSensitiveAttempt = (
+  method: string,
+  route: string[],
+): RejectedSensitiveAttempt | null => {
+  if (method === "GET" && route[0] === "audit" && route[1] === "export")
+    return { action: "sensitive_export_denied", targetType: "registro_auditoria", targetId: null }
+  if (method === "POST" && route.length === 1 && route[0] === "backups")
+    return { action: "sensitive_export_denied", targetType: "backup_manual", targetId: null }
+  if (method === "GET" && route[0] === "certificates" && route[2] === "download")
+    return { action: "sensitive_export_denied", targetType: "certificado", targetId: route[1] ?? null }
+  if (method === "GET" && route[0] === "admin" && route[1] === "certificates" && route[3] === "download")
+    return { action: "sensitive_export_denied", targetType: "certificado", targetId: route[2] ?? null }
+  if (method === "GET") return null
+
+  const accountAdminRoutes = new Set([
+    "accounts", "mobile-workshops", "technicians", "staffing", "catalogs",
+    "catalog-options", "test-standards", "certificate-templates",
+  ])
+  if (accountAdminRoutes.has(route[0])) {
+    const targetId = route.find((segment) => UUID_SEGMENT.test(segment)) ?? null
+    return { action: "account_admin_denied", targetType: "administracion", targetId }
+  }
+  if (route.includes("conflicts")) {
+    const targetId = route.find((segment) => UUID_SEGMENT.test(segment)) ?? null
+    return { action: "conflict_resolution_denied", targetType: "conflicto_sincronizacion", targetId }
+  }
+  if (["requests", "visits", "work-orders", "certificates", "clients", "yacimientos", "hierarchy", "valves"].includes(route[0])) {
+    const targetId = route.find((segment) => UUID_SEGMENT.test(segment)) ?? null
+    const targetType = route[0] === "visits" ? "visita_servicio"
+      : route[0] === "requests" ? "solicitud_servicio"
+      : route[0] === "work-orders" ? "orden_trabajo"
+      : route[0] === "certificates" ? "certificado"
+      : "administracion"
+    return { action: "access_denied", targetType, targetId }
+  }
+  return null
+}
+
+const recordRejectedSensitiveAttempt = async (
+  db: ServiceRoleClient,
+  method: string,
+  route: string[],
+  code: string | undefined,
+) => {
+  if (code !== "42501" && code !== "insufficient_privilege") return
+  const rejected = rejectedSensitiveAttempt(method, route)
+  if (!rejected) return
+  try {
+    await db.rpc("record_sensitive_rejection", {
+      action_name: rejected.action,
+      target_type: rejected.targetType,
+      target_id: rejected.targetId,
+      change_summary: { method, route: route.join("/"), denial_code: code },
+      related_ids: {},
+    })
+  } catch {
+    // Keep the original denial response if the audit write itself fails.
+  }
+}
 export const handleRequest = async (
   request: Request,
   functionName: FunctionName,
@@ -71,6 +138,7 @@ export const handleRequest = async (
         accountContext.error.code === "insufficient_privilege"
       const inactive = accountContext.error.message?.includes("Cuenta is not active") ?? false
       if (denied) {
+        await recordRejectedSensitiveAttempt(db, request.method, route, accountContext.error.code)
         const message = inactive ? "Cuenta is not active" : "Application access denied"
         return errorJson(request, { message }, 403, id)
       }
@@ -86,6 +154,7 @@ export const handleRequest = async (
       (row) => row && typeof row === "object" && (row as { cuenta_id?: unknown }).cuenta_id === actor?.id,
     ) as { estado?: unknown } | undefined
     if (currentContext?.estado !== "activa") {
+      await recordRejectedSensitiveAttempt(db, request.method, route, "42501")
       return errorJson(request, { message: "Cuenta is not active" }, 403, id)
     }
 
@@ -101,7 +170,10 @@ export const handleRequest = async (
     })
 
     if (outcome instanceof Response) return outcome
-    if (outcome.error) return errorJson(request, outcome.error, errorStatus(outcome.error), id)
+    if (outcome.error) {
+      await recordRejectedSensitiveAttempt(db, request.method, route, outcome.error.code)
+      return errorJson(request, outcome.error, errorStatus(outcome.error), id)
+    }
     return json(request, outcome.data, 200, id)
   } catch (error) {
     logFailure(metadata, actor, error)

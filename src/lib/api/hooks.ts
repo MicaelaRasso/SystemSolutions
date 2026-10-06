@@ -156,8 +156,7 @@ export const useEdgeAdminMetrics = (from: string, to: string) =>
     queryFn: () => edgeApi.observability.metrics(from, to),
     enabled: Boolean(from && to),
   })
-export const useEdgeAuditEvents = (action?: string) => {
-  const filters: AuditFilters = action ? { action } : {}
+export const useEdgeAuditEvents = (filters: AuditFilters = {}) => {
   return useQuery({
     queryKey: ["edge", "audit", filters],
     queryFn: () => edgeApi.observability.audit.list(filters),

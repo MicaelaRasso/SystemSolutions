@@ -31,6 +31,7 @@ import {
   type OperacionOffline,
   type VisitaOffline,
 } from "@/lib/offline/sync"
+import { visitCompletionBlocker } from "@/lib/offline/completion"
 import { getOfflineDeviceId as deviceId } from "@/lib/offline/device"
 
 type StoredVisitContext = VisitDto & {
@@ -127,6 +128,12 @@ function createCoordinator(store: IndexedDbOfflineStore) {
 async function pendingStartOperationIds(store: IndexedDbOfflineStore, visitId: string) {
   return (await store.listOperations(visitId))
     .filter((operation) => operation.kind === "start_visit" && operation.estado !== "sincronizada")
+    .map((operation) => operation.operationId)
+}
+
+async function pendingCompletionOperationIds(store: IndexedDbOfflineStore, visitId: string) {
+  return (await store.listOperations(visitId))
+    .filter((operation) => operation.kind !== "complete_visit" && operation.estado !== "sincronizada")
     .map((operation) => operation.operationId)
 }
 
@@ -433,6 +440,16 @@ function VisitEditor({
       return
     }
     try {
+      if (!navigator.onLine) {
+        const blocker = visitCompletionBlocker(
+          context.work_orders ?? [],
+          await store.listOperations(visit.id),
+        )
+        if (blocker) {
+          setMessage(blocker)
+          return
+        }
+      }
       const file = dataUrlToFile(signature, `firma-tecnico-${visit.id}.png`)
       if (navigator.onLine) {
         await edgeApi.certificates.uploadVisitSignature(visit.id, {
@@ -459,7 +476,10 @@ function VisitEditor({
           {
             local_completed_at: new Date().toISOString(),
           },
-          [signatureOperation.operationId, ...(await pendingStartOperationIds(store, visit.id))],
+          [...new Set([
+            signatureOperation.operationId,
+            ...(await pendingCompletionOperationIds(store, visit.id)),
+          ])],
         )
         await coordinator.markVisitLocallyComplete(visit.id)
       }

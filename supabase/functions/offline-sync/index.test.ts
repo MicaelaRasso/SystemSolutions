@@ -87,6 +87,63 @@ describe("offline-sync media route", () => {
       file,
     )
   })
+
+  it("rejects evidence without one of the certificate photo sections before claiming the visit", async () => {
+    vi.clearAllMocks()
+    const rpc = vi.fn()
+    const file = new File(["pngdata"], "evidence.png", { type: "image/png" })
+
+    await expect(
+      handler(
+        context(
+          new Request("https://example.test/functions/v1/offline-sync/visits/media/media", {
+            method: "POST",
+          }),
+          ["visits", visitId, "media"],
+          rpc,
+          {
+            device_id: deviceId,
+            operation_id: operationId,
+            media_id: mediaId,
+            kind: "photo",
+            category: "unknown_section",
+            file,
+          },
+        ),
+      ),
+    ).rejects.toThrow("A valid certificate evidence category is required")
+    expect(rpc).not.toHaveBeenCalled()
+    expect(uploadStorageObject).not.toHaveBeenCalled()
+  })
+
+  it("rejects a signature category that does not match its signing party", async () => {
+    vi.clearAllMocks()
+    const rpc = vi.fn()
+    const file = new File(["pngdata"], "signature.png", { type: "image/png" })
+
+    await expect(
+      handler(
+        context(
+          new Request("https://example.test/functions/v1/offline-sync/visits/media/media", {
+            method: "POST",
+          }),
+          ["visits", visitId, "media"],
+          rpc,
+          {
+            device_id: deviceId,
+            operation_id: operationId,
+            media_id: mediaId,
+            kind: "signature",
+            party: "tecnico",
+            category: "firma_cliente",
+            file,
+          },
+        ),
+      ),
+    ).rejects.toThrow("A signature category must match its party")
+    expect(rpc).not.toHaveBeenCalled()
+    expect(uploadStorageObject).not.toHaveBeenCalled()
+  })
 })
 
 describe("offline-sync working set route", () => {

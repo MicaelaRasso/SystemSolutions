@@ -421,4 +421,20 @@ describe("capability Edge clients", () => {
     expect(form.get("party")).toBe("tecnico")
     expect(form.get("file")).toBeInstanceOf(File)
   })
+
+  it("rejects an invalid offline evidence category before making a request", async () => {
+    const { edge, request } = client({})
+
+    expect(() =>
+      createOfflineApi(edge).uploadMedia("visit-1", {
+        deviceId: "device-1",
+        operationId: "operation-1",
+        mediaId: "media-1",
+        kind: "photo",
+        category: "miscellaneous",
+        file: new Blob(["photo"], { type: "image/png" }),
+      }),
+    ).toThrow("A valid certificate evidence category is required")
+    expect(request).not.toHaveBeenCalled()
+  })
 })

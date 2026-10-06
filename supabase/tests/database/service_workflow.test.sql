@@ -1,6 +1,6 @@
 begin;
 
-select plan(66);
+select plan(88);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000001101', 'workflow-client-a@example.test'),
@@ -29,6 +29,11 @@ insert into public.talleres_moviles (id, nombre) values
 insert into public.taller_cuentas (taller_movil_id, cuenta_id) values
   ('00000000-0000-0000-0000-000000001201', '00000000-0000-0000-0000-000000001103'),
   ('00000000-0000-0000-0000-000000001202', '00000000-0000-0000-0000-000000001104');
+
+insert into public.personas (id, nombre, apellido, dni) values
+  ('00000000-0000-0000-0000-000000001108', 'Tecnico', 'A', 'workflow-tech-a');
+insert into public.nominas_jornada (taller_movil_id, fecha, persona_ids) values
+  ('00000000-0000-0000-0000-000000001201', '2099-01-10', array['00000000-0000-0000-0000-000000001108'::uuid]);
 
 insert into public.yacimientos (id, cliente_cuenta_id, nombre, provincia, operadora, contratista) values
   ('00000000-0000-0000-0000-000000001301', '00000000-0000-0000-0000-000000001101', 'Workflow Yacimiento A1', 'Neuquen', 'Operadora A', 'Contratista A'),
@@ -412,6 +417,57 @@ select lives_ok(
   $$select public.api_submit_visit_signature(current_setting('app.workflow_primary_visit_id')::uuid, 'tecnico'::public.parte_firma_visita, 'Tecnico A', 'certificates', 'workflow/primary-tech.png')$$,
   'a Técnico signature authorizes visit completion'
 );
+update public.ordenes_trabajo
+set estado = 'pendiente', no_evaluada_razon = null
+where visita_id = current_setting('app.workflow_primary_visit_id')::uuid
+  and valvula_id = '00000000-0000-0000-0000-000000001602'::uuid;
+select throws_ok(
+  $$select public.api_complete_visit(current_setting('app.workflow_primary_visit_id')::uuid)$$,
+  '23514', 'Every work order must have an explicit outcome before visit completion', 'completion rejects a work order without an explicit outcome'
+);
+update public.ordenes_trabajo
+set estado = 'no_evaluada', no_evaluada_razon = 'Válvula inaccesible'
+where visita_id = current_setting('app.workflow_primary_visit_id')::uuid
+  and valvula_id = '00000000-0000-0000-0000-000000001602'::uuid;
+select throws_ok(
+  $$select public.api_complete_visit(current_setting('app.workflow_primary_visit_id')::uuid)$$,
+  '23514', 'Every evaluated work order requires a complete certificate before visit completion', 'completion rejects an incomplete evaluated certificate'
+);
+select is(
+  (public.api_update_certificate_draft(
+    current_setting('app.workflow_certificate_id')::uuid,
+    jsonb_build_object(
+      'fecha_ejecucion', current_date::text,
+      'tecnico_ejecutor', 'Tecnico A',
+      'campos_personalizados', jsonb_build_object(
+        'fecha_ejecucion', current_date::text,
+        'tecnico_ejecutor', 'Tecnico A'
+      ),
+      'datos_tecnicos', jsonb_build_object('ensayos', jsonb_build_object(
+        'sp_inicial', jsonb_build_object('valor', 1, 'unidad', 'bar'),
+        'sp_apertura', jsonb_build_object('valor', 2, 'unidad', 'bar'),
+        'presion_cierre', jsonb_build_object('valor', 3, 'unidad', 'bar'),
+        'patron', jsonb_build_object('id', 'p1', 'label', 'Patrón 1')
+      ))
+    )
+  )->'validation'->>'complete')::boolean,
+  true,
+  'a certificate with complete required technical data can pass validation'
+);
+select set_config(
+  'request.headers',
+  '{"x-systemsolutions-actor-id":"00000000-0000-0000-0000-000000001104"}',
+  true
+);
+select throws_ok(
+  $$select public.api_update_certificate_draft(current_setting('app.workflow_certificate_id')::uuid, '{"observaciones":"unauthorized"}'::jsonb)$$,
+  '42501', 'Only the assigned Taller Móvil can execute this visit', 'a different Taller Móvil cannot edit a certificate draft by guessing its id'
+);
+select set_config(
+  'request.headers',
+  '{"x-systemsolutions-actor-id":"00000000-0000-0000-0000-000000001103","x-systemsolutions-correlation-id":"completion-audit-correlation"}',
+  true
+);
 insert into public.operaciones_sync(
   operation_id, visita_id, kind, payload, device_timestamp, server_received_at
 ) values (
@@ -446,6 +502,124 @@ select is(
   (select estado_captura from public.certificados where id = current_setting('app.workflow_certificate_id')::uuid),
   'cerrado'::public.estado_captura_certificado,
   'backend completion closes eligible certificate capture'
+);
+select is(
+  (select estado from public.certificados where id = current_setting('app.workflow_certificate_id')::uuid),
+  'pendiente'::public.estado_certificado,
+  'a complete certificate closes as pending while the Cliente signature is absent'
+);
+select is(
+  (select count(*) from public.certificados c
+   join public.ordenes_trabajo work_order on work_order.id = c.orden_trabajo_id
+   where c.visita_id = current_setting('app.workflow_primary_visit_id')::uuid
+     and work_order.estado = 'no_evaluada'),
+  0::bigint,
+  'no_evaluada work orders do not produce certificates'
+);
+insert into public.operaciones_sync(
+  operation_id, visita_id, kind, payload, device_id, estado, error_code, error_message
+) values (
+  '00000000-0000-0000-0000-000000001920',
+  current_setting('app.workflow_primary_visit_id')::uuid,
+  'unsupported_operation', '{"original":"preserved"}'::jsonb,
+  '00000000-0000-0000-0000-000000001921', 'conflicto', '23514', 'Conflicto original'
+);
+insert into public.conflictos_sync(operation_id, visita_id, payload, reason)
+values (
+  '00000000-0000-0000-0000-000000001920',
+  current_setting('app.workflow_primary_visit_id')::uuid,
+  '{"original":"preserved"}'::jsonb,
+  'Conflicto original'
+);
+select set_config(
+  'app.workflow_conflict_id',
+  (select id::text from public.conflictos_sync where operation_id = '00000000-0000-0000-0000-000000001920'::uuid),
+  true
+);
+select public.test_workflow_set_actor('00000000-0000-0000-0000-000000001105');
+select throws_ok(
+  $$select public.api_resolve_sync_conflict(current_setting('app.workflow_conflict_id')::uuid, 'accept', 'No se debe aceptar operación no soportada')$$,
+  '22023', 'This synchronization operation cannot be accepted; reject it or authorize a certificate correction', 'unsupported conflict accept is rejected without applying the payload'
+);
+select is(
+  (public.api_resolve_sync_conflict(current_setting('app.workflow_conflict_id')::uuid, 'reject', 'Datos rechazados por seguridad')->>'resolution'),
+  'rejected',
+  'an active regular Administrador can explicitly reject a conflict'
+);
+select is(
+  (public.api_resolve_sync_conflict(current_setting('app.workflow_conflict_id')::uuid, 'reject', 'Datos rechazados por seguridad')->>'resolution'),
+  'rejected',
+  'retrying an identical conflict decision is idempotent'
+);
+select is(
+  (select resolution_action from public.conflictos_sync where id = current_setting('app.workflow_conflict_id')::uuid),
+  'rejected',
+  'the explicit decision is retained on the conflict'
+);
+select is(
+  (select payload from public.conflictos_sync where id = current_setting('app.workflow_conflict_id')::uuid),
+  '{"original":"preserved"}'::jsonb,
+  'the original conflicting payload remains unchanged for audit'
+);
+select is(
+  (select estado::text from public.operaciones_sync where operation_id = '00000000-0000-0000-0000-000000001920'::uuid),
+  'conflicto',
+  'rejecting a conflict does not falsely acknowledge the operation as applied'
+);
+select throws_ok(
+  $$update public.conflictos_sync set resolution_reason = 'tampered' where id = current_setting('app.workflow_conflict_id')::uuid$$,
+  '23514', 'A synchronization conflict decision is immutable', 'a resolved conflict decision cannot be rewritten'
+);
+select public.test_workflow_set_actor('00000000-0000-0000-0000-000000001103');
+select ok(
+  exists (
+    select 1 from jsonb_array_elements(public.api_workshop_sync_conflict_outcomes()->'items') item
+    where item->>'conflict_id' = current_setting('app.workflow_conflict_id')
+      and item->>'resolution_action' = 'rejected'
+      and item->>'resolution_reason' = 'Datos rechazados por seguridad'
+  ),
+  'the Taller Móvil can see the resolution and mandatory reason'
+);
+select throws_ok(
+  $$select public.api_sync_conflicts()$$,
+  '42501', 'Only an active Administrador can read synchronization conflicts', 'a Taller Móvil cannot read administrative conflict payloads'
+);
+insert into public.operaciones_sync(
+  operation_id, visita_id, kind, payload, device_id, estado, error_code, error_message
+) values (
+  '00000000-0000-0000-0000-000000001922',
+  current_setting('app.workflow_primary_visit_id')::uuid,
+  'unsupported_operation', jsonb_build_object('certificate_id', current_setting('app.workflow_certificate_id')),
+  '00000000-0000-0000-0000-000000001921', 'conflicto', '23514', 'Conflicto original'
+);
+insert into public.conflictos_sync(operation_id, visita_id, payload, reason)
+values (
+  '00000000-0000-0000-0000-000000001922',
+  current_setting('app.workflow_primary_visit_id')::uuid,
+  jsonb_build_object('certificate_id', current_setting('app.workflow_certificate_id')),
+  'Conflicto original'
+);
+select set_config(
+  'app.workflow_correction_conflict_id',
+  (select id::text from public.conflictos_sync where operation_id = '00000000-0000-0000-0000-000000001922'::uuid),
+  true
+);
+select public.test_workflow_set_actor('00000000-0000-0000-0000-000000001105');
+select is(
+  (public.api_resolve_sync_conflict(
+    current_setting('app.workflow_correction_conflict_id')::uuid,
+    'correction', 'Se requiere nueva inspección', null,
+    '00000000-0000-0000-0000-000000001201'::uuid,
+    '2099-03-01 09:00:00+00'::timestamptz,
+    '2099-03-01 10:00:00+00'::timestamptz
+  )->>'resolution'),
+  'correction_authorized',
+  'a conflict can be routed into the authorized certificate-correction workflow'
+);
+select is(
+  (select estado::text from public.operaciones_sync where operation_id = '00000000-0000-0000-0000-000000001922'::uuid),
+  'conflicto',
+  'a correction authorization does not mark the original operation as applied'
 );
 select throws_ok(
   $$select public.api_update_certificate_draft(current_setting('app.workflow_certificate_id')::uuid, '{"observaciones":"late"}'::jsonb)$$,
@@ -569,6 +743,53 @@ select is(
    where identificadores_relacionados->>'solicitud_id' = current_setting('app.workflow_parallel_request_conflict')),
   0::bigint,
   'a failed scheduling transaction leaves no successful audit event'
+);
+
+insert into public.operaciones_sync(
+  operation_id, visita_id, kind, payload, device_id, estado, error_code, error_message
+) values (
+  '00000000-0000-0000-0000-000000001923',
+  current_setting('app.workflow_rejection_visit_id')::uuid,
+  'start_visit', '{}'::jsonb,
+  '00000000-0000-0000-0000-000000001921', 'conflicto', '23514', 'Conflicto de inicio'
+);
+insert into public.conflictos_sync(operation_id, visita_id, payload, reason)
+values (
+  '00000000-0000-0000-0000-000000001923',
+  current_setting('app.workflow_rejection_visit_id')::uuid,
+  '{}'::jsonb,
+  'Conflicto de inicio'
+);
+select set_config(
+  'app.workflow_accept_conflict_id',
+  (select id::text from public.conflictos_sync where operation_id = '00000000-0000-0000-0000-000000001923'::uuid),
+  true
+);
+select public.test_workflow_set_actor('00000000-0000-0000-0000-000000001105');
+select is(
+  (public.api_resolve_sync_conflict(current_setting('app.workflow_accept_conflict_id')::uuid, 'accept', 'Inicio verificado por Administrador')->>'resolution'),
+  'accepted',
+  'an active regular Administrador can accept and apply a safe start-visit operation'
+);
+select is(
+  (select estado::text from public.visitas_servicio where id = current_setting('app.workflow_rejection_visit_id')::uuid),
+  'en_curso',
+  'accept applies the stored start-visit payload through the existing workflow API'
+);
+select is(
+  (select estado::text from public.operaciones_sync where operation_id = '00000000-0000-0000-0000-000000001923'::uuid),
+  'sincronizada',
+  'an applied accepted operation is acknowledged as synchronized'
+);
+select is(
+  (public.api_resolve_sync_conflict(current_setting('app.workflow_accept_conflict_id')::uuid, 'accept', 'Inicio verificado por Administrador')->>'resolution'),
+  'accepted',
+  'retrying an identical accepted decision does not reapply the operation'
+);
+select is(
+  (select estado::text from public.visitas_sync_ack where visita_id = current_setting('app.workflow_rejection_visit_id')::uuid),
+  'sincronizada',
+  'resolving a conflict refreshes the visit synchronization acknowledgement'
 );
 
 select * from extensions.finish(true);

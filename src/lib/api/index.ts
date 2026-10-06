@@ -14,6 +14,7 @@ import { createAdminApi } from "./admin"
 import { createOperationsApi } from "./operations"
 import { createBackupsApi } from "./backups"
 import { createObservabilityApi } from "./observability"
+import { createSyncConflictsApi } from "./sync-conflicts"
 
 /**
  * Capability-oriented browser API. Components consume hooks/adapters built on
@@ -35,6 +36,7 @@ export const edgeApi = {
   operations: createOperationsApi(edgeAccess),
   backups: createBackupsApi(edgeAccess),
   observability: createObservabilityApi(edgeAccess),
+  syncConflicts: createSyncConflictsApi(edgeAccess),
 }
 
 export * from "./contracts"
@@ -54,3 +56,4 @@ export * from "./admin"
 export * from "./operations"
 export * from "./backups"
 export * from "./observability"
+export * from "./sync-conflicts"

@@ -380,7 +380,26 @@ describe("OfflineSyncCoordinator", () => {
       image_id: "media-signature-1",
       media_id: "media-signature-1",
       signer_name: "Ana Técnica",
+      capture_method: "pwa_tecnico",
     })
+  })
+
+  it("queues a Cliente presencial signature with the canonical capture method", async () => {
+    const store = new MemoryStore()
+    const coordinator = new OfflineSyncCoordinator(store, { syncVisit: async () => ({ operations: [] }) })
+
+    const queued = await queueOfflineSignatureCapture({
+      store,
+      coordinator,
+      visitId: "visit-client-signature",
+      deviceId: "device-1",
+      party: "cliente",
+      signerName: "Cliente presente",
+      file: new Blob(["signature"], { type: "image/png" }),
+      mediaId: "media-client-signature",
+    })
+
+    expect(queued.signatureOperation.payload.capture_method).toBe("pwa_cliente_presencial")
   })
 
   it("uploads IndexedDB media before sending and compacts it only after acknowledgement", async () => {
@@ -466,15 +485,19 @@ describe("OfflineSyncCoordinator", () => {
       createdAt: "2026-09-25T12:00:00.000Z",
     })
     const sent: { kind: string; payload: Record<string, unknown>; dependencies: string[] }[] = []
+    const uploadedParties: (string | undefined)[] = []
     const coordinator = new OfflineSyncCoordinator(store, {
-      uploadMedia: async ({ mediaId, visitId }) => ({
-        media_id: mediaId,
-        image_id: mediaId,
-        bucket: "certificate-signatures",
-        object_path: `visits/${visitId}/tecnico/${mediaId}.png`,
-        content_type: "image/png",
-        server_received_at: "2026-09-25T12:00:01.000Z",
-      }),
+      uploadMedia: async ({ mediaId, visitId, party }) => {
+        uploadedParties.push(party)
+        return {
+          media_id: mediaId,
+          image_id: mediaId,
+          bucket: "certificate-signatures",
+          object_path: `visits/${visitId}/tecnico/${mediaId}.png`,
+          content_type: "image/png",
+          server_received_at: "2026-09-25T12:00:01.000Z",
+        }
+      },
       syncVisit: async (_visitId, operations) => {
         const current = operations as {
           operation_id: string
@@ -519,6 +542,7 @@ describe("OfflineSyncCoordinator", () => {
     await coordinator.sync("visit-signature-dependency", "device-1")
 
     expect(sent).toHaveLength(2)
+    expect(uploadedParties).toEqual(["tecnico"])
     expect(sent[1]).toMatchObject({
       kind: "submit_signature",
       dependencies: [media.operationId],

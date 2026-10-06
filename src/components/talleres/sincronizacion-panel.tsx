@@ -18,6 +18,15 @@ import { getOfflineDeviceId } from "@/lib/offline/device"
 
 type EstadoConexion = "online" | "offline" | "actualizando" | "error"
 type OperacionesPorVisita = Record<string, OperacionOffline[]>
+type ConflictOutcome = {
+  conflict_id: string
+  operation_id: string
+  visit_id: string
+  operation_kind: string
+  resolution_action: "accepted" | "rejected" | "correction_authorized"
+  resolution_reason: string
+  resolved_at: string
+}
 
 function createCoordinator(store: IndexedDbOfflineStore) {
   return new OfflineSyncCoordinator(store, {
@@ -64,6 +73,7 @@ export function SincronizacionPanel() {
   const [operationsByVisit, setOperationsByVisit] = useState<OperacionesPorVisita>({})
   const [syncingVisits, setSyncingVisits] = useState<string[]>([])
   const [syncErrors, setSyncErrors] = useState<Record<string, string>>({})
+  const [conflictOutcomes, setConflictOutcomes] = useState<ConflictOutcome[]>([])
   const [error, setError] = useState<string>()
 
   const refresh = useCallback(async () => {
@@ -79,6 +89,7 @@ export function SincronizacionPanel() {
         createCoordinator(store).sync(visitId, getOfflineDeviceId()),
       )
       const workingSet = await edgeApi.offline.workingSet(getOfflineDeviceId())
+      const outcomeResponse = await edgeApi.syncConflicts.workshopOutcomes()
       const nextVisits: VisitaOffline[] = []
       const nextOperations: OperacionesPorVisita = {}
       for (const entry of workingSet.visits) {
@@ -110,6 +121,7 @@ export function SincronizacionPanel() {
       }
       setVisits(nextVisits)
       setOperationsByVisit(nextOperations)
+      setConflictOutcomes(outcomeResponse.items)
       setConnection("online")
     } catch (caught) {
       setConnection("error")
@@ -202,6 +214,29 @@ export function SincronizacionPanel() {
           </Button>
         </div>
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        {conflictOutcomes.length > 0 ? (
+          <section className="space-y-2 rounded-md border p-3" aria-label="Resoluciones de conflictos">
+            <h3 className="text-sm font-medium">Resoluciones administrativas</h3>
+            <ul className="space-y-2 text-sm">
+              {conflictOutcomes.map((outcome) => (
+                <li className="rounded border p-2" key={outcome.conflict_id}>
+                  <p>
+                    {outcome.resolution_action === "accepted"
+                      ? "Operación aceptada y aplicada"
+                      : outcome.resolution_action === "rejected"
+                        ? "Operación rechazada"
+                        : "Corrección autorizada"}
+                  </p>
+                  <p className="text-muted-foreground">Visita {outcome.visit_id} · operación {outcome.operation_id}</p>
+                  <p className="text-muted-foreground">Motivo: {outcome.resolution_reason}</p>
+                  <time className="text-xs text-muted-foreground" dateTime={outcome.resolved_at}>
+                    {new Date(outcome.resolved_at).toLocaleString()}
+                  </time>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
         <ul className="space-y-2 text-sm">
           {visits.map((visit) => {
             const operations = operationsByVisit[visit.id] ?? []

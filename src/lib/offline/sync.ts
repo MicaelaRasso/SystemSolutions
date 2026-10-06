@@ -394,7 +394,7 @@ export async function queueOfflineSignatureCapture(input: {
       signer_name: input.signerName,
       image_id: mediaId,
       media_id: mediaId,
-      capture_method: "technician_pwa",
+      capture_method: input.party === "tecnico" ? "pwa_tecnico" : "pwa_cliente_presencial",
     },
     [...(input.dependencies ?? []), mediaOperation.operationId],
   )
@@ -560,23 +560,29 @@ export class OfflineSyncCoordinator {
             const media = await this.store.getMedia(mediaId)
             if (!media?.file && !media?.blob)
               throw new Error("La operación multimedia perdió su archivo local")
+            const category =
+              typeof operation.payload.category === "string"
+                ? operation.payload.category
+                : typeof operation.payload.section === "string"
+                  ? operation.payload.section
+                  : media.section
+            const payloadParty = operation.payload.party
+            const party =
+              payloadParty === "tecnico" || payloadParty === "cliente"
+                ? payloadParty
+                : category === "firma_tecnico"
+                  ? "tecnico"
+                  : category === "firma_cliente"
+                    ? "cliente"
+                    : undefined
             const uploaded = await this.transport.uploadMedia({
               visitId,
               deviceId,
               operationId: operation.operationId,
               mediaId,
               kind: media.kind,
-              party:
-                operation.kind === "submit_signature" &&
-                (operation.payload.party === "tecnico" || operation.payload.party === "cliente")
-                  ? operation.payload.party
-                  : undefined,
-              category:
-                typeof operation.payload.category === "string"
-                  ? operation.payload.category
-                  : typeof operation.payload.section === "string"
-                    ? operation.payload.section
-                    : media.section,
+              party,
+              category,
               file: media.file ?? media.blob!,
               fileName: media.fileName,
             })

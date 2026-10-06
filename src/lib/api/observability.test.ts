@@ -51,4 +51,31 @@ describe("administrative audit capability", () => {
       }),
     )
   })
+
+  it("sends every role-scoped audit filter and paging option to the Edge route", async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ items: [], total: 0, limit: 50, offset: 50, has_more: false }), { status: 200 }),
+    )
+    const edge = new EdgeAccessClient({ baseUrl: "https://example.test", request })
+
+    await createObservabilityApi(edge).audit.list({
+      from: "2026-10-01",
+      to: "2026-10-31",
+      actorId: "actor-1",
+      action: "visita_completada",
+      targetType: "visita_servicio",
+      outcome: "fallido",
+      clientId: "client-1",
+      yacimientoId: "deposit-1",
+      visitId: "visit-1",
+      certificateId: "certificate-1",
+      limit: 50,
+      offset: 50,
+    })
+
+    expect(request).toHaveBeenCalledWith(
+      "https://example.test/functions/v1/service-workflow/audit?from=2026-10-01&to=2026-10-31&actor_id=actor-1&action=visita_completada&target_type=visita_servicio&outcome=fallido&client_id=client-1&yacimiento_id=deposit-1&visit_id=visit-1&certificate_id=certificate-1&limit=50&offset=50",
+      expect.any(Object),
+    )
+  })
 })

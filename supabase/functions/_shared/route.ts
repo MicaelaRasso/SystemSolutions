@@ -202,6 +202,7 @@ export const routeOwner = (method: string, route: string[]): FunctionName | null
       route.length === 3 &&
       route[2] === "certificate-draft") ||
     (method === "GET" && route[0] === "certificates" && route.length === 2) ||
+    (method === "POST" && route[0] === "certificates" && route.length === 3 && route[2] === "corrections") ||
     (method === "PATCH" && route[0] === "certificates" && route.length === 2) ||
     (method === "GET" &&
       route[0] === "certificates" &&
@@ -219,7 +220,11 @@ export const routeOwner = (method: string, route: string[]): FunctionName | null
     (method === "POST" && route[0] === "visits" && route.length === 3 && route[2] === "sync") ||
     (method === "POST" && route[0] === "visits" && route.length === 3 && route[2] === "claim") ||
     (method === "POST" && route[0] === "visits" && route.length === 3 && route[2] === "media") ||
-    ((method === "GET" || method === "POST") && is(route, "offline", "working-set"))
+    ((method === "GET" || method === "POST") && is(route, "offline", "working-set")) ||
+    (method === "GET" && is(route, "offline", "conflict-outcomes")) ||
+    (method === "GET" && is(route, "conflicts")) ||
+    (method === "GET" && route[0] === "conflicts" && route.length === 2) ||
+    (method === "POST" && route[0] === "conflicts" && route.length === 3 && route[2] === "resolve")
   )
     return "offline-sync"
 

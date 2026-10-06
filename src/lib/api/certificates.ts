@@ -1,3 +1,5 @@
+import { z } from "zod"
+
 import type { EdgeAccessClient } from "../services/edge"
 import {
   certificateDraftDtoSchema,
@@ -66,6 +68,24 @@ export const certificateQueryKeys = {
 
 export const certificateInvalidations = [certificateQueryKeys.all] as const
 
+export const authorizeCertificateCorrectionInputSchema = z.object({
+  providerId: z.uuid(),
+  startsAt: z.iso.datetime({ offset: true }),
+  endsAt: z.iso.datetime({ offset: true }),
+  reason: z.string().trim().min(1),
+}).refine((value) => value.endsAt > value.startsAt, {
+  path: ["endsAt"], message: "La finalización debe ser posterior al inicio",
+})
+
+const certificateCorrectionDtoSchema = z.object({
+  correction_id: z.uuid(),
+  source_certificate_id: z.uuid(),
+  request_id: z.uuid(),
+  visit_id: z.uuid(),
+  work_order_id: z.uuid(),
+  reason: z.string(),
+})
+
 export function createCertificatesApi(edge: EdgeAccessClient) {
   const serviceWorkflow = createServiceWorkflowApi(edge)
 
@@ -103,6 +123,19 @@ export function createCertificatesApi(edge: EdgeAccessClient) {
       edge.request(`valves/${valvulaId}/certificates`, valveCertificateHistoryDtoSchema),
     pendingClientSignatureVisits: () =>
       edge.request("clients/me/pending-certificates", pendingClientSignatureVisitsDtoSchema),
+    authorizeCorrection: (certificateId: string, input: z.input<typeof authorizeCertificateCorrectionInputSchema>) => {
+      const id = z.uuid().parse(certificateId)
+      const data = authorizeCertificateCorrectionInputSchema.parse(input)
+      return edge.request(`certificates/${id}/corrections`, certificateCorrectionDtoSchema, {
+        method: "POST",
+        body: JSON.stringify({
+          provider_id: data.providerId,
+          starts_at: data.startsAt,
+          ends_at: data.endsAt,
+          reason: data.reason,
+        }),
+      })
+    },
     startCertificateDraft: serviceWorkflow.startCertificateDraft,
 
     async updateDraft(certificateId: string, input: UpdateCertificateDraftInput) {

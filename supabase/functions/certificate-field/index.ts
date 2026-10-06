@@ -108,6 +108,20 @@ export const certificateFieldHandler: RouteHandler = async ({
     return db.rpc("api_certificate_draft", {
       certificate_id: segments[1],
     })
+  if (segments[0] === "certificates" && request.method === "POST" && segments[1] && segments[2] === "corrections" && segments.length === 3) {
+    if (!isUuid(segments[1]) || typeof body.provider_id !== "string" || !isUuid(body.provider_id) ||
+      typeof body.starts_at !== "string" || typeof body.ends_at !== "string" ||
+      Number.isNaN(Date.parse(body.starts_at)) || Number.isNaN(Date.parse(body.ends_at)) ||
+      typeof body.reason !== "string" || !body.reason.trim())
+      throw new HttpError(400, "A source certificate, Taller Móvil, visit window, and reason are required")
+    return db.rpc("api_authorize_certificate_correction", {
+      source_certificate_id: segments[1],
+      provider_id: body.provider_id,
+      visit_starts_at: body.starts_at,
+      visit_ends_at: body.ends_at,
+      action_reason: body.reason.trim(),
+    })
+  }
   if (segments[0] === "certificates" && request.method === "PATCH" && segments[1])
     return db.rpc("api_update_certificate_draft", {
       certificate_id: segments[1],

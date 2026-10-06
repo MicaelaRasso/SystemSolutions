@@ -172,7 +172,12 @@ export class EdgeAccessClient {
     if (route === "clients" || route.startsWith("clients/")) return "asset-access"
     if (/^(?:operations|audit|admin)(?:\/|$)/.test(route) || route === "attachments")
       return "service-workflow"
-    if (route.startsWith("offline/") || /^(?:visits\/[^/]+\/(?:sync|claim|media))$/.test(route))
+    if (
+      route.startsWith("offline/") ||
+      route.startsWith("conflicts/") ||
+      route === "conflicts" ||
+      /^(?:visits\/[^/]+\/(?:sync|claim|media))$/.test(route)
+    )
       return "offline-sync"
     if (
       route.startsWith("certificates/") ||
