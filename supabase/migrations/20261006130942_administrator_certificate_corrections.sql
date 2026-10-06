@@ -97,17 +97,17 @@ $$;
 -- visit, signature, and finalization paths in force for corrections.
 create or replace function public.link_authorized_certificate_correction()
 returns trigger language plpgsql security definer set search_path = public as $$
-declare authorization public.correcciones_certificado;
+declare correction_row public.correcciones_certificado;
 begin
-  select * into authorization from public.correcciones_certificado
+  select * into correction_row from public.correcciones_certificado
   where orden_trabajo_id = new.orden_trabajo_id;
-  if authorization.id is not null then
-    if new.visita_id <> authorization.visita_id or
-       new.valvula_id <> (select valvula_id from public.certificados where id = authorization.certificado_origen_id) then
+  if correction_row.id is not null then
+    if new.visita_id <> correction_row.visita_id or
+       new.valvula_id <> (select valvula_id from public.certificados where id = correction_row.certificado_origen_id) then
       raise exception using errcode = 'check_violation', message = 'Correction certificate must keep its authorized visit and Válvula';
     end if;
-    new.reemplaza_certificado_id := authorization.certificado_origen_id;
-    new.motivo_reemplazo := authorization.motivo;
+    new.reemplaza_certificado_id := correction_row.certificado_origen_id;
+    new.motivo_reemplazo := correction_row.motivo;
   end if;
   return new;
 end;
@@ -124,12 +124,12 @@ create or replace function public.api_create_certificate_replacement(
   source_certificate_id uuid, work_order_id uuid, reason text default 'correccion'
 )
 returns jsonb language plpgsql security definer set search_path = public as $$
-declare authorization public.correcciones_certificado;
+declare correction_row public.correcciones_certificado;
 begin
-  select * into authorization from public.correcciones_certificado
+  select * into correction_row from public.correcciones_certificado
   where orden_trabajo_id = work_order_id
     and certificado_origen_id = source_certificate_id;
-  if authorization.id is null or btrim(coalesce(reason, '')) <> authorization.motivo then
+  if correction_row.id is null or btrim(coalesce(reason, '')) <> correction_row.motivo then
     raise exception using errcode = 'insufficient_privilege', message = 'Certificate correction must be authorized by an Administrador';
   end if;
   return public.api_start_certificate_draft(work_order_id, gen_random_uuid());

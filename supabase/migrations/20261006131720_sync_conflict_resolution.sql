@@ -230,7 +230,7 @@ begin
   select * into visit_row from public.visitas_servicio where id = conflict_row.visita_id;
 
   if conflict_row.resolved_at is not null then
-    if conflict_row.resolution_action = case p_resolution_action when 'accept' then 'accepted' when 'reject' then 'rejected' else 'correction_authorized' end
+    if conflict_row.resolution_action = (case p_resolution_action when 'accept' then 'accepted' when 'reject' then 'rejected' else 'correction_authorized' end)
        and conflict_row.resolution_reason = btrim(p_action_reason)
        and (p_resolution_action <> 'correction' or (
          (conflict_row.resolution_result#>>'{request,source_certificate_id}')::uuid = coalesce(

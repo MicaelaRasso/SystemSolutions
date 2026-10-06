@@ -28,6 +28,7 @@ values (
     jsonb_build_object('clave', 'tecnico_ejecutor', 'etiqueta', 'Ejecutó', 'tipo', 'text', 'seccion', 'ensayos', 'orden', 20, 'obligatorio', true, 'opciones', '[]'::jsonb),
     jsonb_build_object('clave', 'observaciones', 'etiqueta', 'Observaciones', 'tipo', 'textarea', 'seccion', 'observaciones', 'orden', 30, 'obligatorio', false, 'opciones', '[]'::jsonb)
   )
+)
 on conflict (version) do nothing;
 
 -- Preserve any pre-existing template version names as historical metadata, then
@@ -467,7 +468,7 @@ $$;
 
 create or replace function public.api_validate_custom_certificate_fields(
   template_snapshot jsonb,
-  values jsonb
+  field_values jsonb
 )
 returns jsonb
 language plpgsql
@@ -481,14 +482,14 @@ declare
   field_definition jsonb;
   key_name text;
 begin
-  if values is null or jsonb_typeof(values) <> 'object' then
+  if field_values is null or jsonb_typeof(field_values) <> 'object' then
     return jsonb_build_object(
       'missing_fields', jsonb_build_array(),
       'invalid_fields', jsonb_build_array('campos_personalizados')
     );
   end if;
 
-  for key_name in select jsonb_object_keys(values) loop
+  for key_name in select jsonb_object_keys(field_values) loop
     if not exists (
       select 1
       from jsonb_array_elements(coalesce(template_snapshot->'campos', '[]'::jsonb)) field_definition
@@ -504,9 +505,9 @@ begin
     where value->>'obligatorio' = 'true'
   loop
     key_name := field_definition->>'clave';
-    if values->key_name is null
-       or values->key_name = 'null'::jsonb
-       or (jsonb_typeof(values->key_name) = 'string' and btrim(values->>key_name) = '') then
+    if field_values->key_name is null
+       or field_values->key_name = 'null'::jsonb
+       or (jsonb_typeof(field_values->key_name) = 'string' and btrim(field_values->>key_name) = '') then
       missing_fields := missing_fields || ('campo_personalizado_' || key_name);
     end if;
   end loop;
