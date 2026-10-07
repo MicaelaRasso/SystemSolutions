@@ -11,8 +11,22 @@ enable_confirmations = true
 double_confirm_changes = true
 otp_expiry = 3600
 
+[auth.email.template.invite]
+subject = "Invitación a System Solutions"
+content_path = "./supabase/templates/invite.html"
+
+[auth.email.template.recovery]
+subject = "Restablecé tu contraseña de System Solutions"
+content_path = "./supabase/templates/recovery.html"
+
+[auth.email.template.email_change]
+subject = "Confirmá el cambio de correo — System Solutions"
+content_path = "./supabase/templates/email-change.html"
+
 [auth.email.notification.email_changed]
 enabled = true
+subject = "Se actualizó el correo de tu cuenta — System Solutions"
+content_path = "./supabase/templates/email-changed.html"
 
 [functions.identity-admin]
 verify_jwt = true
@@ -31,3 +45,6 @@ verify_jwt = true
 
 [functions.backup-export]
 verify_jwt = true
+
+[functions.email-delivery]
+verify_jwt = false

@@ -7,6 +7,7 @@ import {
   validateStorageObject,
 } from "../_shared/storage.ts"
 import { serveFunction, type RouteHandler } from "../_shared/transport.ts"
+import { runtimeEnv } from "../_shared/runtime-env.ts"
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value)
@@ -429,8 +430,33 @@ export const serviceWorkflowHandler: RouteHandler = async ({
     request.method === "POST" &&
     segments[1] &&
     segments[2] === "complete"
-  )
-    return db.rpc("api_complete_visit", { visit_id: segments[1] })
+  ) {
+    const completed = await db.rpc("api_complete_visit", { visit_id: segments[1] })
+    const env = runtimeEnv()
+    if (!completed.error && env.SUPABASE_URL && env.MAILER_WORKER_TOKEN) {
+      const wakeMailer = async () => {
+        try {
+          const response = await fetch(`${env.SUPABASE_URL}/functions/v1/email-delivery/internal/process`, {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-mailer-worker-token": env.MAILER_WORKER_TOKEN },
+            body: JSON.stringify({ enqueue_expiry: false }),
+            signal: AbortSignal.timeout(30_000),
+          })
+          if (!response.ok) throw new Error(`Mailer worker returned ${response.status}`)
+        } catch (error) {
+          // The visit and its queued notice are already committed. The scheduled
+          // worker will deliver it if this best-effort immediate wake-up fails.
+          console.error("pending_signature_worker_wakeup_failed", error)
+        }
+      }
+      const edgeRuntime = (globalThis as typeof globalThis & {
+        EdgeRuntime?: { waitUntil: (promise: Promise<unknown>) => void }
+      }).EdgeRuntime
+      if (edgeRuntime?.waitUntil) edgeRuntime.waitUntil(wakeMailer())
+      else await wakeMailer()
+    }
+    return completed
+  }
   if (
     segments[0] === "visits" &&
     request.method === "POST" &&

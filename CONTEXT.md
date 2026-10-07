@@ -16,7 +16,13 @@ The login identity for one person or one shared Taller Móvil. Each account has 
 _Avoid_: user, profile
 
 **Correo de creación de cuenta**:
-The email sent when an Administrador creates a Cuenta so its owner can begin access setup. Its invitation link can be resent, and a resend invalidates the previous link; in the MVP, it is delivered through Supabase and is distinct from certificate-expiration notifications.
+The email sent when an Administrador creates a Cuenta so its owner can begin access setup. Its invitation link can be resent, and a resend invalidates the previous link.
+
+**Aviso de vencimiento de Certificado**:
+One email sent 30 calendar days before each `Certificado finalizado` expires, when the Cliente's `aviso_vencimiento` setting is enabled. It is distinct from the visual `por vencer` state shown in the application.
+
+**Aviso de firma pendiente**:
+One email sent to the Cliente's single MVP account when a Visita de servicio closes with one or more certificates awaiting the Cliente's signature. It summarizes the Yacimiento and affected Plantas/locaciones and directs the Cliente to the certificate page in the portal. It is not repeated.
 
 **Estado de la Cuenta**:
 The lifecycle state of a Cuenta: `pendiente` while its invitation has not been accepted, `activa` while it may authenticate, or `deshabilitada` while access is blocked but the identity and history remain available for reactivation. An account is never deleted as part of ordinary lifecycle administration.

@@ -39,5 +39,12 @@ export const runtimeEnv = (): RuntimeEnv => {
     SUPABASE_URL: deno?.env.get("SUPABASE_URL"),
     BACKUP_MAX_ARCHIVE_BYTES: deno?.env.get("BACKUP_MAX_ARCHIVE_BYTES"),
     BACKUP_MAX_DURATION_MS: deno?.env.get("BACKUP_MAX_DURATION_MS"),
+    SMTP_HOST: deno?.env.get("SMTP_HOST"),
+    SMTP_PORT: deno?.env.get("SMTP_PORT"),
+    SMTP_USERNAME: deno?.env.get("SMTP_USERNAME"),
+    SMTP_PASSWORD: deno?.env.get("SMTP_PASSWORD"),
+    SMTP_FROM: deno?.env.get("SMTP_FROM"),
+    APP_BASE_URL: deno?.env.get("APP_BASE_URL"),
+    MAILER_WORKER_TOKEN: deno?.env.get("MAILER_WORKER_TOKEN"),
   }
 }

@@ -7,6 +7,7 @@ export type FunctionName =
   | "certificate-field"
   | "offline-sync"
   | "backup-export"
+  | "email-delivery"
 
 export const parseRoute = (request: Request, functionName: string): string[] => {
   const rawSegments = new URL(request.url).pathname.split("/").filter(Boolean)
@@ -112,6 +113,12 @@ export const parseOperationsQuery = (request: Request): OperationsQuery => {
 
 export const routeOwner = (method: string, route: string[]): FunctionName | null => {
   if (method === "POST" && route.length === 1 && route[0] === "backups") return "backup-export"
+
+  if (
+    (method === "GET" && route.length === 1 && route[0] === "email-deliveries") ||
+    (method === "GET" && route.length === 2 && route[0] === "email-deliveries") ||
+    (method === "POST" && route.length === 3 && route[0] === "email-deliveries" && route[2] === "retry")
+  ) return "email-delivery"
 
   if (
     (method === "GET" && (route.length === 0 || is(route, "context"))) ||
