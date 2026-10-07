@@ -23,7 +23,7 @@ import { cn } from "@/lib/utils"
 export const SIN_TALLER = "sin_asignar"
 
 /** Solo se reprograman las tareas que todavía no empezaron. */
-export const esMovible = (t: TareaResumen) => t.estado === "pendiente" || t.estado === "asignada"
+export const esMovible = (t: TareaResumen) => t.estado === "pendiente" || t.estado === "asignada" || t.estado === "programada"
 
 /**
  * Tarjeta de tarea en el cronograma. Se arrastra a otra celda para reasignar taller y/o día;

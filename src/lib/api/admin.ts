@@ -108,6 +108,7 @@ export function createAdminApi(edge: EdgeAccessClient) {
         return { ...toUsuario(row), empresaId: clientId }
       },
       async update(id: ID, data: Partial<{ nombre: string; apellido: string; email: string; activo: boolean }>) {
+        if (data.email !== undefined) throw new Error("El cambio de email requiere verificación")
         return toUsuario(await edge.request(`accounts/${id}`, accountDtoSchema, { method: "PATCH", body: json(data) }))
       },
       remove: (id: ID) => edge.request(`accounts/${id}`, z.null(), { method: "DELETE" }).then(() => undefined),
@@ -116,15 +117,16 @@ export function createAdminApi(edge: EdgeAccessClient) {
         edge.request(`accounts/${id}/access-scopes`, accessDtoSchema.array(), { method: "PUT", body: json({ scopes: scopes.map((scope) => ({ nivel: scope.nivel, ref_id: scope.refId })) }) }),
     },
     workshops: {
-      list: async () => (await edge.request("mobile-workshops", workshopDtoSchema.array())).map((row): TallerConCuenta => ({ id: row.id, nombre: row.nombre, color: row.color, activo: row.activo, usuarioId: row.usuario_id ?? "", email: row.email })),
+      list: async () => (await edge.request("mobile-workshops", workshopDtoSchema.array())).map((row): TallerConCuenta => ({ id: row.id, nombre: row.nombre, color: row.color, activo: row.activo, usuarioId: row.usuario_id ?? "", email: row.email, estadoCuenta: row.estado_cuenta })),
       create: async (data: { nombre: string; color: string; email: string }) => {
         const row = await edge.request("mobile-workshops", workshopDtoSchema, { method: "POST", body: json(data) })
-        return { id: row.id, nombre: row.nombre, color: row.color, activo: row.activo, usuarioId: row.usuario_id ?? "", email: row.email }
+        return { id: row.id, nombre: row.nombre, color: row.color, activo: row.activo, usuarioId: row.usuario_id ?? "", email: row.email, estadoCuenta: row.estado_cuenta }
       },
       update: async (id: ID, data: Partial<{ nombre: string; color: string; email: string; activo: boolean }>) => {
+        if (data.email !== undefined) throw new Error("El cambio de email requiere verificación")
         const current = (await edge.request("mobile-workshops", workshopDtoSchema.array())).find((row) => row.id === id)
-        const row = await edge.request(`mobile-workshops/${id}`, workshopDtoSchema, { method: "PATCH", body: json({ nombre: data.nombre ?? current?.nombre, color: data.color ?? current?.color, email: data.email ?? current?.email, activo: data.activo ?? current?.activo }) })
-        return { id: row.id, nombre: row.nombre, color: row.color, activo: row.activo, usuarioId: row.usuario_id ?? "", email: row.email }
+        const row = await edge.request(`mobile-workshops/${id}`, workshopDtoSchema, { method: "PATCH", body: json({ nombre: data.nombre ?? current?.nombre, color: data.color ?? current?.color, activo: data.activo ?? current?.activo }) })
+        return { id: row.id, nombre: row.nombre, color: row.color, activo: row.activo, usuarioId: row.usuario_id ?? "", email: row.email, estadoCuenta: row.estado_cuenta }
       },
     },
     people: {

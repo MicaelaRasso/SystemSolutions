@@ -14,23 +14,15 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { fmtDiaLargo } from "@/lib/fechas"
-import type { Adjunto, EstadoTarea } from "@/lib/domain/types"
+import type { Adjunto } from "@/lib/domain/types"
 import type { OperationRead, OperationSummaryRead } from "@/lib/hooks/queries"
 import type { TareaResumen } from "@/lib/services"
 
 import { EstadoTareaBadge, TallerChip } from "./badges"
+import { ESTADO_OPERACION_A_TAREA } from "./estado-operacion"
 
 type OperationView = OperationSummaryRead | OperationRead
 type OperationSummaryView = OperationSummaryRead
-
-const ESTADO_OPERACION_A_TAREA: Record<OperationSummaryView["estado"], EstadoTarea> = {
-  solicitada: "pendiente",
-  programada: "asignada",
-  aceptada: "asignada",
-  en_curso: "en_curso",
-  completada: "completada",
-  cancelada: "cancelada",
-}
 
 function operationSummary(operation: OperationView): OperationSummaryView {
   return "operation" in operation ? operation.operation : operation
@@ -208,7 +200,7 @@ export function TareaSheet({
               <Button asChild>
                 <Link href={`/admin/tareas/${tarea.id}`}>
                   <Pencil />
-                  Editar tarea
+                  Ver solicitud y visita
                 </Link>
               </Button>
             </SheetFooter>

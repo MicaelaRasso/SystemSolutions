@@ -47,6 +47,7 @@ const ADMIN: NavGrupo[] = [
       { titulo: "Talleres y personal", href: "/admin/talleres", icono: Truck },
       { titulo: "Catálogos", href: "/admin/catalogos", icono: ListChecks },
       { titulo: "Config. certificado", href: "/admin/configuracion/certificado", icono: Settings2 },
+      { titulo: "Seguridad de la cuenta", href: "/cuenta/seguridad", icono: ShieldCheck },
     ],
   },
 ]
@@ -65,6 +66,7 @@ const TALLER: NavGrupo[] = [
     items: [
       { titulo: "Mis tareas", href: "/taller", icono: ClipboardList },
       { titulo: "Sincronización", href: "/taller/sincronizacion", icono: RefreshCw },
+      { titulo: "Seguridad de la cuenta", href: "/cuenta/seguridad", icono: ShieldCheck },
     ],
   },
 ]
@@ -77,6 +79,7 @@ const CLIENTE: NavGrupo[] = [
       { titulo: "Turnos", href: "/portal/turnos", icono: ClipboardList },
       { titulo: "Certificados", href: "/portal/certificados", icono: FileCheck2 },
       { titulo: "Mi empresa", href: "/portal/empresa", icono: UserCircle },
+      { titulo: "Seguridad de la cuenta", href: "/cuenta/seguridad", icono: ShieldCheck },
     ],
   },
 ]
@@ -90,7 +93,7 @@ export const NAVEGACION: Record<Rol, NavGrupo[]> = {
 
 /** Item activo: coincidencia exacta para las raíces de sección, prefijo para el resto. */
 export function esActivo(href: string, pathname: string) {
-  const raices = ["/admin", "/taller", "/portal"]
+  const raices = ["/admin", "/taller", "/portal", "/cuenta"]
   if (raices.includes(href)) return pathname === href
   return pathname === href || pathname.startsWith(`${href}/`)
 }

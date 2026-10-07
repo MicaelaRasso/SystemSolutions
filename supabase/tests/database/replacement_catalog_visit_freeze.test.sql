@@ -1,6 +1,6 @@
 begin;
 
-select plan(15);
+select plan(16);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000009101', 'catalog-freeze-client@example.test'),
@@ -82,6 +82,15 @@ select set_config(
 select public.api_claim_visit_device(
   current_setting('app.catalog_freeze_visit_id')::uuid,
   current_setting('app.catalog_freeze_device_id')::uuid
+);
+select throws_ok(
+  $$select public.api_claim_visit_device(
+    current_setting('app.catalog_freeze_visit_id')::uuid,
+    '00000000-0000-0000-0000-000000009702'::uuid
+  )$$,
+  '40001',
+  'Another device is already working on this visit',
+  'a second device cannot claim a visit already owned by another device'
 );
 
 select public.test_catalog_freeze_set_actor('00000000-0000-0000-0000-000000009103');

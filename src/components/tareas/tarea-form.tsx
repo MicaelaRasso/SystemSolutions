@@ -387,7 +387,7 @@ export function TareaForm({
           </div>
         </FieldSet>
 
-        {editando && (
+        {editando && !supabase && (
           <Controller
             control={form.control}
             name="estado"

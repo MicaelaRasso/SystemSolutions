@@ -84,7 +84,7 @@ export interface EstructuraRepo {
 export interface UsuariosRepo {
   list(filtro?: { rol?: Rol; empresaId?: ID }): Promise<Usuario[]>
   get(id: ID): Promise<Usuario>
-  /** Futuro: Edge Function `crear-usuario` (service role). */
+  /** Creates a Cliente Cuenta through the identity-admin invitation flow. */
   create(data: NuevoRegistro<Omit<Usuario, "creadoEn">>): Promise<Usuario>
   update(id: ID, data: Cambios<Usuario>): Promise<Usuario>
   delete(id: ID): Promise<void>
@@ -96,11 +96,12 @@ export interface UsuariosRepo {
 export interface TallerConCuenta extends Taller {
   usuarioId: ID
   email: string
+  estadoCuenta?: "pendiente" | "activa" | "deshabilitada" | null
 }
 
 export interface TalleresRepo {
   list(): Promise<TallerConCuenta[]>
-  /** Crea el taller y su cuenta de rol taller. Futuro: Edge Function `crear-usuario`. */
+  /** Crea el Taller Móvil y envía la invitación de su Cuenta compartida. */
   create(data: { nombre: string; color: string; email: string }): Promise<TallerConCuenta>
   /** Desactivar el taller deshabilita también su cuenta. */
   update(

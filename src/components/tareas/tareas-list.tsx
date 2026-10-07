@@ -27,10 +27,12 @@ import {
 } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
+import { edgeApi } from "@/lib/api"
+import { useEdgeServiceRequests, useEdgeVisits } from "@/lib/api/hooks"
 import { ESTADO_TAREA_LABEL } from "@/lib/domain/rules"
 import type { EstadoTarea } from "@/lib/domain/types"
 import { fmt, hoyIso } from "@/lib/fechas"
-import { useEmpresas, useOperaciones, useTalleres } from "@/lib/hooks/queries"
+import { usaSupabase, useEmpresas, useOperaciones, useTalleres } from "@/lib/hooks/queries"
 import type { FiltroTareas } from "@/lib/services"
 
 import { EstadoTareaBadge, TallerChip } from "./badges"
@@ -59,6 +61,8 @@ export function TareasList() {
     q: q || undefined,
   }
   const operaciones = useOperaciones(filtro)
+  const requests = useEdgeServiceRequests(usaSupabase())
+  const visits = useEdgeVisits(usaSupabase())
   const data = (operaciones.data ?? []).map(convertirOperacionATarea)
   const isPending = operaciones.isPending
   const isError = operaciones.isError
@@ -67,6 +71,18 @@ export function TareasList() {
   const isPlaceholderData = operaciones.isPlaceholderData
   const talleres = useTalleres()
   const empresas = useEmpresas({ incluirInactivas: true })
+  const visitRequestIds = new Set((visits.data ?? []).map(({ visit }) => String(visit.solicitud_id ?? "")))
+  const requestsWithoutVisit = usaSupabase()
+    ? (requests.data ?? []).filter(({ request }) => {
+        const id = String(request.id ?? "")
+        if (visitRequestIds.has(id)) return false
+        if (vista === "pasadas" || (estado !== TODOS && estado !== "pendiente")) return false
+        if (taller !== TODOS && taller !== "sin_asignar") return false
+        if (empresa !== TODOS && request.cliente_cuenta_id !== empresa) return false
+        return !q || String(request.numero_solicitud ?? "").includes(q) ||
+          String(request.yacimiento_id ?? "").toLowerCase().includes(q.toLowerCase())
+      })
+    : []
 
   const filas = vista === "pasadas" ? [...(data ?? [])].reverse() : (data ?? [])
   const sinAsignar = filas.filter((t) => t.estado === "pendiente").length
@@ -164,17 +180,36 @@ export function TareasList() {
         </p>
       )}
 
-      {isError ? (
-        <ErrorState error={error} onRetry={() => refetch()} />
-      ) : isPending ? (
+      {!requests.isPending && !visits.isPending && requestsWithoutVisit.length > 0 && (
+        <section className="space-y-2" aria-label="Solicitudes sin visita">
+          <h2 className="font-medium">Solicitudes de servicio sin visita programada</h2>
+          <ul className="space-y-2">
+            {requestsWithoutVisit.map(({ request, selected_valves }) => (
+              <SolicitudSinVisita
+                key={String(request.id)}
+                requestId={String(request.id)}
+                numero={String(request.numero_solicitud ?? "—")}
+                yacimientoId={String(request.yacimiento_id ?? "—")}
+                valvulas={selected_valves.length}
+                talleres={(talleres.data ?? []).filter((item) => item.activo).map((item) => ({ id: item.id, nombre: item.nombre }))}
+                onScheduled={() => { void refetch(); void requests.refetch(); void visits.refetch() }}
+              />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {isError || requests.isError || visits.isError ? (
+        <ErrorState error={error ?? requests.error ?? visits.error} onRetry={() => { void refetch(); void requests.refetch(); void visits.refetch() }} />
+      ) : isPending || (usaSupabase() && (requests.isPending || visits.isPending)) ? (
         <Skeleton className="h-80 w-full" />
-      ) : filas.length === 0 ? (
+      ) : filas.length === 0 && requestsWithoutVisit.length === 0 ? (
         <EmptyState
           icono={ClipboardList}
           titulo="No hay tareas con estos filtros"
           descripcion="Probá con otra vista o quitá algún filtro."
         />
-      ) : (
+      ) : filas.length > 0 ? (
         <div className={isPlaceholderData ? "opacity-60 transition-opacity" : undefined}>
           <div className="overflow-hidden rounded-xl border">
             <Table>
@@ -229,7 +264,58 @@ export function TareasList() {
             </Table>
           </div>
         </div>
-      )}
+      ) : null}
     </>
+  )
+}
+
+function SolicitudSinVisita({ requestId, numero, yacimientoId, valvulas, talleres, onScheduled }: {
+  requestId: string
+  numero: string
+  yacimientoId: string
+  valvulas: number
+  talleres: { id: string; nombre: string }[]
+  onScheduled: () => void
+}) {
+  const [fecha, setFecha] = useState("")
+  const [hora, setHora] = useState("08:00")
+  const [tallerId, setTallerId] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState("")
+
+  const schedule = async () => {
+    setBusy(true)
+    setError("")
+    try {
+      const startsAt = new Date(`${fecha}T${hora}:00-03:00`)
+      if (Number.isNaN(startsAt.getTime())) throw new Error("Elegí fecha y hora válidas")
+      const endsAt = new Date(startsAt.getTime() + 60 * 60 * 1000)
+      await edgeApi.serviceWorkflow.schedule(requestId, {
+        tallerMovilId: tallerId,
+        startsAt: startsAt.toISOString(),
+        endsAt: endsAt.toISOString(),
+      })
+      onScheduled()
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "No se pudo programar la visita")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <li className="space-y-2 rounded-lg border p-3 text-sm">
+      <p>Solicitud N° {numero} · Yacimiento {yacimientoId} <span className="text-muted-foreground">· Sin visita · {valvulas} válvulas seleccionadas</span></p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input type="date" aria-label={`Fecha de visita para solicitud ${numero}`} value={fecha} onChange={(event) => setFecha(event.target.value)} className="w-40" />
+        <Input type="time" aria-label={`Hora de visita para solicitud ${numero}`} value={hora} onChange={(event) => setHora(event.target.value)} className="w-32" />
+        <Select value={tallerId} onValueChange={setTallerId}>
+          <SelectTrigger className="w-48" aria-label={`Taller para solicitud ${numero}`}><SelectValue placeholder="Elegir Taller Móvil" /></SelectTrigger>
+          <SelectContent>{talleres.map((item) => <SelectItem key={item.id} value={item.id}>{item.nombre}</SelectItem>)}</SelectContent>
+        </Select>
+        <Button type="button" disabled={busy || !fecha || !tallerId} onClick={() => void schedule()}>{busy ? "Programando…" : "Programar visita"}</Button>
+      </div>
+      {error && <p role="alert" className="text-destructive">{error}</p>}
+    </li>
   )
 }

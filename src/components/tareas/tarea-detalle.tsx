@@ -33,6 +33,7 @@ import type { OperationRead } from "@/lib/hooks/queries"
 import { EstadoTareaBadge, TallerChip } from "./badges"
 import { TareaForm } from "./tarea-form"
 import { convertirOperacionATarea } from "./tarea-sheet"
+import { puedeCancelarVisitaAdministrativa, puedeEditarProgramacion } from "./estado-operacion"
 
 export function TareaDetalle({ id }: { id: string }) {
   const supabase = usaSupabase()
@@ -92,6 +93,9 @@ export function TareaDetalle({ id }: { id: string }) {
   }
 
   const cerrada = tarea.estado === "completada" || tarea.estado === "cancelada"
+  const cancelable = supabase
+    ? Boolean(operacion.data?.visit.visit.id) && puedeCancelarVisitaAdministrativa(operacion.data!.operation.estado)
+    : !cerrada
 
   return (
     <>
@@ -122,7 +126,7 @@ export function TareaDetalle({ id }: { id: string }) {
             Reabrir tarea
           </Button>
         ) : (
-          !cerrada && (
+          cancelable && (
             <ConfirmDialog
               trigger={
                 <Button variant="destructive">
@@ -145,11 +149,16 @@ export function TareaDetalle({ id }: { id: string }) {
         )}
       </div>
       {/* key: al cambiar el estado desde el encabezado, el formulario toma los valores nuevos */}
-      <TareaForm
-        key={`${tarea.id}-${tarea.estado}`}
-        tarea={tarea}
-        operation={supabase ? operacion.data : undefined}
-      />
+      {(!supabase || (operacion.data && puedeEditarProgramacion(operacion.data.operation.estado))) && (
+        <TareaForm
+          key={`${tarea.id}-${tarea.estado}`}
+          tarea={tarea}
+          operation={supabase ? operacion.data : undefined}
+        />
+      )}
+      {supabase && operacion.data && !puedeEditarProgramacion(operacion.data.operation.estado) && (
+        <p className="text-sm text-muted-foreground">La Visita de servicio ya no admite cambios de programación o selección.</p>
+      )}
       {supabase && operacion.data && <OrdenesTrabajo operation={operacion.data} />}
     </>
   )

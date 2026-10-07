@@ -15,6 +15,18 @@ export type AuditFilters = {
   limit?: number
   offset?: number
 }
+export type AdminCertificateFilters = {
+  client_id?: string
+  yacimiento_id?: string
+  plant_id?: string
+  valve_id?: string
+  state?: "borrador" | "pendiente" | "finalizado"
+  signature_state?: "none" | "partial" | "complete"
+  valid_until?: string
+  q?: string
+  limit?: number
+  offset?: number
+}
 const params = (filters: AuditFilters = {}) => {
   const query = new URLSearchParams()
   const map: Record<string, string | number | undefined> = { from: filters.from, to: filters.to, actor_id: filters.actorId, action: filters.action, target_type: filters.targetType, outcome: filters.outcome, client_id: filters.clientId, yacimiento_id: filters.yacimientoId, visit_id: filters.visitId, certificate_id: filters.certificateId, limit: filters.limit, offset: filters.offset }
@@ -31,11 +43,12 @@ export function createObservabilityApi(edge: EdgeAccessClient) {
     },
     metrics: (from: string, to: string) => edge.request(`admin/metrics?from=${from}&to=${to}`, adminMetricsDtoSchema),
     certificates: {
-      list: (filters: Record<string, string | undefined> = {}) => {
-        const query = new URLSearchParams(Object.entries(filters).filter(([, value]) => value).map(([key, value]) => [key, value!]))
+      list: (filters: AdminCertificateFilters = {}) => {
+        const query = new URLSearchParams(Object.entries(filters).filter(([, value]) => value !== undefined && value !== "").map(([key, value]) => [key, String(value!)]))
         return edge.request(`admin/certificates?${query}`, adminCertificateListDtoSchema)
       },
       get: (id: string) => edge.request(`admin/certificates/${encodeURIComponent(id)}`, adminCertificateDetailDtoSchema),
+      download: (id: string) => edge.download(`admin/certificates/${encodeURIComponent(id)}/download`),
     },
   }
 }

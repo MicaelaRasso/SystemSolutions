@@ -10,6 +10,8 @@ export default async function LoginPage(props: PageProps<"/login">) {
   const params = await props.searchParams
   const next = typeof params.next === "string" ? params.next : null
   const expirada = params.expirada === "1"
+  const invitacionInvalida = params.invite === "invalid"
+  const recuperacionInvalida = params.recovery === "invalid"
 
   return (
     <div className="grid min-h-svh lg:grid-cols-2">
@@ -42,7 +44,7 @@ export default async function LoginPage(props: PageProps<"/login">) {
               Usá el email y la contraseña de tu cuenta.
             </p>
           </div>
-          <LoginForm next={next} expirada={expirada} />
+          <LoginForm next={next} expirada={expirada} invitacionInvalida={invitacionInvalida} recuperacionInvalida={recuperacionInvalida} />
         </div>
       </main>
     </div>

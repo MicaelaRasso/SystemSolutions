@@ -72,22 +72,32 @@ export const offlineSyncHandler: RouteHandler = async ({ request, route, body, d
     request.method === "POST" &&
     segments[1] &&
     segments[2] === "claim"
-  )
+  ) {
+    const deviceId = typeof body.device_id === "string" ? body.device_id : ""
+    if (!isUuid(segments[1]) || !isUuid(deviceId))
+      throw new HttpError(400, "A valid visit id and device_id are required")
     return db.rpc("api_claim_visit_device", {
       target_visit: segments[1],
-      target_device: body.device_id,
+      target_device: deviceId,
     })
+  }
   if (
     segments[0] === "visits" &&
     request.method === "POST" &&
     segments[1] &&
     segments[2] === "sync"
-  )
+  ) {
+    const deviceId = typeof body.device_id === "string" ? body.device_id : ""
+    if (!isUuid(segments[1]) || !isUuid(deviceId))
+      throw new HttpError(400, "A valid visit id and device_id are required")
+    if (!Array.isArray(body.operations))
+      throw new HttpError(400, "An operations array is required")
     return db.rpc("api_sync_visit_batch", {
       target_visit: segments[1],
       operations: body.operations,
-      target_device: body.device_id,
+      target_device: deviceId,
     })
+  }
   if (segments[0] === "offline" && segments[1] === "working-set" && request.method === "GET")
     return db.rpc("api_offline_working_set")
 

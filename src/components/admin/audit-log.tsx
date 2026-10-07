@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { AuditFilters } from "@/lib/api/observability"
 import { useEdgeAuditEvents } from "@/lib/api/hooks"
+import { edgeApi } from "@/lib/api"
+import { useAuth } from "@/lib/auth/auth-provider"
 
 const PAGE_SIZE = 50
 
@@ -15,11 +17,31 @@ const filterClassName = "space-y-1 text-sm font-medium"
 const fieldClassName = "w-full"
 
 export function AuditLog() {
+  const { sesion } = useAuth()
   const [draftFilters, setDraftFilters] = useState<AuditFilters>({})
   const [filters, setFilters] = useState<AuditFilters>({ limit: PAGE_SIZE, offset: 0 })
+  const [exporting, setExporting] = useState<"json" | "csv" | null>(null)
+  const [exportError, setExportError] = useState<string | null>(null)
   const query = useEdgeAuditEvents(filters)
   const updateFilter = <Key extends keyof AuditFilters>(key: Key, value: AuditFilters[Key]) => {
     setDraftFilters((current) => ({ ...current, [key]: value || undefined }))
+  }
+  const exportAudit = async (format: "json" | "csv") => {
+    setExporting(format)
+    setExportError(null)
+    try {
+      const response = await edgeApi.observability.audit.export(filters, format)
+      const url = URL.createObjectURL(await response.blob())
+      const link = document.createElement("a")
+      link.href = url
+      link.download = format === "json" ? "auditoria.json" : "auditoria.csv"
+      link.click()
+      window.setTimeout(() => URL.revokeObjectURL(url), 0)
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : "No se pudo exportar la auditoría")
+    } finally {
+      setExporting(null)
+    }
   }
 
   return (
@@ -77,8 +99,20 @@ export function AuditLog() {
         <div className="flex items-end gap-2 lg:col-span-4">
           <Button onClick={() => setFilters({ ...draftFilters, limit: PAGE_SIZE, offset: 0 })}>Aplicar filtros</Button>
           <Button variant="outline" onClick={() => { setDraftFilters({}); setFilters({ limit: PAGE_SIZE, offset: 0 }) }}>Limpiar filtros</Button>
+          {sesion?.rol === "superadmin" && (
+            <>
+              <Button variant="outline" disabled={exporting !== null} onClick={() => void exportAudit("json")}>
+                {exporting === "json" ? "Exportando JSON…" : "Exportar JSON"}
+              </Button>
+              <Button variant="outline" disabled={exporting !== null} onClick={() => void exportAudit("csv")}>
+                {exporting === "csv" ? "Exportando CSV…" : "Exportar CSV"}
+              </Button>
+            </>
+          )}
         </div>
       </section>
+
+      {exportError && <p role="alert" className="text-sm text-destructive">{exportError}</p>}
 
       {query.isLoading && <div className="h-48 animate-pulse rounded-xl bg-muted" />}
       {query.isError && <ErrorState error={query.error} onRetry={() => void query.refetch()} />}

@@ -152,7 +152,7 @@ export interface NominaJornada {
 // Tareas
 // ---------------------------------------------------------------------------
 
-export type EstadoTarea = "pendiente" | "asignada" | "en_curso" | "completada" | "cancelada"
+export type EstadoTarea = "pendiente" | "asignada" | "programada" | "aceptada" | "en_curso" | "completada" | "cancelada"
 
 export interface Adjunto {
   id: ID

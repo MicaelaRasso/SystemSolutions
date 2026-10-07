@@ -1,5 +1,26 @@
 # Changelog
 
+## Phase 4 — local implementation 2026-10-07
+
+Scope: [#41](https://github.com/MicaelaRasso/SystemSolutions/issues/41), [#42](https://github.com/MicaelaRasso/SystemSolutions/issues/42), [#43](https://github.com/MicaelaRasso/SystemSolutions/issues/43), and [#66](https://github.com/MicaelaRasso/SystemSolutions/issues/66). Changes are local and undeployed.
+
+All four Phase 4 issues were closed on 2026-10-07 with the SQL runtime verification gap disclosed in their closing comments.
+
+- Added Súper Administrador audit JSON/CSV exports using the current filters, a complete matching event set, traceable CSV columns, and export audit records. Regular Administradores are denied by the database API.
+- Corrected operational dashboard period and expiration calculations to Argentina calendar dates, and added period validation, state handling, and coverage for the existing cards.
+- Added administrative certificate history filters, complete same-Válvula history links, directly related audit events, and an audited JSON certificate-data download on the existing history/detail screens. A PDF renderer is not present in this repository; the download format is JSON.
+- Kept Tarea as a frontend projection while showing programada and aceptada separately, showing Solicitudes without Visitas, and scheduling them through the existing API. Canonical Visita actions respect their lifecycle states; the Taller Móvil correction request remains disconnected.
+- Full Vitest suite passed (33 files, 307 tests), along with lint, typecheck, build, and `git diff --check`. SQL tests could not run because Docker/local Postgres is unavailable; migrations and database authorization behavior are not runtime verified.
+
+## Phase 3 — authorized 2026-10-06; local implementation
+
+Scope: [#67](https://github.com/MicaelaRasso/SystemSolutions/issues/67), [#70](https://github.com/MicaelaRasso/SystemSolutions/issues/70)–[#76](https://github.com/MicaelaRasso/SystemSolutions/issues/76), except production invitation setup [#68](https://github.com/MicaelaRasso/SystemSolutions/issues/68). Changes remain local and undeployed.
+
+- Added administrator Cuenta provisioning and role-scoped account APIs, account parent disablement/reactivation enforcement, recovery request and verified email-change contracts, account-security audit events, and session revocation after verified email change.
+- Required device identity and a downloaded catalog revision at visit start, checked device identity in offline routes, and closed a concurrent first-claim race in the database. Focused tests cover selected Técnico/signature attribution. Existing account edit forms no longer offer direct unverified email changes.
+- Supabase Auth's built-in email service is selected for now. Pending invitation resend now renews the same unconfirmed Auth identity and rotates its link; local Auth is configured for email confirmation, one-hour invite expiry, dual email-change confirmation, and email-change notification. Added an administrator Cuenta panel, invitation password setup, owner password recovery, and a shared Cuenta security page; activation waits for both email confirmation and password setup. Lost-email recovery still returns 501 because Auth's built-in mailer cannot initiate an administrator-verified change of an existing identity's address. #74 was closed; #67, #70–73, #75, and #76 remain open for unmet acceptance criteria or verification.
+- Current lint, typecheck, build, and `git diff --check` pass. The earlier `npm test` pass (29 files, 283 tests) predates the email-service follow-up. The Phase 3 migration and SQL test have not run because local Supabase cannot connect to Docker. No production configuration changed.
+
 ## Phase 2 — authorized 2026-10-06; implementation delivered for review
 
 Scope: GitHub issues [#40](https://github.com/MicaelaRasso/SystemSolutions/issues/40), [#62](https://github.com/MicaelaRasso/SystemSolutions/issues/62), [#63](https://github.com/MicaelaRasso/SystemSolutions/issues/63), [#64](https://github.com/MicaelaRasso/SystemSolutions/issues/64), and [#65](https://github.com/MicaelaRasso/SystemSolutions/issues/65). The changes are local and have not been deployed. Issues remain open pending review; this phase does not authorize production changes or issue closure.

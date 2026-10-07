@@ -35,6 +35,7 @@ export const RUTA_INICIO: Record<Rol, string> = {
 }
 
 const PERMISOS_RUTA: { prefijo: string; roles: Rol[] }[] = [
+  { prefijo: "/cuenta", roles: ["superadmin", "admin", "taller", "cliente"] },
   { prefijo: "/superadmin", roles: ["superadmin"] },
   { prefijo: "/admin", roles: ["superadmin", "admin"] },
   { prefijo: "/taller", roles: ["taller"] },
@@ -240,6 +241,8 @@ export function estadoPatron(vencimiento: string, hoy: Date = new Date()) {
 export const ESTADO_TAREA_LABEL: Record<EstadoTarea, string> = {
   pendiente: "Sin asignar",
   asignada: "Asignada",
+  programada: "Programada",
+  aceptada: "Aceptada",
   en_curso: "En curso",
   completada: "Completada",
   cancelada: "Cancelada",

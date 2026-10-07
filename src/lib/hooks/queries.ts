@@ -116,6 +116,8 @@ function operationFilters(filtro: FiltroTareas) {
         ? ["solicitada" as const]
         : estado === "asignada"
           ? (["programada", "aceptada"] as const)
+          : estado === "programada" || estado === "aceptada"
+            ? [estado]
           : [estado],
     ),
     workshopId: filtro.tallerId === "sin_asignar" ? undefined : filtro.tallerId,

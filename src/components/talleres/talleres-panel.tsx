@@ -1,7 +1,7 @@
 "use client"
 
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Check, Pencil, Plus, Tablet, Truck } from "lucide-react"
+import { Check, Mail, Pencil, Plus, Tablet, Truck } from "lucide-react"
 import { Controller, useForm } from "react-hook-form"
 
 import { EstadoActivoBadge } from "@/components/certificados/badges"
@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/field"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
+import { Input } from "@/components/ui/input"
+import { edgeApi } from "@/lib/api"
 import { COLORES_TALLER } from "@/lib/domain/catalogos"
 import { tallerSchema, type TallerInput } from "@/lib/domain/schemas"
 import { qk, useServiceMutation, useTalleres } from "@/lib/hooks/queries"
@@ -35,6 +37,12 @@ export function TalleresPanel() {
     ({ id, activo }: { id: string; activo: boolean }) => services.talleres.update(id, { activo }),
     { invalidar: INVALIDAR },
   )
+  const recuperar = useServiceMutation((id: string) => edgeApi.identity.triggerPasswordRecovery(id), {
+    exito: "Solicitud de recuperación enviada",
+  })
+  const reenviar = useServiceMutation((id: string) => edgeApi.identity.administrators.resendInvitation(id), {
+    exito: "Invitación reenviada",
+  })
 
   if (isError) return <ErrorState error={error} onRetry={() => refetch()} />
 
@@ -112,6 +120,18 @@ export function TalleresPanel() {
                     {t.activo ? "Puede ingresar desde la tablet" : "Cuenta deshabilitada"}
                   </label>
                 </div>
+                {t.usuarioId && t.estadoCuenta === "pendiente" && <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={reenviar.isPending}
+                  onClick={() => reenviar.mutate(t.usuarioId)}
+                ><Mail />Reenviar invitación</Button>}
+                {t.usuarioId && t.estadoCuenta === "activa" && <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={recuperar.isPending}
+                  onClick={() => recuperar.mutate(t.usuarioId)}
+                ><Mail />Enviar recuperación</Button>}
               </CardContent>
             </Card>
           ))}
@@ -166,7 +186,7 @@ function TallerForm({
   })
   const guardar = useServiceMutation(
     (data: TallerInput) =>
-      taller ? services.talleres.update(taller.id, data) : services.talleres.create(data),
+      taller ? services.talleres.update(taller.id, { nombre: data.nombre, color: data.color, activo: data.activo }) : services.talleres.create(data),
     { exito: taller ? "Taller actualizado" : "Taller creado", invalidar: INVALIDAR },
   )
 
@@ -180,13 +200,21 @@ function TallerForm({
           placeholder="Taller Móvil 4"
           autoFocus
         />
-        <CampoTexto
-          form={form}
-          name="email"
-          label="Email de la cuenta"
-          type="email"
-          placeholder="taller4@systemsrl.com.ar"
-        />
+        {taller ? (
+          <Field>
+            <FieldLabel htmlFor="taller-email">Email de la cuenta</FieldLabel>
+            <Input id="taller-email" type="email" readOnly {...form.register("email")} />
+            <FieldDescription>El cambio de email requiere verificación de la nueva dirección.</FieldDescription>
+          </Field>
+        ) : (
+          <CampoTexto
+            form={form}
+            name="email"
+            label="Email de la cuenta"
+            type="email"
+            placeholder="taller4@systemsrl.com.ar"
+          />
+        )}
         <Controller
           control={form.control}
           name="color"

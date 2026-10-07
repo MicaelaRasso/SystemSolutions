@@ -1,6 +1,6 @@
 begin;
 
-select plan(88);
+select plan(92);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000001101', 'workflow-client-a@example.test'),
@@ -507,6 +507,34 @@ select is(
   (select estado from public.certificados where id = current_setting('app.workflow_certificate_id')::uuid),
   'pendiente'::public.estado_certificado,
   'a complete certificate closes as pending while the Cliente signature is absent'
+);
+select public.test_workflow_set_actor('00000000-0000-0000-0000-000000001101');
+select throws_ok(
+  $$select public.api_admin_metrics('2099-01-10'::date, '2099-01-10'::date)$$,
+  '42501', 'Only an active Administrador can read audit data',
+  'a non-administrator cannot read operational metrics'
+);
+select public.test_workflow_set_actor('00000000-0000-0000-0000-000000001105');
+update public.visitas_servicio
+set updated_at = '2099-01-10 02:59:59+00'::timestamptz
+where id = current_setting('app.workflow_primary_visit_id')::uuid;
+select is(
+  public.api_admin_metrics('2099-01-10'::date, '2099-01-10'::date)->>'completed_visits',
+  '0',
+  'the completed-visit metric excludes timestamps before midnight in Argentina'
+);
+update public.visitas_servicio
+set updated_at = '2099-01-10 03:00:00+00'::timestamptz
+where id = current_setting('app.workflow_primary_visit_id')::uuid;
+select is(
+  public.api_admin_metrics('2099-01-10'::date, '2099-01-10'::date)->>'completed_visits',
+  '1',
+  'the completed-visit metric includes timestamps at midnight in Argentina'
+);
+select is(
+  public.api_admin_metrics('2099-01-10'::date, '2099-01-10'::date)->>'pending_certificates',
+  '1',
+  'pending certificates remain a separate outstanding-work count'
 );
 select is(
   (select count(*) from public.certificados c

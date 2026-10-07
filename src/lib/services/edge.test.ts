@@ -7,6 +7,9 @@ describe("EdgeAccessClient", () => {
   it.each([
     ["context", "identity-admin"],
     ["accounts", "identity-admin"],
+    ["accounts/administrators", "identity-admin"],
+    ["accounts/a-1/invitation/resend", "identity-admin"],
+    ["account-security/email-change", "identity-admin"],
     ["yacimientos/y1/tree", "asset-access"],
     ["hierarchy", "asset-access"],
     ["valves/v1", "asset-access"],

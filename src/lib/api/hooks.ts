@@ -10,7 +10,7 @@ import { offlineInvalidations, offlineQueryKeys } from "./offline"
 import { getOfflineDeviceId } from "../offline/device"
 import { serviceWorkflowInvalidations, serviceWorkflowQueryKeys } from "./service-workflow"
 import { operationQueryKeys, type OperationFilters } from "./operations"
-import type { AuditFilters } from "./observability"
+import type { AdminCertificateFilters, AuditFilters } from "./observability"
 import type {
   CreateDescendantInput,
   CreateServiceRequestInput,
@@ -61,10 +61,11 @@ export const useEdgeValveCertificateHistory = (valvulaId: string | undefined) =>
     enabled: Boolean(valvulaId),
   })
 
-export const useEdgeServiceRequests = () =>
+export const useEdgeServiceRequests = (enabled = true) =>
   useQuery({
     queryKey: serviceWorkflowQueryKeys.requests(),
     queryFn: edgeApi.serviceWorkflow.listRequests,
+    enabled,
   })
 
 export const useEdgeServiceRequest = (requestId: string | undefined) =>
@@ -74,10 +75,11 @@ export const useEdgeServiceRequest = (requestId: string | undefined) =>
     enabled: Boolean(requestId),
   })
 
-export const useEdgeVisits = () =>
+export const useEdgeVisits = (enabled = true) =>
   useQuery({
     queryKey: serviceWorkflowQueryKeys.visits(),
     queryFn: edgeApi.serviceWorkflow.listVisits,
+    enabled,
   })
 
 export const useEdgePendingClientSignatureVisits = () =>
@@ -154,7 +156,7 @@ export const useEdgeAdminMetrics = (from: string, to: string) =>
   useQuery({
     queryKey: ["edge", "admin-metrics", from, to],
     queryFn: () => edgeApi.observability.metrics(from, to),
-    enabled: Boolean(from && to),
+    enabled: Boolean(from && to && from <= to),
   })
 export const useEdgeAuditEvents = (filters: AuditFilters = {}) => {
   return useQuery({
@@ -162,10 +164,10 @@ export const useEdgeAuditEvents = (filters: AuditFilters = {}) => {
     queryFn: () => edgeApi.observability.audit.list(filters),
   })
 }
-export const useEdgeAdminCertificates = (q?: string) =>
+export const useEdgeAdminCertificates = (filters: AdminCertificateFilters = {}) =>
   useQuery({
-    queryKey: ["edge", "admin-certificates", q],
-    queryFn: () => edgeApi.observability.certificates.list(q ? { q } : {}),
+    queryKey: ["edge", "admin-certificates", filters],
+    queryFn: () => edgeApi.observability.certificates.list(filters),
   })
 export const useEdgeAdminCertificate = (id: string | undefined) =>
   useQuery({

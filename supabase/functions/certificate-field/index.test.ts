@@ -106,6 +106,25 @@ describe("certificate signature upload seam", () => {
     expect(storage.uploadStorageObject).not.toHaveBeenCalled()
   })
 
+  it("requires a selected Técnico name before uploading a Técnico signature", async () => {
+    const rpc = vi.fn()
+    const response = await handler(
+      context(
+        {
+          file: new File(["signature"], "signature.png", { type: "image/png" }),
+          party: "tecnico",
+          signer_name: "   ",
+        },
+        rpc,
+      ),
+    )
+
+    expect(response).toBeInstanceOf(Response)
+    expect(response.status).toBe(400)
+    expect(rpc).not.toHaveBeenCalled()
+    expect(storage.uploadStorageObject).not.toHaveBeenCalled()
+  })
+
   it("uploads to a server-generated path and registers that exact path", async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: { signature_id: "signature-1", finalized_certificates: [] },

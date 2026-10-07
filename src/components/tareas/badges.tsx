@@ -6,6 +6,8 @@ import { cn } from "@/lib/utils"
 const ESTILO: Record<EstadoTarea, string> = {
   pendiente: "bg-amber-100 text-amber-900",
   asignada: "bg-sky-100 text-sky-800",
+  programada: "bg-sky-100 text-sky-800",
+  aceptada: "bg-teal-100 text-teal-800",
   en_curso: "bg-violet-100 text-violet-800",
   completada: "bg-emerald-100 text-emerald-800",
   cancelada: "bg-zinc-200 text-zinc-600 line-through",

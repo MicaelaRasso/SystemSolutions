@@ -156,7 +156,7 @@ export class EdgeAccessClient {
     const route = path.replace(/^\//, "").split("?", 1)[0]
     if (route === "backups") return "backup-export"
     if (
-      /^(context(?:\/|$)|accounts(?:\/|$)|mobile-workshops(?:\/|$)|technicians(?:\/|$)|staffing(?:\/|$)|catalogs(?:\/|$)|catalog-options(?:\/|$)|test-standards(?:\/|$))/.test(
+      /^(context(?:\/|$)|accounts(?:\/|$)|account-security(?:\/|$)|mobile-workshops(?:\/|$)|technicians(?:\/|$)|staffing(?:\/|$)|catalogs(?:\/|$)|catalog-options(?:\/|$)|test-standards(?:\/|$))/.test(
         route,
       )
     )
@@ -230,9 +230,17 @@ export class EdgeAccessClient {
     if (error || !data.user || !data.session) {
       throw new ServiceError(error?.message ?? "Email o contraseña incorrectos", "unauthorized")
     }
-    const user = this.userFromContext(await this.context(), data.user)
-    this.currentUser = user
-    return user
+    try {
+      const user = this.userFromContext(await this.context(), data.user)
+      this.currentUser = user
+      return user
+    } catch (error) {
+      // Auth may issue a session for a Cuenta that the application has since
+      // disabled. Clear that session when the gateway refuses access.
+      if (error instanceof ServiceError && error.code === "unauthorized")
+        await this.auth().auth.signOut()
+      throw error
+    }
   }
 
   async context(): Promise<EdgeContext> {

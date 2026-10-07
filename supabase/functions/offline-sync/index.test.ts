@@ -199,3 +199,108 @@ describe("offline-sync working set route", () => {
     expect(rpc).toHaveBeenCalledWith("api_offline_working_set")
   })
 })
+
+describe("offline-sync visit identity validation", () => {
+  it("claims a visit using the same device identity supplied by its session", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: { visit_id: visitId, device_id: deviceId },
+      error: null,
+    })
+
+    await expect(
+      handler(
+        context(
+          new Request(`https://example.test/functions/v1/offline-sync/visits/${visitId}/claim`, {
+            method: "POST",
+          }),
+          ["visits", visitId, "claim"],
+          rpc,
+          { device_id: deviceId },
+        ),
+      ),
+    ).resolves.toMatchObject({ data: { visit_id: visitId, device_id: deviceId }, error: null })
+    expect(rpc).toHaveBeenCalledWith("api_claim_visit_device", {
+      target_visit: visitId,
+      target_device: deviceId,
+    })
+  })
+
+  it.each([
+    { route: ["visits", "invalid", "claim"], body: { device_id: deviceId } },
+    { route: ["visits", visitId, "claim"], body: { device_id: "invalid" } },
+    { route: ["visits", visitId, "sync"], body: { device_id: "invalid", operations: [] } },
+    { route: ["visits", visitId, "sync"], body: { device_id: deviceId, operations: null } },
+  ])("rejects invalid visit identity or sync operation shape before RPC", async ({ route, body }) => {
+    const rpc = vi.fn()
+
+    await expect(
+      handler(
+        context(
+          new Request(`https://example.test/functions/v1/offline-sync/${route.join("/")}`, {
+            method: "POST",
+          }),
+          route,
+          rpc,
+          body,
+        ),
+      ),
+    ).rejects.toThrow()
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it("sends offline operations together with the claiming device identity", async () => {
+    const operations = [{ operation_id: operationId, kind: "complete_visit", payload: {} }]
+    const rpc = vi.fn().mockResolvedValue({ data: { visit_id: visitId, operations: [] }, error: null })
+
+    await handler(
+      context(
+        new Request(`https://example.test/functions/v1/offline-sync/visits/${visitId}/sync`, {
+          method: "POST",
+        }),
+        ["visits", visitId, "sync"],
+        rpc,
+        { device_id: deviceId, operations },
+      ),
+    )
+
+    expect(rpc).toHaveBeenCalledWith("api_sync_visit_batch", {
+      target_visit: visitId,
+      target_device: deviceId,
+      operations,
+    })
+  })
+
+  it("preserves selected Técnico signature identity in the device-bound sync batch", async () => {
+    const operations = [
+      {
+        operation_id: operationId,
+        kind: "submit_signature",
+        payload: {
+          party: "tecnico",
+          signer_name: "Ana Técnica",
+          bucket: "certificate-signatures",
+          object_path: `visits/${visitId}/tecnico/${mediaId}.png`,
+          image_id: mediaId,
+        },
+      },
+    ]
+    const rpc = vi.fn().mockResolvedValue({ data: { visit_id: visitId, operations: [] }, error: null })
+
+    await handler(
+      context(
+        new Request(`https://example.test/functions/v1/offline-sync/visits/${visitId}/sync`, {
+          method: "POST",
+        }),
+        ["visits", visitId, "sync"],
+        rpc,
+        { device_id: deviceId, operations },
+      ),
+    )
+
+    expect(rpc).toHaveBeenCalledWith("api_sync_visit_batch", {
+      target_visit: visitId,
+      target_device: deviceId,
+      operations,
+    })
+  })
+})

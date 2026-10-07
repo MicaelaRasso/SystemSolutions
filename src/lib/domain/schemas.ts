@@ -138,7 +138,7 @@ export const tareaSchema = z
     pdRto: opcional,
     ordenTrabajo: opcional,
     condiciones: z.array(z.string()),
-    estado: z.enum(["pendiente", "asignada", "en_curso", "completada", "cancelada"]),
+    estado: z.enum(["pendiente", "asignada", "programada", "aceptada", "en_curso", "completada", "cancelada"]),
   })
   .refine((t) => t.fechaEjecucion >= t.fechaSolicitud, {
     path: ["fechaEjecucion"],

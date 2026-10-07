@@ -14,6 +14,33 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isString = (value: unknown): value is string => typeof value === "string"
 const isNonEmptyString = (value: unknown): value is string => isString(value) && value.length > 0
 
+const csvCell = (value: unknown) => {
+  const raw = value == null ? "" : typeof value === "string" ? value : JSON.stringify(value)
+  const safe = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw
+  return `"${safe.replaceAll('"', '""')}"`
+}
+
+const auditCsvColumns = [
+  ["id", "ID"],
+  ["recibida_en", "Recibido en servidor"],
+  ["evento_dispositivo_en", "Evento en dispositivo"],
+  ["actor_cuenta_id", "ID de cuenta del actor"],
+  ["actor_email", "Correo del actor"],
+  ["actor_rol", "Rol del actor"],
+  ["accion", "Acción"],
+  ["tipo_objetivo", "Tipo de objetivo"],
+  ["objetivo_id", "ID del objetivo"],
+  ["resultado", "Resultado"],
+  ["identidad_correlacion", "ID de correlación"],
+  ["cliente_cuenta_id", "ID de cuenta del Cliente"],
+  ["yacimiento_id", "ID de Yacimiento"],
+  ["yacimiento_nombre", "Yacimiento"],
+  ["visita_id", "ID de Visita de servicio"],
+  ["certificado_id", "ID de Certificado"],
+  ["resumen_cambio", "Resumen del cambio"],
+  ["identificadores_relacionados", "Identificadores relacionados"],
+] as const
+
 type OperationSummary = Record<string, unknown>
 type OperationsListEnvelope = {
   items: OperationSummary[]
@@ -226,7 +253,11 @@ export const serviceWorkflowHandler: RouteHandler = async ({
 
   if (segments[0] === "audit" && request.method === "GET" && (segments.length === 1 || (segments.length === 2 && segments[1] === "export"))) {
     const query = new URL(request.url).searchParams
-    const result = await db.rpc(segments[1] === "export" ? "api_audit_export" : "api_audit_events", {
+    const isExport = segments[1] === "export"
+    const format = query.get("format")
+    if (isExport && format !== "json" && format !== "csv")
+      return json(request, { error: "format must be json or csv" }, 400, correlationId)
+    const result = await db.rpc(isExport ? "api_audit_export" : "api_audit_events", {
       from_date: query.get("from"), to_date: query.get("to"),
       actor_filter: query.get("actor_id"), action_filter: query.get("action"),
       target_type_filter: query.get("target_type"), outcome_filter: query.get("outcome"),
@@ -235,14 +266,19 @@ export const serviceWorkflowHandler: RouteHandler = async ({
       limit_count: Number(query.get("limit") ?? 100), offset_count: Number(query.get("offset") ?? 0),
     })
     if (result.error) return result
-    if (segments[1] !== "export") return result
+    if (!isExport) return result
     const envelope = result.data as { items?: Record<string, unknown>[] }
-    const format = query.get("format")
-    if (format !== "json" && format !== "csv") return json(request, { error: "format must be json or csv" }, 400, correlationId)
-    if (format === "json") return new Response(JSON.stringify(envelope.items ?? []), { status: 200, headers: { "content-type": "application/json", "content-disposition": "attachment; filename=auditoria.json" } })
-    const columns = ["id", "recibida_en", "actor_cuenta_id", "accion", "tipo_objetivo", "objetivo_id", "resultado", "identidad_correlacion"]
-    const csv = [columns.join(","), ...(envelope.items ?? []).map((row) => columns.map((column) => JSON.stringify(row[column] ?? "")).join(","))].join("\n")
-    return new Response(csv, { status: 200, headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": "attachment; filename=auditoria.csv" } })
+    const events = envelope.items ?? []
+    if (format === "json") return new Response(JSON.stringify(events), { status: 200, headers: { "content-type": "application/json; charset=utf-8", "content-disposition": "attachment; filename=auditoria.json", ...(correlationId ? { "x-correlation-id": correlationId } : {}) } })
+    const csv = [auditCsvColumns.map(([, label]) => csvCell(label)).join(","), ...events.map((row) => auditCsvColumns.map(([column]) => csvCell(row[column])).join(","))].join("\r\n")
+    return new Response(`\uFEFF${csv}\r\n`, {
+      status: 200,
+      headers: {
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": "attachment; filename=auditoria.csv",
+        ...(correlationId ? { "x-correlation-id": correlationId } : {}),
+      },
+    })
   }
 
   if (segments[0] === "audit" && request.method === "GET" && segments.length === 2)
@@ -256,7 +292,8 @@ export const serviceWorkflowHandler: RouteHandler = async ({
     const query = new URL(request.url).searchParams
     return db.rpc("api_admin_certificate_history", {
       client_filter: query.get("client_id"), yacimiento_filter: query.get("yacimiento_id"), plant_filter: query.get("plant_id"),
-      valve_filter: query.get("valve_id"), state_filter: query.get("state"), valid_until_filter: query.get("valid_until"),
+      valve_filter: query.get("valve_id"), state_filter: query.get("state"), signature_state_filter: query.get("signature_state"),
+      valid_until_filter: query.get("valid_until"),
       search_text: query.get("q"),
       limit_count: Number(query.get("limit") ?? 100), offset_count: Number(query.get("offset") ?? 0),
     })
@@ -379,8 +416,6 @@ export const serviceWorkflowHandler: RouteHandler = async ({
       ? body.replacement_catalog_version_id
       : ""
     const deviceId = typeof body.device_id === "string" ? body.device_id : ""
-    if (!replacementCatalogVersionId && !deviceId)
-      return db.rpc("api_start_visit", { visit_id: segments[1] })
     if (!isUuid(replacementCatalogVersionId) || !isUuid(deviceId))
       throw new HttpError(400, "A valid replacement catalog version and device_id are required")
     return db.rpc("api_start_visit_with_catalog", {

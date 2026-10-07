@@ -1,7 +1,7 @@
 "use client"
 
 import { zodResolver } from "@hookform/resolvers/zod"
-import { AlertTriangle, Ban, Pencil, Plus, Users } from "lucide-react"
+import { AlertTriangle, Ban, Mail, Pencil, Plus, Users } from "lucide-react"
 import { useMemo, useState } from "react"
 import { Controller, useForm } from "react-hook-form"
 
@@ -31,6 +31,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
+import { edgeApi } from "@/lib/api"
 import {
   Table,
   TableBody,
@@ -77,6 +78,12 @@ export function UsuariosCliente({ empresaId }: { empresaId: ID }) {
     ({ id, activo }: { id: ID; activo: boolean }) => services.usuarios.update(id, { activo }),
     { invalidar: [["usuarios"]] },
   )
+  const recuperar = useServiceMutation((id: ID) => edgeApi.identity.triggerPasswordRecovery(id), {
+    exito: "Solicitud de recuperación enviada",
+  })
+  const reenviar = useServiceMutation((id: ID) => edgeApi.identity.administrators.resendInvitation(id), {
+    exito: "Invitación reenviada",
+  })
 
   if (usuarios.isError || arbol.isError) {
     return (
@@ -166,6 +173,20 @@ export function UsuariosCliente({ empresaId }: { empresaId: ID }) {
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-1">
+                      {u.estadoCuenta === "pendiente" && <Button
+                        variant="ghost"
+                        size="icon"
+                        disabled={reenviar.isPending}
+                        aria-label={`Reenviar invitación a ${nombreCompleto(u)}`}
+                        onClick={() => reenviar.mutate(u.id)}
+                      ><Mail /></Button>}
+                      {u.estadoCuenta === "activa" && <Button
+                        variant="ghost"
+                        size="icon"
+                        disabled={recuperar.isPending}
+                        aria-label={`Enviar recuperación de contraseña a ${nombreCompleto(u)}`}
+                        onClick={() => recuperar.mutate(u.id)}
+                      ><Mail /></Button>}
                       <UsuarioDialog
                         empresaId={empresaId}
                         arbol={arbol.data}
@@ -306,7 +327,7 @@ function UsuarioForm({
   const guardar = useServiceMutation(
     async (data: UsuarioClienteInput) => {
       const u = usuario
-        ? await services.usuarios.update(usuario.id, data)
+        ? await services.usuarios.update(usuario.id, { nombre: data.nombre, apellido: data.apellido, activo: data.activo })
         : await services.usuarios.create({ ...data, rol: "cliente", empresaId })
       await services.usuarios.setAccesos(u.id, accesosDesdeClaves(accesos))
       return u
@@ -320,7 +341,7 @@ function UsuarioForm({
   const texto = (name: "nombre" | "apellido" | "email", label: string, type = "text") => (
     <Field data-invalid={!!errors[name]}>
       <FieldLabel htmlFor={`u-${name}`}>{label}</FieldLabel>
-      <Input id={`u-${name}`} type={type} aria-invalid={!!errors[name]} {...form.register(name)} />
+      <Input id={`u-${name}`} type={type} readOnly={name === "email" && !!usuario} aria-invalid={!!errors[name]} {...form.register(name)} />
       <FieldError errors={[errors[name]]} />
     </Field>
   )
@@ -335,7 +356,10 @@ function UsuarioForm({
         <div className="grid gap-4 sm:grid-cols-2">
           {texto("nombre", "Nombre")}
           {texto("apellido", "Apellido")}
-          <div className="sm:col-span-2">{texto("email", "Email", "email")}</div>
+          <div className="sm:col-span-2">
+            {texto("email", "Email", "email")}
+            {usuario && <p className="mt-1 text-xs text-muted-foreground">El cambio de email requiere verificación de la nueva dirección.</p>}
+          </div>
         </div>
 
         <FieldSet>

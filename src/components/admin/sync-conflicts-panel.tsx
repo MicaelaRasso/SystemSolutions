@@ -46,7 +46,14 @@ export function SyncConflictsPanel() {
     }
   }, [])
 
-  useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => {
+    void edgeApi.syncConflicts.list()
+      .then((result) => setItems(result.items.filter((item): item is Conflict =>
+        typeof item.id === "string" && typeof item.operation_id === "string" && typeof item.visita_id === "string",
+      )))
+      .catch((caught) => setError(caught instanceof Error ? caught.message : "No se pudieron cargar los conflictos"))
+      .finally(() => setLoading(false))
+  }, [])
 
   const resolve = async (conflict: Conflict, action: "accept" | "reject" | "correction") => {
     const reason = reasons[conflict.id]?.trim() ?? ""

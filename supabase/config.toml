@@ -3,6 +3,17 @@ project_id = "system-solutions"
 [api]
 enabled = true
 
+[auth]
+additional_redirect_urls = ["http://localhost:3000/setup-password", "http://localhost:3000/reset-password", "http://localhost:3000/cuenta/seguridad", "http://localhost:3000/auth/callback"]
+
+[auth.email]
+enable_confirmations = true
+double_confirm_changes = true
+otp_expiry = 3600
+
+[auth.email.notification.email_changed]
+enabled = true
+
 [functions.identity-admin]
 verify_jwt = true
 

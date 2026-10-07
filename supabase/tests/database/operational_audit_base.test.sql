@@ -1,6 +1,6 @@
 begin;
 
-select plan(25);
+select plan(29);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000009901', 'audit-admin@example.test'),
@@ -134,6 +134,11 @@ select is(
   'regular Administrador sees operational events but not configuration events'
 );
 select throws_ok(
+  $$select public.api_audit_export()$$,
+  '42501', 'Only the Súper Administrador can export audit data',
+  'regular Administrador cannot export audit records'
+);
+select throws_ok(
   $$select public.api_audit_events(limit_count => 101)$$,
   '22023', 'Invalid pagination', 'pagination limits are bounded'
 );
@@ -150,6 +155,25 @@ select is(
   jsonb_array_length(public.api_audit_events()->'items'),
   7,
   'Súper Administrador sees all event categories, including rejected attempts'
+);
+select is(
+  public.api_audit_export(action_filter => 'visita_completada')->>'total',
+  '1',
+  'audit export returns all rows matching the active filters'
+);
+select is(
+  public.api_audit_export(action_filter => 'visita_completada')->'items'->0->>'accion',
+  'visita_completada',
+  'audit export excludes events that do not match the requested action'
+);
+select ok(
+  (public.api_audit_export(action_filter => 'visita_completada')->'items'->0) ?& array[
+    'id', 'recibida_en', 'evento_dispositivo_en', 'actor_cuenta_id', 'actor_rol', 'actor_email',
+    'accion', 'tipo_objetivo', 'objetivo_id', 'resultado', 'identidad_correlacion',
+    'cliente_cuenta_id', 'yacimiento_id', 'yacimiento_nombre', 'visita_id', 'certificado_id',
+    'resumen_cambio', 'identificadores_relacionados'
+  ],
+  'audit JSON export retains the full event and trace identifiers'
 );
 select is(
   (public.api_audit_events(outcome_filter => 'fallido')->'items'->0->>'resultado'),

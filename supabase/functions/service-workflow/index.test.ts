@@ -290,6 +290,119 @@ describe("service-workflow audit read routes", () => {
     expect(response).toBeInstanceOf(Response)
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toEqual({ error: "format must be json or csv" })
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it("returns complete matching event rows as JSON attachments", async () => {
+    const event = {
+      id: "audit-id",
+      actor_cuenta_id: "actor-id",
+      actor_email: "admin@example.test",
+      actor_rol: "super_administrador",
+      accion: "visita_completada",
+      tipo_objetivo: "visita_servicio",
+      objetivo_id: "visit-id",
+      resultado: "exitoso",
+      recibida_en: "2026-10-07T12:00:00Z",
+      evento_dispositivo_en: "2026-10-07T11:55:00Z",
+      identidad_correlacion: "trace-123",
+      resumen_cambio: { estado_nuevo: "completada" },
+      identificadores_relacionados: { solicitud_id: "request-id" },
+      certificado_id: "certificate-id",
+      cliente_cuenta_id: "client-id",
+      yacimiento_id: "deposit-id",
+      yacimiento_nombre: "Yacimiento Norte",
+    }
+    const rpc = vi.fn().mockResolvedValue({ data: { items: [event], total: 1 }, error: null })
+    const request = new Request("https://example.test/functions/v1/service-workflow/audit/export?action=visita_completada&format=json")
+    const response = await handler(context(request, ["audit", "export"], rpc)) as Response
+
+    expect(rpc).toHaveBeenCalledWith("api_audit_export", expect.objectContaining({ action_filter: "visita_completada" }))
+    expect(response.headers.get("content-disposition")).toContain("auditoria.json")
+    await expect(response.json()).resolves.toEqual([event])
+  })
+
+  it("renders CSV with quoted event details and trace identifiers", async () => {
+    const event = {
+      id: "audit-id",
+      actor_cuenta_id: "actor-id",
+      actor_email: "admin@example.test",
+      actor_rol: "super_administrador",
+      accion: "visita_completada",
+      tipo_objetivo: "visita_servicio",
+      objetivo_id: "visit-id",
+      resultado: "exitoso",
+      recibida_en: "2026-10-07T12:00:00Z",
+      evento_dispositivo_en: "2026-10-07T11:55:00Z",
+      identidad_correlacion: "trace-123",
+      resumen_cambio: { comentario: 'Revisión, "aprobada"' },
+      identificadores_relacionados: { solicitud_id: "request-id" },
+      certificado_id: "certificate-id",
+      cliente_cuenta_id: "client-id",
+      yacimiento_id: "deposit-id",
+      yacimiento_nombre: "Yacimiento Norte",
+    }
+    const rpc = vi.fn().mockResolvedValue({ data: { items: [event], total: 1 }, error: null })
+    const request = new Request("https://example.test/functions/v1/service-workflow/audit/export?visit_id=visit-id&format=csv")
+    const response = await handler(context(request, ["audit", "export"], rpc)) as Response
+    const csv = await response.text()
+
+    expect(response.headers.get("content-type")).toContain("text/csv")
+    expect(response.headers.get("content-disposition")).toContain("auditoria.csv")
+    expect(csv).toContain("ID de correlación")
+    expect(csv).toContain("trace-123")
+    expect(csv).toContain('""comentario""')
+    expect(csv).toContain('Revisión, \\\""aprobada\\\""')
+    expect(rpc).toHaveBeenCalledWith("api_audit_export", expect.objectContaining({ visit_filter: "visit-id" }))
+  })
+})
+
+describe("service-workflow operational metrics route", () => {
+  it("passes the selected period to the role-scoped metrics RPC", async () => {
+    const metrics = {
+      from: "2026-10-01",
+      to: "2026-10-31",
+      finalized_certificates: 2,
+      completed_visits: 3,
+      pending_certificates: 4,
+      expiring_certificates: 5,
+      unassigned_visits: 6,
+    }
+    const rpc = vi.fn().mockResolvedValue({ data: metrics, error: null })
+    const request = new Request("https://example.test/functions/v1/service-workflow/admin/metrics?from=2026-10-01&to=2026-10-31")
+
+    await expect(handler(context(request, ["admin", "metrics"], rpc))).resolves.toEqual({
+      data: metrics,
+      error: null,
+    })
+    expect(rpc).toHaveBeenCalledWith("api_admin_metrics", {
+      period_from: "2026-10-01",
+      period_to: "2026-10-31",
+    })
+  })
+})
+
+describe("service-workflow administrative certificate history routes", () => {
+  it("passes all searchable history filters, including visit signature state", async () => {
+    const envelope = { items: [], total: 0, limit: 50, offset: 0 }
+    const rpc = vi.fn().mockResolvedValue({ data: envelope, error: null })
+    const request = new Request("https://example.test/functions/v1/service-workflow/admin/certificates?client_id=client-1&yacimiento_id=field-1&plant_id=plant-1&valve_id=valve-1&state=pendiente&signature_state=partial&valid_until=2027-10-07&q=V-1&limit=50&offset=0")
+
+    await expect(handler(context(request, ["admin", "certificates"], rpc))).resolves.toEqual({ data: envelope, error: null })
+    expect(rpc).toHaveBeenCalledWith("api_admin_certificate_history", {
+      client_filter: "client-1", yacimiento_filter: "field-1", plant_filter: "plant-1", valve_filter: "valve-1",
+      state_filter: "pendiente", signature_state_filter: "partial", valid_until_filter: "2027-10-07",
+      search_text: "V-1", limit_count: 50, offset_count: 0,
+    })
+  })
+
+  it("uses the audited administrative download RPC for pending or finalized certificates", async () => {
+    const detail = { certificate: { id: operationId, estado: "pendiente" }, history: [], audit_events: [] }
+    const rpc = vi.fn().mockResolvedValue({ data: detail, error: null })
+    const request = new Request(`https://example.test/functions/v1/service-workflow/admin/certificates/${operationId}/download`)
+
+    await expect(handler(context(request, ["admin", "certificates", operationId, "download"], rpc))).resolves.toEqual({ data: detail, error: null })
+    expect(rpc).toHaveBeenCalledWith("api_admin_certificate_export", { certificate_id: operationId })
   })
 })
 
@@ -389,14 +502,6 @@ describe("service-workflow mutation routes", () => {
       },
     },
     {
-      name: "starts a visit through the legacy current-catalog API",
-      method: "POST",
-      route: ["visits", operationId, "start"],
-      body: {},
-      rpcName: "api_start_visit",
-      rpcArgs: { visit_id: operationId },
-    },
-    {
       name: "completes a visit",
       method: "POST",
       route: ["visits", operationId, "complete"],
@@ -438,6 +543,20 @@ describe("service-workflow mutation routes", () => {
       error: null,
     })
     expect(rpc).toHaveBeenCalledWith(rpcName, rpcArgs)
+  })
+
+  it("rejects visit start without a device claim and downloaded catalog", async () => {
+    const rpc = vi.fn()
+    const route = ["visits", operationId, "start"]
+    const request = new Request(
+      `https://example.test/functions/v1/service-workflow/${route.join("/")}`,
+      { method: "POST" },
+    )
+
+    await expect(handler(context(request, route, rpc, {}))).rejects.toThrow(
+      "A valid replacement catalog version and device_id are required",
+    )
+    expect(rpc).not.toHaveBeenCalled()
   })
 
   it("authorizes an Administrador before creating the selected Cliente's request", async () => {

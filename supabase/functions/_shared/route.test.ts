@@ -12,6 +12,14 @@ describe("shared route ownership", () => {
 
   it.each([
     ["GET", ["context"], "identity-admin"],
+    ["POST", ["accounts"], "identity-admin"],
+    ["GET", ["accounts", "administrators"], "identity-admin"],
+    ["POST", ["accounts", "administrators"], "identity-admin"],
+    ["PATCH", ["accounts", "administrators", "a-1"], "identity-admin"],
+    ["POST", ["accounts", "a-1", "invitation", "resend"], "identity-admin"],
+    ["POST", ["accounts", "a-1", "recovery"], "identity-admin"],
+    ["POST", ["accounts", "a-1", "email-recovery"], "identity-admin"],
+    ["PUT", ["account-security", "email-change"], "identity-admin"],
     ["POST", ["yacimientos"], "asset-access"],
     ["PATCH", ["valves", "v-1"], "asset-access"],
     ["GET", ["requests"], "service-workflow"],
@@ -51,6 +59,7 @@ describe("shared route ownership", () => {
     expect(routeOwner("POST", ["backups", "extra"])).toBeNull()
     expect(routeOwner("PATCH", ["operations", "00000000-0000-0000-0000-000000000001"])).toBeNull()
     expect(routeOwner("POST", ["storage", "upload"])).toBeNull()
+    expect(routeOwner("POST", ["account-security", "email-change", "audit"])).toBeNull()
   })
 
   it("validates the operations query and normalizes optional search text", () => {

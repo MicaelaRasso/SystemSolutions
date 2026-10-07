@@ -62,12 +62,12 @@ const rejectedSensitiveAttempt = (
   if (method === "GET") return null
 
   const accountAdminRoutes = new Set([
-    "accounts", "mobile-workshops", "technicians", "staffing", "catalogs",
+    "accounts", "account-security", "mobile-workshops", "technicians", "staffing", "catalogs",
     "catalog-options", "test-standards", "certificate-templates",
   ])
   if (accountAdminRoutes.has(route[0])) {
     const targetId = route.find((segment) => UUID_SEGMENT.test(segment)) ?? null
-    return { action: "account_admin_denied", targetType: "administracion", targetId }
+    return { action: "account_admin_denied", targetType: route[0] === "accounts" || route[0] === "account-security" ? "cuenta" : "administracion", targetId }
   }
   if (route.includes("conflicts")) {
     const targetId = route.find((segment) => UUID_SEGMENT.test(segment)) ?? null

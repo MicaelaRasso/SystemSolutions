@@ -1,6 +1,7 @@
 import { isValveUpdatePayload } from "../_shared/validation.ts"
-import { createAuthAdmin, requireCreatedUser } from "../_shared/admin.ts"
+import { createAuthAdmin, invitationRedirectTo, requireCreatedUser } from "../_shared/admin.ts"
 import { clientLogoObjectName, validateClientLogo } from "../_shared/client-logo.ts"
+import { HttpError } from "../_shared/errors.ts"
 import { json, routeNotFound } from "../_shared/http.ts"
 import { createSignedStorageUrl, removeStorageObject, uploadStorageObject } from "../_shared/storage.ts"
 import { serveFunction } from "../_shared/transport.ts"
@@ -100,9 +101,21 @@ serveFunction("asset-access", async ({ request, route, body, actor, db, correlat
   }
 
   if (segments[0] === "clients" && request.method === "POST" && segments.length === 1) {
+    const authorized = await db.rpc("api_authorize_account_provisioning", {
+      account_kind: "cliente_root",
+      target_client: null,
+    })
+    if (authorized.error) return authorized
+    const decision = authorized.data && typeof authorized.data === "object"
+      ? authorized.data as { data?: unknown; error?: { message?: string } | null }
+      : null
+    if (decision?.data !== true || decision.error)
+      throw new HttpError(403, decision?.error?.message ?? "No se puede crear la cuenta del Cliente")
     const auth = await createAuthAdmin()
+    const redirectTo = invitationRedirectTo(request)
     const invited = await auth.auth.admin.inviteUserByEmail(String(body.email), {
       data: { nombre: body.contacto, apellido: "" },
+      ...(redirectTo ? { redirectTo } : {}),
     })
     const accountId = requireCreatedUser(invited.data.user, invited.error?.message ?? "No se pudo crear el Cliente")
     try {
