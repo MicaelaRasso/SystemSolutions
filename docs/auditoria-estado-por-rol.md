@@ -13,7 +13,7 @@ El sistema tiene una base funcional sólida para el flujo operativo principal:
 La arquitectura actual está razonablemente separada en cuatro capas:
 
 - **Frontend:** Next.js 16, React, rutas protegidas por `src/proxy.ts`, componentes por rol y adaptadores en `src/lib/api/`.
-- **API:** seis Supabase Edge Functions como gateway de datos: `identity-admin`, `asset-access`, `service-workflow`, `certificate-field`, `offline-sync` y `backup-export`.
+- **API:** Supabase Edge Functions como gateway de datos: `identity-admin`, `asset-access`, `service-workflow`, `audit-log`, `certificate-field`, `offline-sync`, `backup-export` y `email-delivery`.
 - **Backend:** funciones SQL de negocio, validaciones de propiedad/asignación, transiciones de estado, RLS y triggers de auditoría.
 - **Base de datos:** PostgreSQL con migraciones incrementales para cuentas, clientes, talleres, activos, solicitudes, visitas, órdenes, certificados, firmas, sincronización y auditoría.
 
@@ -56,7 +56,8 @@ La capa API no expone una aplicación CRUD directa desde el navegador. El fronte
 
 - `identity-admin`: cuentas, administradores, talleres, técnicos, personal, catálogos y patrones.
 - `asset-access`: clientes, yacimientos, plantas, equipos, válvulas, estructura e historial.
-- `service-workflow`: solicitudes, visitas, órdenes, agenda, operaciones, métricas, adjuntos y auditoría.
+- `service-workflow`: solicitudes, visitas, órdenes, agenda, operaciones, métricas y adjuntos.
+- `audit-log`: consulta paginada y filtrada del Registro de auditoría, detalle de eventos y exportación JSON/CSV para Super administrador.
 - `certificate-field`: borradores, certificados, firmas, historial y consultas del portal.
 - `offline-sync`: working set, reclamo de visita, medios y sincronización idempotente.
 - `backup-export`: exportaciones manuales de respaldo.
@@ -115,19 +116,19 @@ El Super Administrador tiene el nivel de cuenta más alto. Puede acceder a funci
 
 ## 📍 Ruta Frontend: `/admin/auditoria`
 
-### ⚠️ Funcionalidades parcialmente implementadas
+### ✅ Funcionalidades implementadas
 
 * **Consulta global de auditoría:**
-  * **Frontend:** `AuditLog` muestra registros y permite filtrar por texto/acción; faltan filtros por actor, cliente, yacimiento, visita, certificado, rango de fechas, entidad y expansión de detalle.
-  * **API:** `service-workflow` expone consulta de auditoría y `api_audit_export` permite una respuesta JSON/CSV para superadmin.
-  * **Backend:** `registros_auditoria` es append-only y los triggers registran operaciones exitosas sobre solicitudes, órdenes, certificados, cuentas, talleres, personas, catálogos, patrones y transiciones de visita. No existe cobertura completa de intentos rechazados; esto corresponde al issue abierto #40.
-  * **Base de Datos:** existen `registros_auditoria`, `record_audit_event` y triggers de auditoría. El modelo es suficiente para historial de cambios, pero debe ampliarse para eventos de autorización denegada y consulta operacional con alcance por rol.
+  * **Frontend:** `AuditLog` presenta recepción del servidor, actor, acción, objetivo y resultado; permite filtrar por fechas, actor, acción, entidad, resultado, Cliente, Yacimiento, Visita y Certificado, paginar y expandir el detalle.
+  * **API:** `audit-log` expone la consulta paginada, detalle de evento y exportación JSON/CSV para Super administrador.
+  * **Backend:** `registros_auditoria` es append-only y los triggers registran operaciones sobre solicitudes, órdenes, certificados, cuentas, talleres, personas, catálogos, patrones, transiciones de visita y operaciones sensibles rechazadas.
+  * **Base de Datos:** `api_audit_events` aplica alcance por rol y filtros; `api_audit_event` aplica autorización al detalle; `api_audit_export` restringe exportación al Super administrador.
 
 * **Exportación de auditoría:**
-  * **Frontend:** no hay controles visibles en `/admin/auditoria` para descargar JSON/CSV.
-  * **API:** `api_audit_export` está disponible para superadmin.
+  * **Frontend:** los controles JSON/CSV aparecen solo para Super administrador y conservan los filtros activos.
+  * **API:** `audit-log` delega a `api_audit_export`, que limita la operación al Super administrador.
   * **Backend:** se valida el rol privilegiado y se arma una exportación con los eventos disponibles.
-  * **Base de Datos:** utiliza `registros_auditoria`; no necesita una tabla adicional para el export, aunque sí conviene registrar quién exportó y qué filtros aplicó.
+  * **Base de Datos:** utiliza `registros_auditoria`; también registra quién exportó y qué filtros aplicó.
 
 ## 📍 Rutas `/admin/*` compartidas con Administrador
 

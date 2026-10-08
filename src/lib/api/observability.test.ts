@@ -31,7 +31,7 @@ describe("administrative audit capability", () => {
     )
   })
 
-  it("reads visit audit events through the service-workflow Edge route with the display contract", async () => {
+  it("reads visit audit events through the audit-log Edge route with the display contract", async () => {
     const event = {
       id: "audit-1",
       actor_cuenta_id: "admin-1",
@@ -69,7 +69,7 @@ describe("administrative audit capability", () => {
       ],
     })
     expect(request).toHaveBeenCalledWith(
-      "https://example.test/functions/v1/service-workflow/audit?visit_id=visit-1",
+      "https://example.test/functions/v1/audit-log/audit?visit_id=visit-1",
       expect.objectContaining({
         headers: expect.objectContaining({
           apikey: "",
@@ -101,7 +101,7 @@ describe("administrative audit capability", () => {
     })
 
     expect(request).toHaveBeenCalledWith(
-      "https://example.test/functions/v1/service-workflow/audit?from=2026-10-01&to=2026-10-31&actor_id=actor-1&action=visita_completada&target_type=visita_servicio&outcome=fallido&client_id=client-1&yacimiento_id=deposit-1&visit_id=visit-1&certificate_id=certificate-1&limit=50&offset=50",
+      "https://example.test/functions/v1/audit-log/audit?from=2026-10-01&to=2026-10-31&actor_id=actor-1&action=visita_completada&target_type=visita_servicio&outcome=fallido&client_id=client-1&yacimiento_id=deposit-1&visit_id=visit-1&certificate_id=certificate-1&limit=50&offset=50",
       expect.any(Object),
     )
   })
@@ -124,7 +124,7 @@ describe("administrative audit capability", () => {
     }, "csv")
 
     expect(request).toHaveBeenCalledWith(
-      "https://example.test/functions/v1/service-workflow/audit/export?from=2026-10-01&to=2026-10-07&actor_id=actor-id&action=visita_completada&target_type=visita_servicio&outcome=exitoso&client_id=client-id&yacimiento_id=deposit-id&visit_id=visit-id&certificate_id=certificate-id&format=csv",
+      "https://example.test/functions/v1/audit-log/audit/export?from=2026-10-01&to=2026-10-07&actor_id=actor-id&action=visita_completada&target_type=visita_servicio&outcome=exitoso&client_id=client-id&yacimiento_id=deposit-id&visit_id=visit-id&certificate_id=certificate-id&format=csv",
       expect.any(Object),
     )
   })

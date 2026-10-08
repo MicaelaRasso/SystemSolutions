@@ -170,7 +170,8 @@ export class EdgeAccessClient {
     )
       return "certificate-field"
     if (route === "clients" || route.startsWith("clients/")) return "asset-access"
-    if (/^(?:operations|audit|admin)(?:\/|$)/.test(route) || route === "attachments")
+    if (/^audit(?:\/|$)/.test(route)) return "audit-log"
+    if (/^(?:operations|admin)(?:\/|$)/.test(route) || route === "attachments")
       return "service-workflow"
     if (
       route.startsWith("offline/") ||

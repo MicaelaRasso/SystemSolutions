@@ -22,6 +22,8 @@ describe("EdgeAccessClient", () => {
     ["work-orders/w1/certificate-draft", "certificate-field"],
     ["certificates/c1", "certificate-field"],
     ["operations?from=2026-01-01", "service-workflow"],
+    ["audit?limit=50", "audit-log"],
+    ["audit/export?format=json", "audit-log"],
     ["offline/working-set", "offline-sync"],
   ] as const)("routes %s to %s", (path, owner) => {
     const client = new EdgeAccessClient({ baseUrl: "https://example.test" })

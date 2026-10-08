@@ -64,6 +64,7 @@ export function createEdgeFunctionRegistry({
     "identity-admin",
     "asset-access",
     "service-workflow",
+    "audit-log",
     "certificate-field",
     "offline-sync",
     "backup-export",

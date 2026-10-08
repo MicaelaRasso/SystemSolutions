@@ -146,8 +146,8 @@ describe("shared transport rejected sensitive attempt auditing", () => {
       .mockResolvedValueOnce(denied)
     const db = { rpc } as unknown as ServiceRoleClient
     const response = await handleRequest(
-      request("GET", "/service-workflow/audit"),
-      "service-workflow",
+      request("GET", "/audit-log/audit"),
+      "audit-log",
       async () => denied,
       {
         authenticateRequest: vi.fn(async () => actor),

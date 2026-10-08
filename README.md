@@ -3,13 +3,14 @@
 Front end (Next.js 16 + Tailwind 4 + shadcn/ui) del sistema descrito en `Contexto/DRF_System_Solutions_v1_1`.
 El plan de implementación y su avance están en [`planning.md`](planning.md).
 
-> La app frontend usa Supabase Auth y cinco Edge Functions por dominio. Configura
+> La app frontend usa Supabase Auth y siete Edge Functions por dominio. Configura
 > `NEXT_PUBLIC_SUPABASE_URL`,
 > `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` y las URLs directas opcionales
 > `NEXT_PUBLIC_IDENTITY_ADMIN_URL`, `NEXT_PUBLIC_ASSET_ACCESS_URL`,
-> `NEXT_PUBLIC_SERVICE_WORKFLOW_URL`, `NEXT_PUBLIC_CERTIFICATE_FIELD_URL` y
-> `NEXT_PUBLIC_OFFLINE_SYNC_URL`. Si no se especifican URLs directas, se usan
-> automáticamente las cinco rutas propietarias bajo `NEXT_PUBLIC_SUPABASE_URL`.
+> `NEXT_PUBLIC_SERVICE_WORKFLOW_URL`, `NEXT_PUBLIC_AUDIT_LOG_URL`,
+> `NEXT_PUBLIC_CERTIFICATE_FIELD_URL`, `NEXT_PUBLIC_OFFLINE_SYNC_URL` y
+> `NEXT_PUBLIC_BACKUP_EXPORT_URL`. Si no se especifican URLs directas, se usan
+> automáticamente las rutas propietarias bajo `NEXT_PUBLIC_SUPABASE_URL`.
 > El adaptador usa exclusivamente la Edge
 > Function para operaciones de negocio y archivos; el navegador solo se
 > comunica directamente con Supabase Auth para la sesión.

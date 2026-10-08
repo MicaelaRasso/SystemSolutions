@@ -8,6 +8,7 @@ export const edgeFunctionNames = [
   "identity-admin",
   "asset-access",
   "service-workflow",
+  "audit-log",
   "certificate-field",
   "offline-sync",
   "backup-export",
@@ -36,6 +37,9 @@ export function getSupabaseConfig(): SupabaseConfig {
     "service-workflow":
       process.env.NEXT_PUBLIC_SERVICE_WORKFLOW_URL ??
       `${url.replace(/\/$/, "")}/functions/v1/service-workflow`,
+    "audit-log":
+      process.env.NEXT_PUBLIC_AUDIT_LOG_URL ??
+      `${url.replace(/\/$/, "")}/functions/v1/audit-log`,
     "certificate-field":
       process.env.NEXT_PUBLIC_CERTIFICATE_FIELD_URL ??
       `${url.replace(/\/$/, "")}/functions/v1/certificate-field`,

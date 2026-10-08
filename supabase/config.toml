@@ -37,6 +37,9 @@ verify_jwt = true
 [functions.service-workflow]
 verify_jwt = true
 
+[functions.audit-log]
+verify_jwt = true
+
 [functions.certificate-field]
 verify_jwt = true
 

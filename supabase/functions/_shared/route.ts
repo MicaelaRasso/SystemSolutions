@@ -4,6 +4,7 @@ export type FunctionName =
   | "identity-admin"
   | "asset-access"
   | "service-workflow"
+  | "audit-log"
   | "certificate-field"
   | "offline-sync"
   | "backup-export"
@@ -115,6 +116,12 @@ export const routeOwner = (method: string, route: string[]): FunctionName | null
   if (method === "POST" && route.length === 1 && route[0] === "backups") return "backup-export"
 
   if (
+    method === "GET" &&
+    route[0] === "audit" &&
+    (route.length === 1 || route.length === 2)
+  ) return "audit-log"
+
+  if (
     (method === "GET" && route.length === 1 && route[0] === "email-deliveries") ||
     (method === "GET" && route.length === 2 && route[0] === "email-deliveries") ||
     (method === "POST" && route.length === 3 && route[0] === "email-deliveries" && route[2] === "retry")
@@ -198,10 +205,6 @@ export const routeOwner = (method: string, route: string[]): FunctionName | null
       ].includes(route[2])) ||
     (method === "PATCH" && route[0] === "work-orders" && route.length === 2) ||
     (method === "GET" && route[0] === "operations" && (route.length === 1 || route.length === 2)) ||
-    (method === "GET" &&
-      route[0] === "audit" &&
-      (route.length === 1 || (route.length === 2 && route[1] === "export"))) ||
-    (method === "GET" && route[0] === "audit" && route.length === 2) ||
     (method === "GET" && route[0] === "admin" && route.length >= 2) ||
     (method === "POST" && is(route, "attachments"))
   )

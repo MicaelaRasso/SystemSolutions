@@ -14,17 +14,20 @@ Configure direct function URLs for the deployed environment:
 | `NEXT_PUBLIC_IDENTITY_ADMIN_URL`    | `identity-admin`    | Authenticated context; accounts, workshops, technicians, catalogs and staffing when those routes exist |
 | `NEXT_PUBLIC_ASSET_ACCESS_URL`      | `asset-access`      | Cliente and physical-asset access                                                                      |
 | `NEXT_PUBLIC_SERVICE_WORKFLOW_URL`  | `service-workflow`  | Requests, visits, work orders, scheduling and read-only operations                                    |
+| `NEXT_PUBLIC_AUDIT_LOG_URL`         | `audit-log`         | Role-scoped audit event reads and Súper Administrador exports                                          |
 | `NEXT_PUBLIC_CERTIFICATE_FIELD_URL` | `certificate-field` | Certificate fields, history, signatures and media workflows when implemented                           |
 | `NEXT_PUBLIC_OFFLINE_SYNC_URL`      | `offline-sync`      | Working set and offline synchronization                                                                |
+| `NEXT_PUBLIC_BACKUP_EXPORT_URL`     | `backup-export`     | Súper Administrador manual backup exports                                                              |
 
 If a direct URL is absent, the registry builds the URL of the corresponding
 proprietary function from `NEXT_PUBLIC_SUPABASE_URL`. There is no legacy
 gateway fallback; an unknown route fails locally.
 
-The browser-facing adapter names are `identity`, `hierarchy`, `yacimientos`,
+The browser-facing adapter names include `identity`, `hierarchy`, `yacimientos`,
 `valves`, `serviceWorkflow`, `serviceRequests`, `visits`, `workOrders`,
-`certificates`, `signatures`, `offline` and `operations`. Components use these
-adapters and do not select a function URL themselves.
+`certificates`, `signatures`, `offline`, `operations`, `observability` and
+`backups`. Components use these adapters and do not select a function URL
+themselves.
 
 ## Route ownership
 
@@ -36,6 +39,7 @@ adapters and do not select a function URL themselves.
 | `GET /requests`, `GET /requests/:id`, `POST /requests`, `PATCH /requests/:id`, `POST /requests/:id/schedule` | `service-workflow` | `serviceWorkflow`, `serviceRequests` | Available; these are the Solicitud mutations and scheduling seam |
 | `GET /visits`, `GET /visits/:id`, visit lifecycle commands, `POST /visits/:id/work-orders`, `PATCH /work-orders/:id` | `service-workflow` | `serviceWorkflow`, `visits`, `workOrders` | Available; Visita is the canonical operational aggregate |
 | `GET /operations`, `GET /operations/:visitId` | `service-workflow` | `operations` | **Available for read-only access.** The detail id is the Visita id and responses use canonical envelopes; `POST/PATCH /operations` are unsupported |
+| `GET /audit`, `GET /audit/:id`, `GET /audit/export` | `audit-log` | `observability.audit` | Available with role-scoped reads, filters, pagination, event details, and Súper Administrador JSON/CSV exports |
 | `POST /attachments`, `GET /visits/:id/attachments` | `service-workflow` | `serviceWorkflow.uploadAttachment`, `serviceWorkflow.visitAttachments` | Private request-file upload and assignment-scoped downloads |
 | `POST /work-orders/:id/certificate-draft`, `GET/PATCH /certificates/:id`, `GET /certificates/:id/finalized`, `GET /valves/:id/certificates` | `certificate-field` | `certificates` | Available as implemented DTOs |
 | `POST /visits/:id/signatures` | `certificate-field` | `certificates`, `signatures` | Partial: registers a Storage reference; does not upload bytes |
@@ -45,7 +49,7 @@ adapters and do not select a function URL themselves.
 | `GET/POST/PATCH /mobile-workshops`, `/technicians`, `/staffing` | `identity-admin` | `admin.workshops`, `admin.people`, `admin.staffing` | Available for current admin screens |
 | `GET/POST/PATCH/PUT /catalogs`, `/test-standards` | `identity-admin` | `admin.catalogs`, `admin.standards` | Available for current catalog screens |
 
-All five direct functions use the private runtime in
+All direct functions use the private runtime in
 `supabase/functions/_shared`. It centralizes bearer-token authentication, actor
 propagation, secret-key database access, route ownership, CORS, validation,
 errors, request metadata and correlation IDs. The server-only

@@ -167,7 +167,7 @@ A complete, closed persisted certificate whose required Cliente Firma digitaliza
 The globally sequential identifier assigned by the backend when a Certificado is finalized. It is shared across all Talleres Móviles belonging to System Solutions and is not scoped to a Yacimiento, Válvula, Taller, or Técnico.
 
 **Técnico ejecutor**:
-The Técnico selected from the assigned Taller Móvil's technician list for a Visita de servicio. The certificate records that name under `Ejecutó`; one Técnico Firma digitalizada is captured for the visit and reused for every certificate created from that visit.
+The Técnico selected from the assigned Taller Móvil's technician list for a Visita de servicio. If the day's roster is empty, the PWA allows manual entry of the name. The certificate records that name under `Ejecutó`; one Técnico Firma digitalizada is captured for the visit and reused for every certificate created from that visit. The backend requires the authenticated account to belong to the assigned Taller Móvil and, when the day's roster has active technicians, validates the name against that roster.
 
 **Instantánea de válvula**:
 A preserved capture of a Válvula's data for one Certificado, linked to the source Válvula by reference and frozen at finalization. A Válvula can have multiple instantáneas over time, one for each relevant Certificado.
