@@ -17,6 +17,13 @@ El plan de implementación y su avance están en [`planning.md`](planning.md).
 > `SUPABASE_SECRET_KEY` para operaciones privilegiadas; la clave secreta nunca
 > debe exponerse al navegador.
 
+Para permitir que una sesión de Taller Móvil ya verificada navegue por el trabajo
+cacheado durante una interrupción, configura `OFFLINE_SESSION_SECRET` en el
+servidor Next.js con al menos 32 caracteres aleatorios. El ticket firmado dura
+12 horas y solo habilita las rutas de Taller Móvil; las operaciones sincronizadas
+siguen verificándose en las Edge Functions. Genera el valor con
+`openssl rand -base64 32`.
+
 ## Stack
 
 - Web application: Next.js

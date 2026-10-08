@@ -2,9 +2,15 @@ import { createServerClient } from "@supabase/ssr"
 import { type NextRequest, NextResponse } from "next/server"
 
 import type { Sesion } from "@/lib/domain/types"
+import {
+  OFFLINE_SESSION_COOKIE,
+  OFFLINE_SESSION_TTL_SECONDS,
+  issueTallerOfflineTicket,
+  verifyTallerOfflineTicket,
+} from "@/lib/auth/offline-session"
 
 import { getSupabaseConfig } from "./config"
-import { getAuthenticatedContext, sesionDesdeContexto } from "./context"
+import { fetchAuthenticatedContext, sesionDesdeContexto } from "./context"
 
 function copySessionCookies(from: NextResponse, to: NextResponse) {
   from.cookies.getAll().forEach((cookie) => to.cookies.set(cookie))
@@ -48,21 +54,76 @@ export async function updateSupabaseSession(
     },
   })
 
+  const readOfflineSesion = (accountId?: string): Sesion | null => {
+    const ticket = verifyTallerOfflineTicket(
+      request.cookies.get(OFFLINE_SESSION_COOKIE)?.value,
+      accountId,
+    )
+    return ticket
+      ? {
+          usuarioId: ticket.accountId,
+          rol: ticket.role,
+          nombre: "",
+          exp: ticket.expiresAt * 1_000,
+        }
+      : null
+  }
+  const clearOfflineTicket = () =>
+    supabaseResponse.cookies.set(OFFLINE_SESSION_COOKIE, "", {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: request.nextUrl.protocol === "https:",
+      path: "/",
+      maxAge: 0,
+    })
+
   // Do not use getSession for identity checks: it only reads a cookie. This
   // call verifies the JWT and refreshes it when necessary.
-  const { data, error } = await supabase.auth.getClaims()
-  const claims = data?.claims
-  if (error || !claims || typeof claims.sub !== "string" || typeof claims.exp !== "number") {
+  let claims: Record<string, unknown> | undefined
+  try {
+    const result = await supabase.auth.getClaims()
+    if (!result.error) claims = result.data?.claims as Record<string, unknown> | undefined
+  } catch {
+    // A valid, server-signed offline ticket can keep a previously authorized
+    // Taller Móvil session available while Supabase cannot be reached.
+  }
+  const subject = typeof claims?.sub === "string" ? claims.sub : undefined
+  const offlineSesion = readOfflineSesion(subject)
+  if (!subject || typeof claims?.exp !== "number")
+    return { response: supabaseResponse, sesion: offlineSesion }
+
+  let accessToken: string | undefined
+  try {
+    const { data } = await supabase.auth.getSession()
+    accessToken = data.session?.access_token
+  } catch {
+    return { response: supabaseResponse, sesion: offlineSesion }
+  }
+  if (!accessToken) return { response: supabaseResponse, sesion: offlineSesion }
+
+  const contextResult = await fetchAuthenticatedContext(accessToken)
+  if (contextResult.status === "unavailable")
+    return { response: supabaseResponse, sesion: offlineSesion }
+  if (contextResult.status === "denied" || contextResult.context.cuenta_id !== subject) {
+    clearOfflineTicket()
     return { response: supabaseResponse, sesion: null }
   }
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
-  if (!session?.access_token) return { response: supabaseResponse, sesion: null }
+  const { context } = contextResult
+  if (context.rol === "taller_movil") {
+    const ticket = issueTallerOfflineTicket(context.cuenta_id)
+    if (ticket) {
+      supabaseResponse.cookies.set(OFFLINE_SESSION_COOKIE, ticket, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: request.nextUrl.protocol === "https:",
+        path: "/",
+        maxAge: OFFLINE_SESSION_TTL_SECONDS,
+      })
+    }
+  } else {
+    clearOfflineTicket()
+  }
 
-  const context = await getAuthenticatedContext(session.access_token)
-  if (!context || context.cuenta_id !== claims.sub) return { response: supabaseResponse, sesion: null }
-
-  return { response: supabaseResponse, sesion: sesionDesdeContexto(context, claims.exp) }
+  return { response: supabaseResponse, sesion: sesionDesdeContexto(context, claims.exp as number) }
 }

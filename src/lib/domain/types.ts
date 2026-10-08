@@ -159,6 +159,8 @@ export interface Adjunto {
   nombre: string
   url: string
   tipo: string
+  bucket?: "attachments"
+  object_path?: string
 }
 
 export interface Tarea {

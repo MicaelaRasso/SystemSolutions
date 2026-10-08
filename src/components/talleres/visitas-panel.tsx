@@ -1,11 +1,11 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState, type ComponentProps } from "react"
-import { ChevronDown, ChevronUp, CloudOff, FileCheck2, Lock, RefreshCw, Wifi } from "lucide-react"
+import { ChevronDown, ChevronUp, CloudOff, FileCheck2, Lock, Paperclip, RefreshCw, Wifi } from "lucide-react"
 
 import { SignaturePad, dataUrlToFile } from "@/components/certificados/signature-pad"
 import { CertificateCaptureForm } from "@/components/certificados/certificate-capture-form"
-import { EmptyState, ErrorState } from "@/components/common/states"
+import { ErrorState } from "@/components/common/states"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -139,11 +139,13 @@ async function pendingCompletionOperationIds(store: IndexedDbOfflineStore, visit
 
 export function VisitasPanel() {
   const [visits, setVisits] = useState<VisitaOffline[]>([])
+  const [pendingVisits, setPendingVisits] = useState<VisitDto[]>([])
   const [operations, setOperations] = useState<Record<string, OperacionOffline[]>>({})
   const [selectedId, setSelectedId] = useState<string>()
-  const [connection, setConnection] = useState<"online" | "offline" | "loading" | "error">(
-    typeof navigator !== "undefined" && navigator.onLine ? "loading" : "offline",
-  )
+  const [acceptingVisitId, setAcceptingVisitId] = useState<string>()
+  const [pendingError, setPendingError] = useState<string>()
+  const [acceptMessage, setAcceptMessage] = useState<string>()
+  const [connection, setConnection] = useState<"online" | "offline" | "loading" | "error">("loading")
   const [error, setError] = useState<string>()
 
   const loadLocal = useCallback(async () => {
@@ -169,7 +171,30 @@ export function VisitasPanel() {
       await syncPendingVisitStartsBeforeRefresh(store, (visitId) =>
         createCoordinator(store).sync(visitId, deviceId()),
       )
+      const cachedVisitsBeforeRefresh = await store.listVisits()
+      for (const cachedVisit of cachedVisitsBeforeRefresh) {
+        const pendingOperations = await store.listOperations(cachedVisit.id)
+        if (pendingOperations.some((operation) => operation.estado !== "sincronizada"))
+          await createCoordinator(store).sync(cachedVisit.id, deviceId())
+      }
       const workingSet = await edgeApi.offline.workingSet(deviceId())
+      try {
+        const assignedVisits = await edgeApi.serviceWorkflow.listVisits()
+        setPendingVisits(
+          assignedVisits
+            .filter((entry) => entry.visit.estado === "programada")
+            .sort((a, b) => {
+              const startsAtA = typeof a.visit.starts_at === "string" ? a.visit.starts_at : ""
+              const startsAtB = typeof b.visit.starts_at === "string" ? b.visit.starts_at : ""
+              return startsAtA.localeCompare(startsAtB)
+            }),
+        )
+        setPendingError(undefined)
+      } catch (caught) {
+        setPendingError(
+          caught instanceof Error ? caught.message : "No se pudieron cargar las visitas programadas",
+        )
+      }
       const serverIds = new Set(workingSet.visits.map((entry) => entry.visit.id))
       const cached = await store.listVisits()
       for (const old of cached) {
@@ -180,7 +205,6 @@ export function VisitasPanel() {
       }
       for (const entry of workingSet.visits) {
         const old = await store.getVisit(entry.visit.id)
-        const pendingOperations = await store.listOperations(entry.visit.id)
         const entryCatalogs = entry.certificate_catalogs ?? workingSet.certificate_catalogs
         const catalogState = refreshedVisitCatalogs({
           previous: old,
@@ -198,10 +222,6 @@ export function VisitasPanel() {
           claimedByDeviceId: old?.claimedByDeviceId,
           claimedAt: old?.claimedAt,
         })
-        const pending = pendingOperations.some(
-          (operation) => operation.estado !== "sincronizada",
-        )
-        if (pending) await createCoordinator(store).sync(entry.visit.id, deviceId())
       }
       await loadLocal()
       setConnection("online")
@@ -211,6 +231,21 @@ export function VisitasPanel() {
       await loadLocal()
     }
   }, [loadLocal])
+
+  const acceptVisit = useCallback(async (visitId: string) => {
+    setAcceptingVisitId(visitId)
+    setPendingError(undefined)
+    setAcceptMessage(undefined)
+    try {
+      await edgeApi.serviceWorkflow.transition(visitId, "accept")
+      setAcceptMessage("Visita aceptada. Actualicé la agenda de campo.")
+      await refresh()
+    } catch (caught) {
+      setPendingError(caught instanceof Error ? caught.message : "No se pudo aceptar la visita")
+    } finally {
+      setAcceptingVisitId(undefined)
+    }
+  }, [refresh])
 
   useEffect(() => {
     const initialRefresh = window.setTimeout(() => void refresh(), 0)
@@ -234,11 +269,17 @@ export function VisitasPanel() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          {connection === "offline" ? <CloudOff className="size-4" /> : <Wifi className="size-4" />}
+          {connection === "offline" || connection === "error" ? (
+            <CloudOff className="size-4" />
+          ) : (
+            <Wifi className="size-4" />
+          )}
           {connection === "offline"
             ? "Trabajando offline"
             : connection === "loading"
               ? "Actualizando…"
+              : connection === "error"
+                ? "Sin conexión al servidor"
               : "Conectado"}
         </div>
         <Button
@@ -250,24 +291,68 @@ export function VisitasPanel() {
         </Button>
       </div>
       {error ? <ErrorState error={error} onRetry={() => void refresh()} /> : null}
-      {visits.length === 0 && connection !== "loading" ? (
-        <EmptyState
-          titulo="No hay visitas de servicio disponibles"
-          descripcion="La agenda de los próximos dos días aparecerá aquí después de una autenticación online."
-        />
-      ) : null}
-      <div className="grid gap-4 lg:grid-cols-2">
-        {visits.map((visit) => (
-          <VisitCard
-            key={visit.id}
-            visit={visit}
-            operations={operations[visit.id] ?? []}
-            open={selectedId === visit.id}
-            onOpen={() => setSelectedId(selectedId === visit.id ? undefined : visit.id)}
-            onChanged={loadLocal}
-          />
-        ))}
-      </div>
+      <section className="space-y-3" aria-labelledby="pending-visits-title">
+        <div>
+          <h2 id="pending-visits-title" className="text-lg font-semibold">Visitas Pendientes</h2>
+          <p className="text-sm text-muted-foreground">
+            Confirmá las visitas asignadas al Taller Móvil para agregarlas a la agenda de campo.
+          </p>
+        </div>
+        {pendingError ? <p role="alert" className="text-sm text-destructive">{pendingError}</p> : null}
+        {acceptMessage ? <p role="status" className="text-sm text-muted-foreground">{acceptMessage}</p> : null}
+        {pendingVisits.length > 0 ? (
+          <div className="space-y-2">
+            {pendingVisits.map(({ visit, work_orders: workOrders }) => (
+              <Card key={visit.id} size="sm">
+                <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3">
+                  <div className="min-w-0 space-y-1">
+                    <p className="font-medium">Yacimiento {String(visit.yacimiento_id ?? "sin identificar")}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {typeof visit.starts_at === "string"
+                        ? new Date(visit.starts_at).toLocaleString("es-AR")
+                        : "Fecha no informada"}
+                      {` · ${workOrders.length} orden${workOrders.length === 1 ? "" : "es"} de trabajo`}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={() => void acceptVisit(visit.id)}
+                    disabled={connection !== "online" || acceptingVisitId !== undefined}
+                  >
+                    {acceptingVisitId === visit.id ? "Aceptando…" : "Aceptar"}
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : !pendingError ? (
+          <p className="rounded-lg border border-dashed px-4 py-5 text-center text-sm text-muted-foreground">
+            {connection === "offline"
+              ? "Conectate para consultar las visitas pendientes de aceptación."
+              : "No hay visitas pendientes de aceptación."}
+          </p>
+        ) : null}
+      </section>
+      <section className="space-y-3" aria-labelledby="scheduled-visits-title">
+        <h2 id="scheduled-visits-title" className="text-lg font-semibold">Visitas Programadas</h2>
+        {visits.length === 0 && connection !== "loading" ? (
+          <p className="rounded-lg border border-dashed px-4 py-5 text-center text-sm text-muted-foreground">
+            Las visitas aceptadas aparecerán aquí cuando estén dentro de los próximos dos días.
+          </p>
+        ) : null}
+        <div className="grid gap-4 lg:grid-cols-2">
+          {visits.map((visit) => (
+            <VisitCard
+              key={visit.id}
+              visit={visit}
+              operations={operations[visit.id] ?? []}
+              open={selectedId === visit.id}
+              onOpen={() => setSelectedId(selectedId === visit.id ? undefined : visit.id)}
+              onChanged={refresh}
+            />
+          ))}
+        </div>
+      </section>
       {selected ? <div className="sr-only">Visita seleccionada: {selected.id}</div> : null}
     </div>
   )
@@ -288,9 +373,26 @@ function VisitCard({
 }) {
   const store = useMemo(() => new IndexedDbOfflineStore(), [])
   const context = contextOf(visit)
+  const [attachments, setAttachments] = useState<Awaited<ReturnType<typeof edgeApi.serviceWorkflow.visitAttachments>>>([])
+  const [attachmentsError, setAttachmentsError] = useState<string | null>(null)
+  const [loadingAttachments, setLoadingAttachments] = useState(false)
   const pending = operations.filter((operation) => operation.estado !== "sincronizada")
   const conflicts = operations.filter((operation) => operation.estado === "conflicto")
   const failed = operations.filter((operation) => operation.estado === "fallida")
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    setLoadingAttachments(true)
+    setAttachmentsError(null)
+    void edgeApi.serviceWorkflow.visitAttachments(visit.id)
+      .then((files) => { if (!cancelled) setAttachments(files) })
+      .catch((error: unknown) => {
+        if (!cancelled) setAttachmentsError(error instanceof Error ? error.message : "No se pudieron cargar los adjuntos")
+      })
+      .finally(() => { if (!cancelled) setLoadingAttachments(false) })
+    return () => { cancelled = true }
+  }, [open, visit.id])
 
   return (
     <Card>
@@ -343,6 +445,21 @@ function VisitCard({
           {open ? <ChevronUp className="mr-2 size-4" /> : <ChevronDown className="mr-2 size-4" />}
           {open ? "Cerrar visita" : "Abrir visita"}
         </Button>
+        {open ? (
+          <section aria-label="Adjuntos de la solicitud" className="space-y-2 rounded-md border p-3">
+            <h3 className="flex items-center gap-2 text-sm font-medium"><Paperclip className="size-4" />Adjuntos de la solicitud</h3>
+            {loadingAttachments ? <p className="text-sm text-muted-foreground">Cargando adjuntos…</p> : null}
+            {attachmentsError ? <p className="text-sm text-muted-foreground">{attachmentsError}</p> : null}
+            {!loadingAttachments && !attachmentsError && attachments.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No hay archivos adjuntos.</p>
+            ) : null}
+            {attachments.map((file) => (
+              <a key={file.id} href={file.url} download target="_blank" rel="noreferrer" className="block truncate text-sm text-primary underline">
+                {file.nombre}
+              </a>
+            ))}
+          </section>
+        ) : null}
         {open ? <VisitEditor visit={visit} store={store} onChanged={onChanged} /> : null}
       </CardContent>
     </Card>
@@ -626,6 +743,7 @@ function WorkOrderEditor({
   onMessage: (message: string) => void
 }) {
   const [reason, setReason] = useState(order.no_evaluada_razon ?? "")
+  const [outcome, setOutcome] = useState(order.estado ?? "pendiente")
   const [certificateId, setCertificateId] = useState<string>(
     order.certificate_id ?? "",
   )
@@ -637,6 +755,11 @@ function WorkOrderEditor({
   >({})
   const draft = useEdgeCertificateDraft(certificateId || undefined)
   const currentCertificate = draft.data?.certificate ?? localCertificate
+  useEffect(() => {
+    setOutcome(order.estado ?? "pendiente")
+    setReason(order.no_evaluada_razon ?? "")
+  }, [order.estado, order.no_evaluada_razon])
+
   const snapshot = currentCertificate?.plantilla_snapshot
   const boundTemplate = useMemo(() => {
     if (!catalogs || !snapshot || typeof snapshot !== "object" || Array.isArray(snapshot))
@@ -662,6 +785,16 @@ function WorkOrderEditor({
           ? startOperation.payload.certificate_id
           : undefined
       const queuedTemplateSnapshot = startOperation?.payload.template_snapshot
+      const queuedOutcome = operations
+        .filter(
+          (operation) =>
+            operation.kind === "work_order_outcome" &&
+            operation.payload.work_order_id === order.id &&
+            operation.estado !== "sincronizada" &&
+            (operation.payload.outcome === "evaluada" || operation.payload.outcome === "no_evaluada"),
+        )
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.operationId.localeCompare(b.operationId))
+        .at(-1)
       const updateOperation = operations
         .filter(
           (operation) =>
@@ -676,6 +809,8 @@ function WorkOrderEditor({
         .at(-1)
       const queuedData = updateOperation?.payload.data
       if (cancelled) return
+      if (queuedOutcome?.payload.outcome === "evaluada" || queuedOutcome?.payload.outcome === "no_evaluada")
+        setOutcome(queuedOutcome.payload.outcome)
       if (!certificateId && queuedCertificateId) {
         setCertificateId(queuedCertificateId)
         setLocalCertificate((current) => ({
@@ -713,6 +848,7 @@ function WorkOrderEditor({
           not_evaluated_reason: outcome === "no_evaluada" ? reason : null,
         }, dependencies)
       }
+      setOutcome(outcome)
       onMessage(
         outcome === "evaluada"
           ? "Orden de trabajo marcada como evaluada."
@@ -841,7 +977,7 @@ function WorkOrderEditor({
     <Card size="sm" className="bg-muted/20">
       <CardHeader>
         <CardTitle className="text-sm">{workOrderName(order, contextOf(visit))}</CardTitle>
-        <CardDescription>Estado: {order.estado ?? "pendiente"}</CardDescription>
+        <CardDescription>Estado: {outcome}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-wrap gap-2">
@@ -872,7 +1008,7 @@ function WorkOrderEditor({
           <Button
             size="sm"
             variant="secondary"
-            disabled={disabled || order.estado !== "evaluada" || !catalogs}
+            disabled={disabled || outcome !== "evaluada" || !catalogs}
             onClick={() => void startDraft()}
           >
             <FileCheck2 className="mr-2 size-4" /> Iniciar Borrador de certificado

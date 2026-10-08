@@ -1,15 +1,16 @@
 import type { Adjunto } from "@/lib/domain/types"
 
 /**
- * Opens an attachment in a separate tab. Production media must be fetched by
- * an Edge-mediated capability; this helper deliberately rejects remote URLs so
- * browser code cannot turn a Storage URL into an application-data boundary.
+ * Opens a data URL or a short-lived URL issued by the authenticated Edge API.
  */
 export async function abrirAdjunto(adjunto: Adjunto) {
-  let url = adjunto.url
-  if (!url.startsWith("data:")) throw new Error("Los adjuntos remotos requieren una ruta Edge")
-  const blob = await (await fetch(url)).blob()
-  url = URL.createObjectURL(blob)
-  setTimeout(() => URL.revokeObjectURL(url), 60_000)
-  window.open(url, "_blank", "noopener")
+  if (adjunto.url.startsWith("data:")) {
+    const blob = await (await fetch(adjunto.url)).blob()
+    const url = URL.createObjectURL(blob)
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    window.open(url, "_blank", "noopener")
+    return
+  }
+  if (!/^https:\/\//.test(adjunto.url)) throw new Error("El enlace del adjunto no es válido")
+  window.open(adjunto.url, "_blank", "noopener")
 }

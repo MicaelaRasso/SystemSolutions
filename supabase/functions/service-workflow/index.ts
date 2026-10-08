@@ -190,6 +190,10 @@ export const serviceWorkflowHandler: RouteHandler = async ({
   const segments = route
 
   if (segments[0] === "attachments" && request.method === "POST" && segments.length === 1) {
+    const authorization = await db.rpc("api_actor_is_admin", {})
+    if (authorization.error) return authorization
+    if (authorization.data !== true)
+      throw new HttpError(403, "Only an active Administrador can upload request attachments")
     const file = body.file instanceof File ? body.file : null
     if (!file) return json(request, { error: "An attachment file is required" }, 400, correlationId)
     const objectName = `temporary/${crypto.randomUUID()}-${file.name.replace(/[^A-Za-z0-9._-]/g, "-")}`
@@ -217,11 +221,47 @@ export const serviceWorkflowHandler: RouteHandler = async ({
         id: crypto.randomUUID(),
         nombre: file.name,
         tipo: file.type || "application/octet-stream",
-        url: await createSignedStorageUrl("attachments", validation.metadata.objectName),
+        url: await createSignedStorageUrl("attachments", validation.metadata.objectName, 3600, true),
+        bucket: "attachments",
+        object_path: validation.metadata.objectName,
       },
       200,
       correlationId,
     )
+  }
+
+  if (
+    segments[0] === "visits" && segments[1] && segments[2] === "attachments" &&
+    request.method === "GET" && segments.length === 3
+  ) {
+    if (!isUuid(segments[1])) throw new HttpError(400, "visitId must be a UUID")
+    const result = await db.rpc("api_visit_request_attachments", { visit_id: segments[1] })
+    if (result.error) return result
+    const attachments = Array.isArray(result.data) ? result.data : []
+    const signed = await Promise.all(attachments.map(async (value) => {
+      if (!isRecord(value) || value.bucket !== "attachments" || !isNonEmptyString(value.object_path))
+        throw new HttpError(502, "Invalid request attachment reference")
+      return {
+        id: isNonEmptyString(value.id) ? value.id : value.object_path,
+        nombre: isNonEmptyString(value.nombre) ? value.nombre : "Adjunto",
+        tipo: isNonEmptyString(value.tipo) ? value.tipo : "application/octet-stream",
+        bucket: "attachments",
+        object_path: value.object_path,
+        url: await createSignedStorageUrl("attachments", value.object_path, 3600, true),
+      }
+    }))
+    return { data: signed, error: null }
+  }
+
+  if (
+    segments[0] === "requests" && segments[1] && segments[2] === "metadata" &&
+    request.method === "PATCH" && segments.length === 3
+  ) {
+    if (!isUuid(segments[1])) throw new HttpError(400, "requestId must be a UUID")
+    return db.rpc("api_update_admin_service_request_metadata", {
+      request_id: segments[1],
+      operation_metadata: body.metadata,
+    })
   }
 
   // Frontend: legacy TareaResumen -> backend: canonical Solicitud/Visita
@@ -249,7 +289,21 @@ export const serviceWorkflowHandler: RouteHandler = async ({
     if (result.data === null)
       return json(request, { error: "Operation not found" }, 404, correlationId)
     if (!isOperationDetailEnvelope(result.data)) invalidRpcResponse()
-    return { data: result.data, error: null }
+    const detail = result.data as Record<string, unknown>
+    const requestEnvelope = isRecord(detail.request) ? detail.request : undefined
+    const requestRow = requestEnvelope && isRecord(requestEnvelope.request) ? requestEnvelope.request : undefined
+    const metadata = requestRow && isRecord(requestRow.metadata) ? requestRow.metadata : undefined
+    if (metadata && Array.isArray(metadata.adjuntos)) {
+      metadata.adjuntos = await Promise.all(metadata.adjuntos.map(async (value) => {
+        if (!isRecord(value) || value.bucket !== "attachments" || !isNonEmptyString(value.object_path))
+          throw new HttpError(502, "Invalid request attachment reference")
+        return {
+          ...value,
+          url: await createSignedStorageUrl("attachments", value.object_path, 3600, true),
+        }
+      }))
+    }
+    return { data: detail, error: null }
   }
 
   if (segments[0] === "audit" && request.method === "GET" && (segments.length === 1 || (segments.length === 2 && segments[1] === "export"))) {

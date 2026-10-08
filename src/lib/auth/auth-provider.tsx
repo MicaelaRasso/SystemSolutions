@@ -62,12 +62,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const cerrar = useCallback(
     async (destino: string) => {
+      const clearOfflineTicket = fetch("/api/auth/offline-session", {
+        method: "DELETE",
+        credentials: "same-origin",
+      }).catch(() => undefined)
       try {
         const { error } = await browserSupabase().auth.signOut()
         if (error) throw error
       } catch {
         // Local state must be cleared even if the network sign-out cannot finish.
       } finally {
+        await clearOfflineTicket
         queryClient.clear()
         router.replace(destino)
       }

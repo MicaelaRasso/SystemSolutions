@@ -26,7 +26,7 @@ content_path = "./supabase/templates/email-change.html"
 [auth.email.notification.email_changed]
 enabled = true
 subject = "Se actualizó el correo de tu cuenta — System Solutions"
-content_path = "./supabase/templates/email-changed.html"
+content_path = "./templates/email-changed.html"
 
 [functions.identity-admin]
 verify_jwt = true

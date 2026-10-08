@@ -66,9 +66,7 @@ function createCoordinator(store: IndexedDbOfflineStore) {
 }
 
 export function SincronizacionPanel() {
-  const [connection, setConnection] = useState<EstadoConexion>(() =>
-    typeof navigator !== "undefined" && navigator.onLine ? "online" : "offline",
-  )
+  const [connection, setConnection] = useState<EstadoConexion>("actualizando")
   const [visits, setVisits] = useState<VisitaOffline[]>([])
   const [operationsByVisit, setOperationsByVisit] = useState<OperacionesPorVisita>({})
   const [syncingVisits, setSyncingVisits] = useState<string[]>([])
@@ -76,9 +74,21 @@ export function SincronizacionPanel() {
   const [conflictOutcomes, setConflictOutcomes] = useState<ConflictOutcome[]>([])
   const [error, setError] = useState<string>()
 
+  const loadLocal = useCallback(async () => {
+    const store = new IndexedDbOfflineStore()
+    const cachedVisits = await store.listVisits()
+    const localOperations: OperacionesPorVisita = {}
+    for (const visit of cachedVisits) {
+      localOperations[visit.id] = await store.listOperations(visit.id)
+    }
+    setVisits(cachedVisits)
+    setOperationsByVisit(localOperations)
+  }, [])
+
   const refresh = useCallback(async () => {
     if (typeof window === "undefined" || !navigator.onLine) {
       setConnection("offline")
+      await loadLocal()
       return
     }
     setConnection("actualizando")
@@ -126,8 +136,9 @@ export function SincronizacionPanel() {
     } catch (caught) {
       setConnection("error")
       setError(caught instanceof Error ? caught.message : "No se pudo actualizar la agenda offline")
+      await loadLocal()
     }
-  }, [])
+  }, [loadLocal])
 
   const syncVisit = useCallback(async (visitId: string) => {
     if (typeof window === "undefined" || !navigator.onLine) {
@@ -163,11 +174,15 @@ export function SincronizacionPanel() {
       setConnection("online")
       void refresh()
     }
-    const offline = () => setConnection("offline")
+    const offline = () => {
+      setConnection("offline")
+      void refresh()
+    }
     window.addEventListener("online", online)
     window.addEventListener("offline", offline)
-    if (navigator.onLine) window.setTimeout(() => void refresh(), 0)
+    const initialRefresh = window.setTimeout(() => void refresh(), 0)
     return () => {
+      window.clearTimeout(initialRefresh)
       window.removeEventListener("online", online)
       window.removeEventListener("offline", offline)
     }

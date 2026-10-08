@@ -36,7 +36,7 @@ adapters and do not select a function URL themselves.
 | `GET /requests`, `GET /requests/:id`, `POST /requests`, `PATCH /requests/:id`, `POST /requests/:id/schedule` | `service-workflow` | `serviceWorkflow`, `serviceRequests` | Available; these are the Solicitud mutations and scheduling seam |
 | `GET /visits`, `GET /visits/:id`, visit lifecycle commands, `POST /visits/:id/work-orders`, `PATCH /work-orders/:id` | `service-workflow` | `serviceWorkflow`, `visits`, `workOrders` | Available; Visita is the canonical operational aggregate |
 | `GET /operations`, `GET /operations/:visitId` | `service-workflow` | `operations` | **Available for read-only access.** The detail id is the Visita id and responses use canonical envelopes; `POST/PATCH /operations` are unsupported |
-| `POST /attachments` | `service-workflow` | `services.tareas.subirAdjunto` (compatibility) | Available Edge Storage upload; unrelated to `edgeApi.operations` and `/operations` mutations |
+| `POST /attachments`, `GET /visits/:id/attachments` | `service-workflow` | `serviceWorkflow.uploadAttachment`, `serviceWorkflow.visitAttachments` | Private request-file upload and assignment-scoped downloads |
 | `POST /work-orders/:id/certificate-draft`, `GET/PATCH /certificates/:id`, `GET /certificates/:id/finalized`, `GET /valves/:id/certificates` | `certificate-field` | `certificates` | Available as implemented DTOs |
 | `POST /visits/:id/signatures` | `certificate-field` | `certificates`, `signatures` | Partial: registers a Storage reference; does not upload bytes |
 | `GET /offline/working-set`, `POST /visits/:id/sync` | `offline-sync` | `offline` | Available as working-set and batch routes; UI conflict handling remains incomplete |
@@ -101,7 +101,7 @@ resolved:
 | Capability                                            | Planned owner                        | Current state                                                             |
 | ----------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------- |
 | Asset deletion                                        | `asset-access`                       | Unavailable; deletion/archive policy is unresolved                        |
-| Signature, evidence and logo media bytes              | `certificate-field` / `asset-access` | Logo and generic attachment uploads implemented; certificate media remains pending |
+| Signature and evidence media bytes                    | `certificate-field` / `asset-access` | Request attachments and client logos are implemented; certificate signature/evidence media remains pending |
 
 The unresolved decisions are Cuenta scope, catalog administration versus the
 versioned fixed `Repuestos` data, asset deletion and preserved history, and the

@@ -46,8 +46,13 @@ export function ManualBackupPanel() {
       const anchor = document.createElement("a")
       anchor.href = url
       anchor.download = result.filename
+      anchor.style.display = "none"
+      document.body.appendChild(anchor)
       anchor.click()
-      setTimeout(() => URL.revokeObjectURL(url), 0)
+      anchor.remove()
+      // Browsers may not start consuming the Blob URL until after this task.
+      // Revoking it immediately can cancel the download before it reaches disk.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
       setState({
         kind: "success",
         filename: result.filename,

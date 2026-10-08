@@ -38,27 +38,44 @@ function isEdgeContext(value: unknown): value is EdgeContext {
  * gateway. It must never be inferred from a browser cookie or user metadata.
  */
 export async function getAuthenticatedContext(accessToken: string): Promise<EdgeContext | null> {
+  const result = await fetchAuthenticatedContext(accessToken)
+  return result.status === "ok" ? result.context : null
+}
+
+export type AuthenticatedContextResult =
+  | { status: "ok"; context: EdgeContext }
+  | { status: "unavailable" }
+  | { status: "denied" }
+
+export async function fetchAuthenticatedContext(
+  accessToken: string,
+): Promise<AuthenticatedContextResult> {
   const config = getSupabaseConfig()
   let response: Response
   try {
     response = await fetch(`${config.edgeFunctions["identity-admin"]}/context`, {
       cache: "no-store",
+      signal: AbortSignal.timeout(2_500),
       headers: {
         apikey: config.publishableKey,
         authorization: `Bearer ${accessToken}`,
       },
     })
   } catch {
-    return null
+    return { status: "unavailable" }
   }
 
-  if (!response.ok) return null
+  if (!response.ok) {
+    return response.status === 408 || response.status === 429 || response.status >= 500
+      ? { status: "unavailable" }
+      : { status: "denied" }
+  }
 
   const payload: unknown = await response.json().catch(() => null)
   // PostgREST returns a one-row table as an array; tolerate the object shape
   // used by the existing Edge adapter while its contract is being migrated.
   const context = Array.isArray(payload) ? payload[0] : payload
-  return isEdgeContext(context) ? context : null
+  return isEdgeContext(context) ? { status: "ok", context } : { status: "denied" }
 }
 
 export function sesionDesdeContexto(context: EdgeContext, exp: number): Sesion {

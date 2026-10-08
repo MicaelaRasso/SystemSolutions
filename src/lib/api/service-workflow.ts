@@ -1,3 +1,5 @@
+import { z } from "zod"
+
 import type { EdgeAccessClient } from "../services/edge"
 import {
   createServiceRequestInputSchema,
@@ -31,8 +33,40 @@ export const serviceWorkflowInvalidations = [serviceWorkflowQueryKeys.all] as co
 
 const json = (value: unknown) => JSON.stringify(value)
 
+const attachmentDtoSchema = z.object({
+  id: z.string(),
+  nombre: z.string(),
+  tipo: z.string(),
+  url: z.string().url(),
+  bucket: z.literal("attachments"),
+  object_path: z.string(),
+})
+
 export function createServiceWorkflowApi(edge: EdgeAccessClient) {
   return {
+    async uploadAttachment(file: File) {
+      const form = new FormData()
+      form.set("file", file)
+      return edge.request("attachments", attachmentDtoSchema, {
+        method: "POST",
+        body: form,
+      })
+    },
+
+    async visitAttachments(visitId: string) {
+      return edge.request(
+        `visits/${encodeURIComponent(visitId)}/attachments`,
+        attachmentDtoSchema.array(),
+      )
+    },
+
+    async updateRequestMetadata(requestId: string, metadata: Record<string, unknown>) {
+      return edge.request(`requests/${encodeURIComponent(requestId)}/metadata`, z.unknown(), {
+        method: "PATCH",
+        body: json({ metadata }),
+      })
+    },
+
     listRequests: () => edge.request("requests", serviceRequestDtoSchema.array()),
     request: (requestId: string) => edge.request(`requests/${requestId}`, serviceRequestDtoSchema),
 

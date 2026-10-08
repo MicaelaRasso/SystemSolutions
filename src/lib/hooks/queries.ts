@@ -173,7 +173,7 @@ async function solicitudIdDeOperacion(operationId: ID) {
 /** Canonical write path for the task screens. It never creates or updates an operation. */
 export async function guardarSolicitudYVisita(
   operation: OperationRead | undefined,
-  data: TareaInput,
+  data: TareaInput & { adjuntos: Adjunto[] },
   assignmentReason?: string,
 ): Promise<OperationRead | undefined> {
   const requestId = operation ? await solicitudIdDeOperacion(operation.operation.id) : undefined
@@ -196,6 +196,25 @@ export async function guardarSolicitudYVisita(
         })
       : await edgeApi.serviceRequests.createRequest(serviceSelection(data))
   const canonicalRequestId = responseRequestId(response)
+
+  await edgeApi.serviceWorkflow.updateRequestMetadata(canonicalRequestId, {
+    contacto: data.contacto.trim(),
+    telefono: data.telefono.trim(),
+    fecha_ejecucion: data.fechaEjecucion,
+    horario: data.horario,
+    tipo: data.tipo,
+    detalle: data.detalle.trim(),
+    pd_rto: data.pdRto || null,
+    orden_trabajo: data.ordenTrabajo || null,
+    condiciones: data.condiciones,
+    adjuntos: data.adjuntos.map(({ id, nombre, tipo, bucket, object_path }) => ({
+      id,
+      nombre,
+      tipo,
+      bucket,
+      object_path,
+    })),
+  })
 
   if (operation) {
     const visitId = operation.operation.id
@@ -305,7 +324,7 @@ export async function cambiarEstadoTarea(
 }
 
 export function subirAdjunto(archivo: File): Promise<Adjunto> {
-  if (usaSupabase()) throw new Error("Los adjuntos de solicitudes no están disponibles en esta API")
+  if (usaSupabase()) return edgeApi.serviceWorkflow.uploadAttachment(archivo)
   return services.tareas.subirAdjunto(archivo)
 }
 
