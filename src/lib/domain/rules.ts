@@ -98,6 +98,72 @@ export function puedeDescargar(cert: CertFirmaFecha, rol: Rol, hoy: Date = new D
   return false
 }
 
+export interface PermisoImpresionCertificado {
+  puedeVer: boolean
+  puedeImprimir: boolean
+  /** Muestra la leyenda diagonal "REQUIERE FIRMA" (CA-05). */
+  requiereFirma: boolean
+  /** Explicación para el usuario cuando la impresión o la vista no están disponibles. */
+  motivo: string | null
+}
+
+/**
+ * Vista e impresión del certificado (RN-04, RN-05, RN-06, CA-05). Trabaja con las firmas
+ * de la visita y la vigencia que informa el backend (`vigenciaHasta`, AAAA-MM-DD); un
+ * certificado pendiente no tiene vigencia todavía.
+ */
+export function permisoImpresionCertificado(
+  p: {
+    rol: Rol
+    firmas: { tecnico: boolean; cliente: boolean }
+    vigenciaHasta?: string | null
+  },
+  hoy: Date = new Date(),
+): PermisoImpresionCertificado {
+  const requiereFirma = !(p.firmas.tecnico && p.firmas.cliente)
+  if (p.rol === "admin" || p.rol === "superadmin") {
+    return { puedeVer: true, puedeImprimir: true, requiereFirma, motivo: null }
+  }
+  if (p.rol !== "cliente") {
+    return {
+      puedeVer: true,
+      puedeImprimir: false,
+      requiereFirma,
+      motivo: "La descarga del certificado está disponible para Administración y para el cliente.",
+    }
+  }
+  const vencido = p.vigenciaHasta
+    ? differenceInCalendarDays(parseISO(p.vigenciaHasta), hoy) < 0
+    : false
+  if (vencido) {
+    return {
+      puedeVer: false,
+      puedeImprimir: false,
+      requiereFirma,
+      motivo: "El certificado está vencido y ya no está disponible en el portal.",
+    }
+  }
+  if (requiereFirma) {
+    return {
+      puedeVer: true,
+      puedeImprimir: false,
+      requiereFirma,
+      motivo:
+        "Faltan firmas de la visita. El certificado se puede previsualizar, pero la descarga se habilita cuando esté firmado por System Solutions y por el cliente.",
+    }
+  }
+  if (!p.vigenciaHasta) {
+    return {
+      puedeVer: true,
+      puedeImprimir: false,
+      requiereFirma,
+      motivo:
+        "El certificado todavía no tiene la vigencia registrada; la descarga se habilita al finalizarlo.",
+    }
+  }
+  return { puedeVer: true, puedeImprimir: true, requiereFirma, motivo: null }
+}
+
 // ---------------------------------------------------------------------------
 // Corrección dentro de 24 h (RN-14)
 // ---------------------------------------------------------------------------
@@ -158,7 +224,7 @@ export function formatNroCertificado(nro: number, fechaEjecucion: string) {
   return `${format(fecha, "yy-MM")}-${String(nro).padStart(4, "0")}`
 }
 
-const limpiarParaArchivo = (s: string) =>
+export const limpiarParaArchivo = (s: string) =>
   s
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "")

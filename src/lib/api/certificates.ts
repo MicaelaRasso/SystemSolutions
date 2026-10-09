@@ -60,6 +60,8 @@ export const certificateQueryKeys = {
   draft: (certificateId: string) => [...certificateQueryKeys.all, "draft", certificateId] as const,
   finalized: (certificateId: string) =>
     [...certificateQueryKeys.all, "finalized", certificateId] as const,
+  clientExport: (certificateId: string) =>
+    [...certificateQueryKeys.all, "client-export", certificateId] as const,
   valveHistory: (valvulaId: string) =>
     [...certificateQueryKeys.all, "valve-history", valvulaId] as const,
   pendingClientSignatureVisits: () =>
@@ -68,14 +70,17 @@ export const certificateQueryKeys = {
 
 export const certificateInvalidations = [certificateQueryKeys.all] as const
 
-export const authorizeCertificateCorrectionInputSchema = z.object({
-  providerId: z.uuid(),
-  startsAt: z.iso.datetime({ offset: true }),
-  endsAt: z.iso.datetime({ offset: true }),
-  reason: z.string().trim().min(1),
-}).refine((value) => value.endsAt > value.startsAt, {
-  path: ["endsAt"], message: "La finalización debe ser posterior al inicio",
-})
+export const authorizeCertificateCorrectionInputSchema = z
+  .object({
+    providerId: z.uuid(),
+    startsAt: z.iso.datetime({ offset: true }),
+    endsAt: z.iso.datetime({ offset: true }),
+    reason: z.string().trim().min(1),
+  })
+  .refine((value) => value.endsAt > value.startsAt, {
+    path: ["endsAt"],
+    message: "La finalización debe ser posterior al inicio",
+  })
 
 const certificateCorrectionDtoSchema = z.object({
   correction_id: z.uuid(),
@@ -123,7 +128,10 @@ export function createCertificatesApi(edge: EdgeAccessClient) {
       edge.request(`valves/${valvulaId}/certificates`, valveCertificateHistoryDtoSchema),
     pendingClientSignatureVisits: () =>
       edge.request("clients/me/pending-certificates", pendingClientSignatureVisitsDtoSchema),
-    authorizeCorrection: (certificateId: string, input: z.input<typeof authorizeCertificateCorrectionInputSchema>) => {
+    authorizeCorrection: (
+      certificateId: string,
+      input: z.input<typeof authorizeCertificateCorrectionInputSchema>,
+    ) => {
       const id = z.uuid().parse(certificateId)
       const data = authorizeCertificateCorrectionInputSchema.parse(input)
       return edge.request(`certificates/${id}/corrections`, certificateCorrectionDtoSchema, {

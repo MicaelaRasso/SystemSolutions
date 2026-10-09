@@ -198,6 +198,19 @@ export const useEdgeFinalizedCertificate = (certificateId: string | undefined) =
     enabled: Boolean(certificateId),
   })
 
+/**
+ * Exportación del certificado para el Cliente (`certificates/:id/download`). El backend solo
+ * la entrega si el certificado está finalizado, firmado por ambas partes y dentro del
+ * alcance del Cliente; un 404 significa que todavía no se puede descargar.
+ */
+export const useEdgeClientCertificateExport = (certificateId: string | undefined) =>
+  useQuery({
+    queryKey: certificateQueryKeys.clientExport(certificateId ?? ""),
+    queryFn: () => edgeApi.certificates.download(certificateId!),
+    enabled: Boolean(certificateId),
+    retry: false,
+  })
+
 export const useEdgeOfflineWorkingSet = () =>
   useQuery({
     queryKey: offlineQueryKeys.workingSet(),

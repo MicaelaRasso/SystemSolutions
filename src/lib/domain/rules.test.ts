@@ -9,6 +9,7 @@ import {
   formatNroCertificado,
   nombreArchivoCertificado,
   normalizarEstadoTarea,
+  permisoImpresionCertificado,
   puedeCorregir,
   puedeDescargar,
   puedeVerCertificado,
@@ -181,5 +182,61 @@ describe("estado de tarea según asignación (RF-14)", () => {
   it("no toca completadas ni canceladas", () => {
     expect(normalizarEstadoTarea("completada", undefined)).toBe("completada")
     expect(normalizarEstadoTarea("cancelada", "tal-1")).toBe("cancelada")
+  })
+})
+
+describe("vista e impresión del certificado (RN-04, RN-05, RN-06, CA-05)", () => {
+  const completas = { tecnico: true, cliente: true }
+  const sinCliente = { tecnico: true, cliente: false }
+
+  it("el administrador imprime siempre, con la leyenda si faltan firmas", () => {
+    expect(permisoImpresionCertificado({ rol: "admin", firmas: sinCliente }, hoy)).toEqual({
+      puedeVer: true,
+      puedeImprimir: true,
+      requiereFirma: true,
+      motivo: null,
+    })
+    expect(
+      permisoImpresionCertificado(
+        { rol: "superadmin", firmas: completas, vigenciaHasta: "2020-01-01" },
+        hoy,
+      ),
+    ).toMatchObject({ puedeImprimir: true, requiereFirma: false })
+  })
+
+  it("el cliente solo previsualiza mientras falten firmas", () => {
+    const permiso = permisoImpresionCertificado({ rol: "cliente", firmas: sinCliente }, hoy)
+    expect(permiso).toMatchObject({ puedeVer: true, puedeImprimir: false, requiereFirma: true })
+    expect(permiso.motivo).toMatch(/firmas/)
+  })
+
+  it("el cliente descarga un certificado firmado y vigente", () => {
+    expect(
+      permisoImpresionCertificado(
+        { rol: "cliente", firmas: completas, vigenciaHasta: "2026-09-23" },
+        hoy,
+      ),
+    ).toEqual({ puedeVer: true, puedeImprimir: true, requiereFirma: false, motivo: null })
+  })
+
+  it("el cliente no accede a un certificado vencido", () => {
+    const permiso = permisoImpresionCertificado(
+      { rol: "cliente", firmas: completas, vigenciaHasta: "2026-09-22" },
+      hoy,
+    )
+    expect(permiso).toMatchObject({ puedeVer: false, puedeImprimir: false })
+    expect(permiso.motivo).toMatch(/vencido/)
+  })
+
+  it("el cliente no descarga un firmado sin vigencia informada", () => {
+    expect(
+      permisoImpresionCertificado({ rol: "cliente", firmas: completas, vigenciaHasta: null }, hoy),
+    ).toMatchObject({ puedeVer: true, puedeImprimir: false })
+  })
+
+  it("el taller no imprime desde estas vistas", () => {
+    expect(permisoImpresionCertificado({ rol: "taller", firmas: completas }, hoy)).toMatchObject({
+      puedeImprimir: false,
+    })
   })
 })

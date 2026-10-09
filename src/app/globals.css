@@ -11,6 +11,9 @@
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-geist-sans);
   --color-field: var(--field);
+  --color-cert-campo: var(--cert-campo);
+  --color-cert-valor: var(--cert-valor);
+  --color-cert-linea: var(--cert-linea);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -83,6 +86,10 @@
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.75 0.12 215);
   --field: oklch(0.95 0.035 210);
+  /* Certificado SYS: es papel, no cambia con el tema oscuro. */
+  --cert-campo: oklch(0.95 0.035 210);
+  --cert-valor: oklch(0.47 0.18 27);
+  --cert-linea: oklch(0.3 0 0);
 }
 
 .dark {
@@ -127,10 +134,46 @@
   body {
     @apply bg-background text-foreground;
   }
-  button:not(:disabled), [role="button"]:not(:disabled) {
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
     cursor: pointer;
   }
   html {
     @apply font-sans;
+  }
+}
+/* Impresión del certificado (A4). La copia imprimible se monta como hija directa de
+   <body> solo mientras se imprime; todo lo demás se oculta. */
+@page {
+  size: A4;
+  margin: 10mm;
+}
+
+@media print {
+  body:has(> [data-certificado-impresion]) > :not([data-certificado-impresion]) {
+    display: none !important;
+  }
+  body:has(> [data-certificado-impresion]) {
+    background: white;
+  }
+  [data-certificado-hoja] {
+    width: auto !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: 0 !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  [data-certificado-seccion] {
+    break-inside: avoid;
+  }
+  /* La leyenda se repite en cada hoja impresa. */
+  [data-certificado-marca] {
+    position: fixed !important;
+    justify-content: center !important;
+  }
+  [data-certificado-marca] > :not(:first-child) {
+    display: none;
   }
 }
