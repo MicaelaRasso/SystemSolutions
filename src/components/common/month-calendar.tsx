@@ -1,6 +1,6 @@
 "use client"
 
-import { addMonths, isSameMonth, isToday, subMonths } from "date-fns"
+import { addMonths, isSameMonth, isToday, parseISO, subMonths } from "date-fns"
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react"
 import { useMemo, useState } from "react"
 
@@ -25,7 +25,18 @@ export interface MonthCalendarProps<T> {
   maxPorDia?: number
   acciones?: React.ReactNode
   cargando?: boolean
+  /** Sustantivo de los elementos para textos accesibles y vacíos. */
+  etiquetas?: { singular: string; plural: string; vacio: string }
+  /**
+   * En celular: "puntos" muestra la grilla con puntos y la lista del día elegido;
+   * "agenda" reemplaza la grilla por la lista de días del mes con elementos.
+   */
+  vistaMovil?: "puntos" | "agenda"
+  /** Avisa el día elegido; en escritorio además se resalta en la grilla. */
+  onDiaSeleccionado?: (fecha: string) => void
 }
+
+const ETIQUETAS_TAREA = { singular: "tarea", plural: "tareas", vacio: "Sin tareas este día" }
 
 /**
  * Calendario mensual tipo almanaque (RF-39). En pantallas chicas muestra puntos por día
@@ -43,6 +54,9 @@ export function MonthCalendar<T>({
   maxPorDia = 3,
   acciones,
   cargando,
+  etiquetas = ETIQUETAS_TAREA,
+  vistaMovil = "puntos",
+  onDiaSeleccionado,
 }: MonthCalendarProps<T>) {
   const dias = useMemo(() => diasGrillaMes(mes), [mes])
   const porDia = useMemo(() => {
@@ -53,8 +67,20 @@ export function MonthCalendar<T>({
     }
     return m
   }, [items, fechaDe])
-  const [seleccionado, setSeleccionado] = useState<string>(iso(new Date()))
+  const [seleccionado, setSeleccionadoInterno] = useState<string>(iso(new Date()))
+  const setSeleccionado = (fecha: string) => {
+    setSeleccionadoInterno(fecha)
+    onDiaSeleccionado?.(fecha)
+  }
   const delDia = porDia.get(seleccionado) ?? []
+  const agenda = vistaMovil === "agenda"
+  const diasDelMes = useMemo(
+    () =>
+      [...porDia.entries()]
+        .filter(([fecha]) => isSameMonth(parseISO(fecha), mes))
+        .sort(([a], [b]) => a.localeCompare(b)),
+    [porDia, mes],
+  )
 
   return (
     <div className="space-y-3">
@@ -88,6 +114,7 @@ export function MonthCalendar<T>({
         className={cn(
           "overflow-hidden rounded-xl border bg-card transition-opacity",
           cargando && "opacity-60",
+          agenda && "max-md:hidden",
         )}
       >
         <div className="grid grid-cols-7 border-b bg-muted/50 text-center text-xs font-medium text-muted-foreground">
@@ -113,13 +140,15 @@ export function MonthCalendar<T>({
                   i % 7 !== 6 && "border-r",
                   fuera && "bg-muted/30",
                   k === seleccionado && "max-md:bg-accent",
+                  k === seleccionado && onDiaSeleccionado && "md:bg-accent/60",
                 )}
               >
                 <div className="flex items-center justify-between">
                   <button
                     type="button"
                     onClick={() => setSeleccionado(k)}
-                    aria-label={`${fmtDiaLargo(d)}: ${lista.length} ${lista.length === 1 ? "tarea" : "tareas"}`}
+                    aria-label={`${fmtDiaLargo(d)}: ${lista.length} ${lista.length === 1 ? etiquetas.singular : etiquetas.plural}`}
+                    aria-pressed={onDiaSeleccionado ? k === seleccionado : undefined}
                     className={cn(
                       "flex size-6 items-center justify-center rounded-full text-xs tabular-nums",
                       fuera && "text-muted-foreground",
@@ -189,8 +218,38 @@ export function MonthCalendar<T>({
         </div>
       </div>
 
+      {/* Celular, modo agenda: días del mes con elementos */}
+      {agenda && (
+        <section className="space-y-4 md:hidden" aria-label="Agenda del mes">
+          {diasDelMes.length === 0 ? (
+            <p className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+              Sin {etiquetas.plural} este mes
+            </p>
+          ) : (
+            diasDelMes.map(([fecha, lista]) => (
+              <div key={fecha} className="space-y-2">
+                <h3
+                  className={cn(
+                    "text-sm font-medium capitalize",
+                    isToday(parseISO(fecha)) && "text-primary",
+                  )}
+                >
+                  {fmtDiaLargo(fecha)}
+                </h3>
+                {lista.map((it) => (
+                  <div key={claveDe(it)}>{renderItem(it)}</div>
+                ))}
+              </div>
+            ))
+          )}
+        </section>
+      )}
+
       {/* Celular: lista del día elegido */}
-      <section className="space-y-2 md:hidden" aria-label="Día seleccionado">
+      <section
+        className={cn("space-y-2 md:hidden", agenda && "hidden")}
+        aria-label="Día seleccionado"
+      >
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium capitalize">{fmtDiaLargo(seleccionado)}</h3>
           {onNuevo && (
@@ -202,7 +261,7 @@ export function MonthCalendar<T>({
         </div>
         {delDia.length === 0 ? (
           <p className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
-            Sin tareas este día
+            {etiquetas.vacio}
           </p>
         ) : (
           delDia.map((it) => <div key={claveDe(it)}>{renderItem(it)}</div>)
