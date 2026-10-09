@@ -231,7 +231,7 @@ Cada fase termina con algo navegable y revisable por el cliente.
 - [ ] Firmas del técnico y del representante del cliente.
 - [ ] Varios certificados por tarea (una válvula = un certificado).
 - [ ] Preview `CertificadoView` antes de cerrar.
-- [ ] `CertificadoView` en admin y portal con marca "REQUIERE FIRMA".
+- [x] `CertificadoView` en admin y portal con marca "REQUIERE FIRMA". *(`CertificadoDocumento` A4 fiel al modelo con secciones 1.0 a 1.8 y pie legal (la nómina del taller figura "—" porque el certificado no la trae); leyenda diagonal repetida en cada hoja impresa; "descarga" = diálogo de impresión con `document.title` = `nombreArchivoCertificado()`; Admin imprime siempre y conserva la exportación JSON auditada; regla `permisoImpresionCertificado` en `rules.ts`)*
 - [ ] Corrección dentro de 24 h con contador visible y registro de cambios (mock).
 
 ### Fase 6 — Offline y sincronización
@@ -242,11 +242,13 @@ Cada fase termina con algo navegable y revisable por el cliente.
 - [ ] Prueba manual: modo avión en DevTools, carga completa, reconexión.
 
 ### Fase 7 — Portal del cliente (M7)
-- [ ] Calendario mensual tipo almanaque con los turnos de la empresa.
-- [ ] Turnos pendientes e histórico.
+- [x] Calendario mensual tipo almanaque con los turnos de la empresa. *(lee `GET /visits`, que respeta el alcance de cada usuario cliente; locación y equipo salen de los árboles de sus yacimientos; detalle del día elegido y, en celular, agenda del mes; canceladas ocultas por defecto; sin botón para pedir turnos, RF-36)*
+- [x] Turnos pendientes e histórico. *(pestañas con cantidad, filtros por yacimiento, planta/locación y rango de fechas; tabla en escritorio y tarjetas en celular)*
 - [ ] Certificados vigentes con búsqueda por nro de equipo, tag, fecha, locación (RF-45); vencidos ocultos (RN-06).
-- [ ] Vista del certificado con fotos; descarga solo si está firmado.
+- [ ] Vista del certificado con fotos; descarga solo si está firmado. *(hecho: `/portal/certificados/[id]` con vista previa, descarga solo firmado y vigente, vencidos no se abren. Pendiente de backend: las fotos y firmas llegan como `bucket/object_path` sin URL firmada, así que se muestra "Foto registrada; la vista previa no está disponible")*
 - [ ] Perfil de empresa y carga de logo.
+
+> **Verificado (pantallas faltantes, 2026-10-09):** typecheck y build sin errores, 349 tests, detector de impeccable sin hallazgos; lint con 2 errores previos en `talleres/visitas-panel.tsx` (fuera de esta tarea). Sin recorrido en navegador: las rutas requieren sesión de Supabase.
 
 ### Fase 8 — Panel admin, histórico y backups (M7 + M8)
 - [ ] Dashboard: certificados finalizados, Visitas de servicio completadas, certificados pendientes, certificados por vencer y Visitas de servicio sin Taller Móvil asignado; período seleccionable con mes actual por defecto.
