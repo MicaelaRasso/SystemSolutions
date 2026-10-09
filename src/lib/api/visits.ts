@@ -13,8 +13,7 @@ export type VisitsApi = Pick<
   | "cancelVisitAsAdministrator"
 >
 
-/** #REVISAR: Cliente Calendario/Turnos should consume this canonical read path when screens exist. */
-/** Visit queries and lifecycle commands already exposed by service-workflow. */
+/** Visit queries and lifecycle commands exposed by service-workflow; also the Cliente Calendario/Turnos read path. */
 export function createVisitsApi(edge: EdgeAccessClient): VisitsApi {
   const serviceWorkflow = createServiceWorkflowApi(edge)
   return {
