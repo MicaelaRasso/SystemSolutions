@@ -555,27 +555,41 @@ export const useCertificadosValvula = (valvulaId: ID | undefined) =>
     enabled: !!valvulaId,
   })
 
+/**
+ * Datos de estructura que cambian poco (catálogos, patrones, talleres, personal): se reutilizan
+ * 5 minutos al volver a una pantalla. Las mutaciones propias los invalidan al instante.
+ */
+const DATOS_ESTABLES_MS = 5 * 60_000
+
 export const useCatalogo = (lista: ListaCatalogo) =>
   useQuery({
     queryKey: qk.catalogo(lista),
     queryFn: () => services.catalogos.opciones(lista),
-    staleTime: 5 * 60_000,
+    staleTime: DATOS_ESTABLES_MS,
   })
 
 export const useCatalogoAdmin = (lista: ListaCatalogo) =>
-  useQuery({ queryKey: qk.catalogoAdmin(lista), queryFn: () => services.catalogos.listar(lista) })
+  useQuery({
+    queryKey: qk.catalogoAdmin(lista),
+    queryFn: () => services.catalogos.listar(lista),
+    staleTime: DATOS_ESTABLES_MS,
+  })
 
 export const useCatalogoResumen = () =>
-  useQuery({ queryKey: qk.catalogoResumen(), queryFn: () => services.catalogos.resumen() })
+  useQuery({
+    queryKey: qk.catalogoResumen(),
+    queryFn: () => services.catalogos.resumen(),
+    staleTime: DATOS_ESTABLES_MS,
+  })
 
 export const usePatrones = () =>
-  useQuery({ queryKey: qk.patrones(), queryFn: () => services.patrones.list() })
+  useQuery({ queryKey: qk.patrones(), queryFn: () => services.patrones.list(), staleTime: DATOS_ESTABLES_MS })
 
 export const useTalleres = () =>
-  useQuery({ queryKey: qk.talleres(), queryFn: () => services.talleres.list() })
+  useQuery({ queryKey: qk.talleres(), queryFn: () => services.talleres.list(), staleTime: DATOS_ESTABLES_MS })
 
 export const usePersonas = () =>
-  useQuery({ queryKey: qk.personas(), queryFn: () => services.personas.list() })
+  useQuery({ queryKey: qk.personas(), queryFn: () => services.personas.list(), staleTime: DATOS_ESTABLES_MS })
 
 export const useOperaciones = (filtro: FiltroTareas = {}) =>
   useQuery({

@@ -1,7 +1,6 @@
 "use client"
 
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { useRouter } from "next/navigation"
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
 
 import { RUTA_INICIO } from "@/lib/domain/rules"
@@ -17,7 +16,6 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const router = useRouter()
   const queryClient = useQueryClient()
   const [supabaseSession, setSupabaseSession] = useState<{
     user: { id: string }
@@ -74,10 +72,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } finally {
         await clearOfflineTicket
         queryClient.clear()
-        router.replace(destino)
+        // Navegación completa: descarta también el cache del router (staleTimes en
+        // next.config.ts), así ninguna pantalla protegida queda disponible tras salir.
+        window.location.replace(destino)
       }
     },
-    [queryClient, router],
+    [queryClient],
   )
 
   const logout = useCallback(() => {

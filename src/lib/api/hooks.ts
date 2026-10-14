@@ -31,8 +31,13 @@ const useInvalidate = (keys: readonly (readonly unknown[])[]) => {
   return () => Promise.all(keys.map((queryKey) => queryClient.invalidateQueries({ queryKey })))
 }
 
+/** El contexto de la cuenta solo cambia si un administrador la edita: se reutiliza 5 minutos. */
 export const useEdgeContext = () =>
-  useQuery({ queryKey: identityQueryKeys.context(), queryFn: edgeApi.identity.context })
+  useQuery({
+    queryKey: identityQueryKeys.context(),
+    queryFn: edgeApi.identity.context,
+    staleTime: 5 * 60_000,
+  })
 
 export const useEdgeYacimientos = () =>
   useQuery({
