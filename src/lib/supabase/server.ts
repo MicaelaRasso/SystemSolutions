@@ -2,8 +2,10 @@ import "server-only"
 
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
+import { cache } from "react"
 
 import type { Sesion } from "@/lib/domain/types"
+import { CONTEXT_CACHE_COOKIE, verifyContextCache } from "@/lib/auth/context-cache"
 import {
   OFFLINE_SESSION_COOKIE,
   verifyTallerOfflineTicket,
@@ -29,8 +31,14 @@ export async function createClient() {
   })
 }
 
-/** Verified Auth identity plus server-authorized application context. */
-export async function getVerifiedSesion(): Promise<Sesion | null> {
+/**
+ * Verified Auth identity plus server-authorized application context.
+ *
+ * Memoized per server request with React `cache()`, so several layouts or pages
+ * calling `requerirSesion` share one verification. When the proxy already left a
+ * valid signed role cache for this JWT subject and session, it skips GET /context.
+ */
+export const getVerifiedSesion = cache(async (): Promise<Sesion | null> => {
   const cookieStore = await cookies()
   const offlineSesion = (accountId?: string): Sesion | null => {
     const ticket = verifyTallerOfflineTicket(
@@ -58,6 +66,13 @@ export async function getVerifiedSesion(): Promise<Sesion | null> {
 
   if (typeof claims?.sub !== "string" || typeof claims.exp !== "number") return offlineSesion()
 
+  const cachedRol = verifyContextCache(cookieStore.get(CONTEXT_CACHE_COOKIE)?.value, {
+    sub: claims.sub,
+    sid: typeof claims.session_id === "string" ? claims.session_id : undefined,
+  })
+  if (cachedRol)
+    return { usuarioId: claims.sub, rol: cachedRol, nombre: "", exp: claims.exp * 1_000 }
+
   // `getClaims` above is the identity verification step. The raw access token
   // is forwarded only to identity-admin, which verifies it again before it
   // returns the authoritative Cuenta and role context.
@@ -76,4 +91,4 @@ export async function getVerifiedSesion(): Promise<Sesion | null> {
     return null
 
   return sesionDesdeContexto(contextResult.context, claims.exp)
-}
+})
