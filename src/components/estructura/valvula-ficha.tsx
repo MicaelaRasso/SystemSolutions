@@ -6,7 +6,7 @@ import { FirmaBadge, VigenciaBadge } from "@/components/certificados/badges"
 import { EmptyState, ErrorState } from "@/components/common/states"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Cargando } from "@/components/common/cargando"
 import {
   Table,
   TableBody,
@@ -102,7 +102,7 @@ function HistorialCertificados({ valvulaId }: { valvulaId: string }) {
         {isError ? (
           <ErrorState error={error} onRetry={() => refetch()} />
         ) : isPending ? (
-          <Skeleton className="h-24 w-full" />
+          <Cargando variante="linea" texto="Cargando certificados…" />
         ) : data.length === 0 ? (
           <EmptyState
             icono={FileCheck2}

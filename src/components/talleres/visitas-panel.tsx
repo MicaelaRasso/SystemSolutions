@@ -33,6 +33,7 @@ import {
 } from "@/lib/offline/sync"
 import { visitCompletionBlocker } from "@/lib/offline/completion"
 import { getOfflineDeviceId as deviceId } from "@/lib/offline/device"
+import { Cargando } from "@/components/common/cargando"
 
 type StoredVisitContext = VisitDto & {
   context?: unknown
@@ -448,7 +449,7 @@ function VisitCard({
         {open ? (
           <section aria-label="Adjuntos de la solicitud" className="space-y-2 rounded-md border p-3">
             <h3 className="flex items-center gap-2 text-sm font-medium"><Paperclip className="size-4" />Adjuntos de la solicitud</h3>
-            {loadingAttachments ? <p className="text-sm text-muted-foreground">Cargando adjuntos…</p> : null}
+            {loadingAttachments ? <Cargando variante="linea" texto="Cargando adjuntos…" /> : null}
             {attachmentsError ? <p className="text-sm text-muted-foreground">{attachmentsError}</p> : null}
             {!loadingAttachments && !attachmentsError && attachments.length === 0 ? (
               <p className="text-sm text-muted-foreground">No hay archivos adjuntos.</p>
@@ -1031,9 +1032,7 @@ function WorkOrderEditor({
                 onSave={(payload) => void saveDraft(payload)}
               />
             ) : (
-              <p className="text-sm text-muted-foreground">
-                Cargando la plantilla y catálogos del certificado…
-              </p>
+              <Cargando variante="linea" texto="Cargando la plantilla y catálogos del certificado…" />
             )}
           </div>
         ) : null}

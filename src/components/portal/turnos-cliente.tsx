@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Cargando } from "@/components/common/cargando"
 import {
   Table,
   TableBody,
@@ -165,7 +165,7 @@ export function TurnosCliente() {
           </TabsList>
           <TabsContent value="pendientes">
             {cargando ? (
-              <Skeleton className="h-40 w-full rounded-xl" />
+              <Cargando texto="Cargando turnos…" />
             ) : pendientes.length ? (
               <ListaTurnos visitas={pendientes} />
             ) : filtrosActivos ? (
@@ -180,7 +180,7 @@ export function TurnosCliente() {
           </TabsContent>
           <TabsContent value="historico">
             {cargando ? (
-              <Skeleton className="h-40 w-full rounded-xl" />
+              <Cargando texto="Cargando turnos…" />
             ) : historico.length ? (
               <ListaTurnos visitas={historico} />
             ) : filtrosActivos ? (

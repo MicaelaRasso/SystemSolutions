@@ -8,7 +8,7 @@ import { EmptyState, ErrorState } from "@/components/common/states"
 import { CertificateExpandedDetails } from "@/components/certificados/certificate-expanded-details"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Cargando } from "@/components/common/cargando"
 import {
   Table,
   TableBody,
@@ -101,7 +101,7 @@ export function CertificadosPortal() {
         {error ? (
           <ErrorState error={error} onRetry={() => void yacimientos.refetch()} />
         ) : loading ? (
-          <Skeleton className="h-32 w-full" />
+          <Cargando texto="Cargando certificados…" />
         ) : records.length === 0 ? (
           <EmptyState
             icono={FileCheck2}

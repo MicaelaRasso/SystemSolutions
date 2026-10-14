@@ -1,6 +1,6 @@
 "use client"
 
-import { Skeleton } from "@/components/ui/skeleton"
+import { Cargando } from "@/components/common/cargando"
 import { useEdgeFinalizedCertificate } from "@/lib/api/hooks"
 import { permisoImpresionCertificado } from "@/lib/domain/rules"
 import { mensajeError } from "@/lib/hooks/queries"
@@ -25,7 +25,7 @@ export function CertificadoAdmin({
   const firmado = useEdgeFinalizedCertificate(finalizado ? id : undefined)
 
   if (finalizado && firmado.isLoading) {
-    return <Skeleton className="h-[480px] w-full rounded-xl" />
+    return <Cargando texto="Cargando certificado…" />
   }
 
   const dto = firmado.data

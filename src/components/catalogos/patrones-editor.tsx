@@ -10,7 +10,7 @@ import { EmptyState, ErrorState } from "@/components/common/states"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Field, FieldContent, FieldGroup, FieldLabel } from "@/components/ui/field"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Cargando } from "@/components/common/cargando"
 import { Switch } from "@/components/ui/switch"
 import {
   Table,
@@ -95,7 +95,7 @@ export function PatronesEditor() {
       )}
 
       {isPending ? (
-        <Skeleton className="h-64 w-full" />
+        <Cargando />
       ) : data.length === 0 ? (
         <EmptyState icono={Gauge} titulo="Sin patrones cargados" accion={nuevo} />
       ) : (

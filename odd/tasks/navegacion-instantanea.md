@@ -1,0 +1,56 @@
+# Navegación instantánea y optimización de carga
+
+## Objetivo
+
+La app se siente lenta. Al cambiar de sección, la página nueva tiene que mostrarse de inmediato y los datos cargarse después, con un indicador giratorio de carga ("ruedita") mientras se espera la base de datos.
+
+## Diagnóstico inicial
+
+- No existe ningún `loading.tsx`: Next espera a que el servidor termine antes de pintar la página nueva.
+- `src/proxy.ts` → `src/lib/supabase/proxy.ts:84-104` corre en cada navegación: `getClaims()`, `getSession()` y `fetchAuthenticatedContext()`. Este último llama a la Edge Function `GET /context`, que suma un viaje de red y un posible arranque en frío.
+- 6 layouts o páginas vuelven a llamar a `requerirSesion` del lado del servidor.
+
+## Diagnóstico (T1)
+
+Análisis de código (sin credenciales para medir en la app real; no hay tiempos medidos).
+
+Viajes de red al hacer clic en una sección (navegación cliente, sin `loading.tsx`):
+
+1. **Sin prefetch.** Todas las rutas son dinámicas (los layouts por rol leen cookies vía `requerirSesion`). Sin `loading.tsx`, Next no prefetchea rutas dinámicas: el clic espera la respuesta completa del servidor antes de cambiar la pantalla (`node_modules/next/dist/docs/01-app/02-guides/prefetching.md`).
+2. **Proxy en cada request** (`src/lib/supabase/proxy.ts`): `getClaims()` (local si el proyecto firma JWT asimétricos; si firma HS256, `auth-js` llama a `getUser()` = 1 viaje a Auth), `getSession()` (local) y `GET /context` en `identity-admin` (1 viaje a Edge, con posible arranque en frío, timeout 2,5 s).
+3. **Layout del servidor**: al cambiar de layout de rol (por ejemplo, `/admin` → `/cuenta/seguridad`) `requerirSesion` repite `getClaims()` + `GET /context`. Entre páginas hermanas el layout compartido no se vuelve a renderizar (partial rendering), pero `/admin/backups` llama a `requerirSesion` en la página.
+4. **Cliente**: recién después de pintar la página arrancan las consultas de TanStack Query (1+ viajes a Edge por pantalla).
+
+Total en serie antes de ver la pantalla nueva: 1 viaje a Edge (`/context`) + 0–1 a Auth, y 2 viajes a Edge + 0–2 a Auth al cambiar de layout. Después, los datos.
+
+Otros hallazgos:
+
+- TanStack Query ya tiene defaults razonables en `src/components/providers.tsx`: `staleTime` 30 s, `retry` 1, `refetchOnWindowFocus` false. No hay tormentas de refetch.
+- No hay `force-dynamic` ni `revalidate`; el único `no-store` es el fetch a `/context` (correcto, es autorización).
+- Las páginas son envoltorios finos de componentes cliente; los datos ya se piden en el cliente. No hay fetch de datos en el servidor que bloquee el render.
+- `estructuraApi.arbol` hace lista de yacimientos y luego `Promise.all` de árboles (2 etapas, inherente al contrato). Las demás cascadas están en mutaciones, no en lecturas.
+- Los `Link` del sidebar usan prefetch por defecto; hoy no sirve porque las rutas dinámicas no tienen `loading.tsx`. Al agregarlo, cada link visible se prefetchea y cada prefetch pasa por el proxy: sin T3, eso multiplicaría las llamadas a `/context`.
+- Estados de carga inconsistentes: mezcla de `Skeleton` de bloque, textos "Cargando…" sueltos y ningún indicador entre el clic y la pantalla nueva.
+
+## Restricciones
+
+- No hay cambios en `supabase/`: el proxy es un chequeo optimista y la autorización real la hacen las Edge Functions (no se debilita).
+- No se agregan dependencias nuevas.
+- Se mantiene la estética actual: el indicador usa los tokens y componentes existentes.
+- Se sigue respetando el ticket offline del taller.
+
+## Tareas
+
+- [x] T1: medir y diagnosticar. Ruta: delegada. _Hallazgos en "Diagnóstico (T1)"; sin commit propio, va junto con T2._
+- [x] T2: componente de carga (indicador giratorio) y `loading.tsx` por sección, para que la navegación sea inmediata. Estados de carga de TanStack Query unificados con el mismo indicador. Ruta: delegada.
+  _`Cargando` en `src/components/common/cargando.tsx` (LoaderCircle de lucide, `role="status"`, `aria-live`, texto oculto que se muestra con movimiento reducido, aparición con 150 ms de retardo). `loading.tsx` en `admin`, `superadmin`, `taller`, `portal`, `cuenta/seguridad` y `admin/clientes/[id]` (deja visible el encabezado del cliente). Rueda chica en el ítem del sidebar con `useLinkStatus` mientras la navegación no arranca. 20 pantallas pasan de Skeleton de bloque o texto "Cargando…" al mismo indicador; se mantienen los skeletons con forma (filas de clientes, métricas del panel, tarjetas de talleres, encabezado del cliente). Excepción test-first: UI sin lógica; checks estructurales + build._
+- [ ] T3: abaratar el proxy y la sesión del servidor (cachear el rol, evitar `GET /context` en cada navegación, deduplicar `requerirSesion`). Ruta: delegada.
+- [ ] T4: optimizaciones de datos (`staleTime` y prefetch de TanStack Query, consultas en cascada, prefetch de `Link`) y verificación. Ruta: delegada.
+
+## Checks
+
+`npm run typecheck`, `npm run lint` (2 errores ya existentes en `visitas-panel.tsx`), `npm test`, `npm run build`.
+
+## Progreso
+
+- 2026-10-13: rama `perf/navegacion-instantanea`, creada desde `feat/pantallas-faltantes`.

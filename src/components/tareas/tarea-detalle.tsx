@@ -8,7 +8,7 @@ import { CertificateCaptureForm } from "@/components/certificados/certificate-ca
 import { ErrorState } from "@/components/common/states"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Cargando } from "@/components/common/cargando"
 import { fmtFecha } from "@/lib/format"
 import {
   useAddEdgeWorkOrder,
@@ -78,8 +78,7 @@ export function TareaDetalle({ id }: { id: string }) {
     return (
       <>
         {volver}
-        <Skeleton className="h-10 w-72" />
-        <Skeleton className="h-[32rem] w-full max-w-4xl" />
+        <Cargando texto="Cargando tarea…" />
       </>
     )
   }
@@ -315,9 +314,7 @@ function CertificateDraft({ workOrderId }: { workOrderId: string }) {
               onSave={(input) => save.mutate({ certificateId: certificateId!, input })}
             />
           ) : (
-            <p className="text-sm text-muted-foreground">
-              Cargando la plantilla y catálogos del certificado…
-            </p>
+            <Cargando variante="linea" texto="Cargando la plantilla y catálogos del certificado…" />
           )}
           {save.isError && (
             <p role="alert" className="text-xs text-destructive">

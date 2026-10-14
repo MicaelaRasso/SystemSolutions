@@ -177,3 +177,18 @@
     display: none;
   }
 }
+
+/* Indicador de carga compartido (components/common/cargando.tsx): aparece tras un breve
+   retardo para no parpadear cuando los datos llegan enseguida. */
+@keyframes cargando-aparece {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.cargando-aparece {
+  animation: cargando-aparece 200ms ease-out 150ms both;
+}

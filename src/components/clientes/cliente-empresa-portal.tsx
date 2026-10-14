@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ErrorState } from "@/components/common/states"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Cargando } from "@/components/common/cargando"
 import { useEdgeContext } from "@/lib/api/hooks"
 import { useEmpresa } from "@/lib/hooks/queries"
 
@@ -14,7 +14,7 @@ export function ClienteEmpresaPortal() {
   const empresa = useEmpresa(context.data?.cuenta_id ?? "")
 
   if (context.isError) return <ErrorState error={context.error} />
-  if (context.isPending || empresa.isPending) return <Skeleton className="h-96 w-full max-w-3xl" />
+  if (context.isPending || empresa.isPending) return <Cargando />
   if (empresa.isError) return <ErrorState error={empresa.error} onRetry={() => void empresa.refetch()} />
 
   const fields = [

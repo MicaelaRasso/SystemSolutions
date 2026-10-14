@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Cargando } from "@/components/common/cargando"
 import { Switch } from "@/components/ui/switch"
 import { edgeApi } from "@/lib/api"
 import {
@@ -121,7 +122,7 @@ export function UsuariosCliente({ empresaId }: { empresaId: ID }) {
       </div>
 
       {usuarios.isPending || arbol.isPending ? (
-        <Skeleton className="h-40 w-full" />
+        <Cargando texto="Cargando usuarios…" />
       ) : usuarios.data.length === 0 ? (
         <EmptyState
           icono={Users}
@@ -368,7 +369,7 @@ function UsuarioForm({
             Marcá un yacimiento para darle acceso completo, o elegí plantas o equipos puntuales.
           </FieldDescription>
           {usuario && accesosActuales.isPending ? (
-            <Skeleton className="h-40 w-full" />
+            <Cargando variante="linea" texto="Cargando accesos…" />
           ) : (
             <AccesosSelector arbol={arbol} value={accesos} onChange={setEditados} />
           )}

@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Cargando } from "@/components/common/cargando"
 import { Switch } from "@/components/ui/switch"
 import { LISTA_CATALOGO_LABEL } from "@/lib/domain/catalogos"
 import type { ListaCatalogo, OpcionCatalogo } from "@/lib/domain/types"
@@ -180,7 +180,7 @@ function ListaEditor({ lista }: { lista: ListaCatalogo }) {
       {isError ? (
         <ErrorState error={error} onRetry={() => refetch()} />
       ) : isPending ? (
-        <Skeleton className="h-64 w-full" />
+        <Cargando />
       ) : (
         <ol className="divide-y rounded-lg border">
           {visibles.map(({ o, indice }) => (

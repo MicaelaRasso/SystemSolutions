@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Cargando } from "@/components/common/cargando"
 import {
   Table,
   TableBody,
@@ -202,7 +202,7 @@ export function TareasList() {
       {isError || requests.isError || visits.isError ? (
         <ErrorState error={error ?? requests.error ?? visits.error} onRetry={() => { void refetch(); void requests.refetch(); void visits.refetch() }} />
       ) : isPending || (usaSupabase() && (requests.isPending || visits.isPending)) ? (
-        <Skeleton className="h-80 w-full" />
+        <Cargando texto="Cargando tareas…" />
       ) : filas.length === 0 && requestsWithoutVisit.length === 0 ? (
         <EmptyState
           icono={ClipboardList}

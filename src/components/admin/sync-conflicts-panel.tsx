@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { edgeApi } from "@/lib/api"
+import { Cargando } from "@/components/common/cargando"
 
 type Conflict = Record<string, unknown> & {
   id: string
@@ -99,7 +100,7 @@ export function SyncConflictsPanel() {
       <CardContent className="space-y-4">
         {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
         {message ? <p className="text-sm" role="status">{message}</p> : null}
-        {loading ? <p className="text-sm text-muted-foreground">Cargando conflictos…</p> : null}
+        {loading ? <Cargando variante="linea" texto="Cargando conflictos…" /> : null}
         {!loading && items.length === 0 ? <p className="text-sm text-muted-foreground">No hay conflictos de sincronización.</p> : null}
         {items.map((conflict) => {
           const resolved = Boolean(conflict.resolved_at)

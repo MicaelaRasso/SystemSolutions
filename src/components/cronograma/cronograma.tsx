@@ -11,7 +11,7 @@ import { ErrorState } from "@/components/common/states"
 import { COLOR_SIN_TALLER } from "@/components/tareas/badges"
 import { convertirOperacionATarea, TareaSheet } from "@/components/tareas/tarea-sheet"
 import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Cargando } from "@/components/common/cargando"
 import { diasSemana, fmt, iso, lunesDe } from "@/lib/fechas"
 import {
   INVALIDAR_TAREAS,
@@ -201,7 +201,7 @@ export function Cronograma() {
           }}
         />
       ) : cargando ? (
-        <Skeleton className="h-[32rem] w-full" />
+        <Cargando texto="Cargando cronograma…" />
       ) : (
         <div
           className={cn(

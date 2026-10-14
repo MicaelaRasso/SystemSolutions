@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import type { AccountDto } from "@/lib/api/contracts"
+import { Cargando } from "@/components/common/cargando"
 
 const key = ["edge", "identity", "administrators"] as const
 
@@ -84,7 +85,7 @@ export function AdministradoresPanel() {
       <Card>
         <CardHeader><CardTitle>Cuentas administrativas</CardTitle><CardDescription>Las cuentas pendientes aún no han terminado de configurar el acceso.</CardDescription></CardHeader>
         <CardContent>
-          {list.isLoading ? <p role="status">Cargando cuentas…</p> : list.isError ? <div className="space-y-3"><p role="alert">No se pudieron cargar las cuentas.</p><Button variant="outline" onClick={() => void list.refetch()}>Reintentar</Button></div> : !list.data?.length ? <p className="text-sm text-muted-foreground">Todavía no hay cuentas administrativas.</p> : (
+          {list.isLoading ? <Cargando texto="Cargando cuentas…" /> : list.isError ? <div className="space-y-3"><p role="alert">No se pudieron cargar las cuentas.</p><Button variant="outline" onClick={() => void list.refetch()}>Reintentar</Button></div> : !list.data?.length ? <p className="text-sm text-muted-foreground">Todavía no hay cuentas administrativas.</p> : (
             <div className="space-y-3">
               {list.data.map((account) => (
                 <section key={account.id} className="flex flex-col justify-between gap-3 rounded-lg border p-4 md:flex-row md:items-center">

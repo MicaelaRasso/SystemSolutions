@@ -1,7 +1,7 @@
 "use client"
 
-import { ChevronsUpDown, LogOut } from "lucide-react"
-import Link from "next/link"
+import { ChevronsUpDown, LoaderCircle, LogOut } from "lucide-react"
+import Link, { useLinkStatus } from "next/link"
 import { usePathname } from "next/navigation"
 
 import { Logo } from "@/components/brand/logo"
@@ -35,6 +35,7 @@ import { esActivo, NAVEGACION } from "@/config/navigation"
 import { useAuth } from "@/lib/auth/auth-provider"
 import { ROL_LABEL } from "@/lib/domain/rules"
 import type { Rol } from "@/lib/domain/types"
+import { cn } from "@/lib/utils"
 
 function iniciales(nombre: string) {
   return nombre
@@ -89,6 +90,25 @@ function MenuUsuario({ rol }: { rol: Rol }) {
   )
 }
 
+/**
+ * Rueda chica junto al ítem del menú mientras la navegación todavía no arrancó (por ejemplo, si el
+ * prefetch no terminó). Tamaño fijo y solo cambia la opacidad, para no mover el layout.
+ */
+function NavegacionPendiente() {
+  const { pending } = useLinkStatus()
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "ml-auto flex opacity-0 transition-opacity group-data-[collapsible=icon]:hidden",
+        pending && "opacity-70",
+      )}
+    >
+      <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" />
+    </span>
+  )
+}
+
 function Navegacion({ rol }: { rol: Rol }) {
   const pathname = usePathname()
   const { isMobile, setOpenMobile } = useSidebar()
@@ -111,7 +131,8 @@ function Navegacion({ rol }: { rol: Rol }) {
                   >
                     <Link href={item.href} onClick={() => isMobile && setOpenMobile(false)}>
                       <item.icono />
-                      <span>{item.titulo}</span>
+                      <span className="truncate">{item.titulo}</span>
+                      <NavegacionPendiente />
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

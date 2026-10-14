@@ -7,7 +7,7 @@ import { armarCertificadoVista } from "@/components/certificados/certificado-vis
 import { CertificadoVisor } from "@/components/certificados/certificado-visor"
 import { EmptyState, ErrorState } from "@/components/common/states"
 import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Cargando } from "@/components/common/cargando"
 import { useEdgeClientCertificateExport, useEdgeValveCertificateHistory } from "@/lib/api/hooks"
 import { permisoImpresionCertificado } from "@/lib/domain/rules"
 import { ServiceError } from "@/lib/services/contracts"
@@ -49,7 +49,7 @@ export function CertificadoCliente({
     )
   }
   if (historial.isLoading || (finalizado && exportacion.isLoading)) {
-    return <Skeleton className="h-[480px] w-full rounded-xl" />
+    return <Cargando texto="Cargando certificado…" />
   }
   if (historial.isError) {
     return <ErrorState error={historial.error} onRetry={() => void historial.refetch()} />

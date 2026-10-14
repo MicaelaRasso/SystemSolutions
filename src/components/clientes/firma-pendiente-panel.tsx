@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useEdgePendingClientSignatureVisits, useUploadEdgeVisitSignature } from "@/lib/api/hooks"
+import { Cargando } from "@/components/common/cargando"
 
 function text(value: unknown) {
   return typeof value === "string" && value.trim() ? value : undefined
@@ -27,8 +28,8 @@ export function FirmaPendientePanel() {
   if (visits.isPending)
     return (
       <Card>
-        <CardContent className="py-8 text-sm text-muted-foreground">
-          Cargando visitas completadas…
+        <CardContent>
+          <Cargando texto="Cargando visitas completadas…" />
         </CardContent>
       </Card>
     )

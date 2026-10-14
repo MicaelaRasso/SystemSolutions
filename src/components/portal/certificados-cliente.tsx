@@ -9,7 +9,7 @@ import { EmptyState, ErrorState } from "@/components/common/states"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Cargando } from "@/components/common/cargando"
 import {
   Table,
   TableBody,
@@ -93,7 +93,7 @@ export function CertificadosCliente() {
         {error ? (
           <ErrorState error={error} onRetry={() => void yacimientos.refetch()} />
         ) : cargando ? (
-          <Skeleton className="h-32 w-full" />
+          <Cargando texto="Cargando certificados…" />
         ) : filas.length === 0 ? (
           <EmptyState
             icono={FileCheck2}

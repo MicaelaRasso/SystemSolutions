@@ -10,7 +10,7 @@ import { EmptyState, ErrorState } from "@/components/common/states"
 import { Button } from "@/components/ui/button"
 import { Field, FieldContent, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Cargando } from "@/components/common/cargando"
 import { Switch } from "@/components/ui/switch"
 import {
   Table,
@@ -77,7 +77,7 @@ export function PersonalPanel() {
       </div>
 
       {isPending ? (
-        <Skeleton className="h-64 w-full" />
+        <Cargando />
       ) : data.length === 0 ? (
         <EmptyState icono={Users} titulo="Sin personal cargado" accion={nueva} />
       ) : (

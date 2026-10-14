@@ -7,7 +7,7 @@ import { useCallback, useMemo, useRef, useState } from "react"
 import { EmptyState, ErrorState } from "@/components/common/states"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Cargando } from "@/components/common/cargando"
 import type { ID } from "@/lib/domain/types"
 import { plural } from "@/lib/format"
 import { useArbol } from "@/lib/hooks/queries"
@@ -82,12 +82,7 @@ export function EstructuraEditor({ empresaId }: { empresaId: ID }) {
   if (isError) return <ErrorState error={error} onRetry={() => refetch()} />
 
   if (isPending) {
-    return (
-      <div className="grid gap-6 lg:grid-cols-[20rem_minmax(0,1fr)]">
-        <Skeleton className="h-96" />
-        <Skeleton className="h-96" />
-      </div>
-    )
+    return <Cargando texto="Cargando estructura…" />
   }
 
   const totales = contar(arbol)
