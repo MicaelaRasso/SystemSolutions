@@ -14,6 +14,7 @@ import {
   useAddEdgeWorkOrder,
   useEdgeCertificateCaptureCatalogs,
   useEdgeCertificateDraft,
+  useEdgeVisits,
   useStartEdgeCertificateDraft,
   useUpdateEdgeCertificateDraft,
   useUpdateEdgeWorkOrder,
@@ -171,8 +172,16 @@ export function TareaDetalle({ id }: { id: string }) {
 function OrdenesTrabajo({ operation }: { operation: OperationRead }) {
   const add = useAddEdgeWorkOrder()
   const update = useUpdateEdgeWorkOrder()
+  const visits = useEdgeVisits()
   const visitId = operation.visit.visit.id
-  const selectedValves = operation.request.selected_valves
+  const hasSiblingVisits = (visits.data ?? []).some(
+    ({ visit }) =>
+      visit.solicitud_id === operation.visit.visit.solicitud_id && visit.id !== visitId,
+  )
+  const limitToVisitScope = visits.isPending || visits.isError || hasSiblingVisits
+  const selectedValves = operation.request.selected_valves.filter(
+    (valve) => !limitToVisitScope || operation.work_orders.some(({ work_order }) => work_order.valvula_id === valve.id),
+  )
   const orderForValve = (valveId: string) =>
     operation.work_orders.find((entry) => entry.work_order.valvula_id === valveId)
 

@@ -28,10 +28,10 @@ export function TurnosPortal() {
       if (!requestId) continue
       visitsByRequest.set(requestId, [...(visitsByRequest.get(requestId) ?? []), item])
     }
-    return (requests.data ?? []).map((item) => ({
-      ...item,
-      visits: visitsByRequest.get(String(item.request.id)) ?? [],
-    }))
+    return (requests.data ?? []).flatMap((item) => {
+      const requestVisits = visitsByRequest.get(String(item.request.id))
+      return requestVisits ? [{ ...item, visits: requestVisits }] : []
+    })
   }, [requests.data, visitItems])
 
   const loading = requests.isPending || visits.isPending
