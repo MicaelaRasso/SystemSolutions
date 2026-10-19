@@ -1,6 +1,6 @@
 begin;
 
-select plan(17);
+select plan(18);
 
 select has_table('public', 'partes_diarios', 'each visit stores one Parte diario code');
 select has_table('public', 'parte_diario_imagenes', 'Parte diario image references are separate from certificates');
@@ -32,7 +32,9 @@ insert into public.yacimientos (id, cliente_cuenta_id, nombre, provincia, operad
   ('00000000-0000-0000-0000-000000002907', '00000000-0000-0000-0000-000000002902', 'PD Yacimiento ajeno', 'Salta', 'Operadora', 'Contratista');
 insert into public.plantas_locaciones (id, yacimiento_id, nombre) values ('00000000-0000-0000-0000-000000002908', '00000000-0000-0000-0000-000000002906', 'PD Planta');
 insert into public.equipos_unidades (id, planta_id, nombre) values ('00000000-0000-0000-0000-000000002909', '00000000-0000-0000-0000-000000002908', 'PD Equipo');
-insert into public.valvulas (id, equipo_id, nombre) values ('00000000-0000-0000-0000-000000002910', '00000000-0000-0000-0000-000000002909', 'PD Válvula');
+insert into public.valvulas (id, equipo_id, nombre) values
+  ('00000000-0000-0000-0000-000000002910', '00000000-0000-0000-0000-000000002909', 'PD Válvula 1'),
+  ('00000000-0000-0000-0000-000000002917', '00000000-0000-0000-0000-000000002909', 'PD Válvula 2');
 
 create function public.test_pd_set_actor(target uuid)
 returns void language plpgsql as $$
@@ -49,7 +51,7 @@ select public.test_pd_set_actor('00000000-0000-0000-0000-000000002904');
 select set_config('app.pd_request_id', (public.api_admin_create_service_request(
   '00000000-0000-0000-0000-000000002901'::uuid,
   '00000000-0000-0000-0000-000000002906'::uuid,
-  '[{"kind":"valvula","id":"00000000-0000-0000-0000-000000002910"}]'::jsonb
+  '[{"kind":"valvula","id":"00000000-0000-0000-0000-000000002910"},{"kind":"valvula","id":"00000000-0000-0000-0000-000000002917"}]'::jsonb
 )->'request'->>'id'), true);
 select set_config('app.pd_visit_id', (public.api_schedule_visit(
   current_setting('app.pd_request_id')::uuid,
@@ -68,6 +70,18 @@ select is(
 select set_config('app.pd_work_order_id', (select id::text from public.ordenes_trabajo where visita_id = current_setting('app.pd_visit_id')::uuid limit 1), true);
 select public.api_update_work_order(current_setting('app.pd_work_order_id')::uuid, 'evaluada', null);
 select public.api_start_certificate_draft(current_setting('app.pd_work_order_id')::uuid);
+select public.api_update_work_order(
+  (select id from public.ordenes_trabajo where visita_id = current_setting('app.pd_visit_id')::uuid and valvula_id = '00000000-0000-0000-0000-000000002917'::uuid),
+  'evaluada', null
+);
+select public.api_start_certificate_draft(
+  (select id from public.ordenes_trabajo where visita_id = current_setting('app.pd_visit_id')::uuid and valvula_id = '00000000-0000-0000-0000-000000002917'::uuid)
+);
+select is(
+  (select count(*) from public.certificados c join public.partes_diarios pd on pd.visita_id = c.visita_id where c.visita_id = current_setting('app.pd_visit_id')::uuid and pd.codigo = 'PD2026A'),
+  2::bigint,
+  'one visit Parte diario code is shared by the certificates for both Válvulas'
+);
 
 select public.api_sync_visit_part_diario_batch(
   current_setting('app.pd_visit_id')::uuid,

@@ -81,27 +81,19 @@ describe("offline Parte diario synchronization", () => {
     )
   })
 
-  it("synchronizes PD operations before dependent work and restores input acknowledgement order", async () => {
-    const regularOperation = { operation_id: "regular-id", kind: "complete_visit", payload: {} }
+  it("preserves cross-kind operation order and restores input acknowledgement order", async () => {
+    const regularOperation = { operation_id: "regular-id", kind: "work_order_outcome", payload: {} }
     const setCodeOperation = { operation_id: "set-code-id", kind: "set_part_diario", payload: { codigo: "PD123" } }
     const imageOperation = { operation_id: "image-id", kind: "attach_part_diario_image", payload: { codigo: "PD123" } }
+    const laterRegularOperation = { operation_id: "later-regular-id", kind: "complete_visit", payload: {} }
     const rpc = vi.fn().mockImplementation((name: string, args: Record<string, unknown>) => {
-      if (name === "api_sync_visit_part_diario_batch")
-        return Promise.resolve({
-          data: {
-            visit_id: visitId,
-            operations: (args.operations as typeof setCodeOperation[]).map((operation) => ({
-              operation_id: operation.operation_id,
-              estado: "sincronizada",
-            })),
-            visit_acknowledgement: { estado: "sincronizada" },
-          },
-          error: null,
-        })
       return Promise.resolve({
         data: {
           visit_id: visitId,
-          operations: [{ operation_id: regularOperation.operation_id, estado: "sincronizada" }],
+          operations: (args.operations as Array<{ operation_id: string }>).map((operation) => ({
+            operation_id: operation.operation_id,
+            estado: "sincronizada",
+          })),
           visit_acknowledgement: { estado: "sincronizada" },
         },
         error: null,
@@ -113,11 +105,12 @@ describe("offline Parte diario synchronization", () => {
         new Request(`https://example.test/visits/${visitId}/sync`, { method: "POST" }),
         ["visits", visitId, "sync"],
         rpc,
-        { device_id: deviceId, operations: [regularOperation, setCodeOperation, imageOperation] },
+        { device_id: deviceId, operations: [regularOperation, setCodeOperation, imageOperation, laterRegularOperation] },
       ),
     )
 
     expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      "api_sync_visit_batch",
       "api_sync_visit_part_diario_batch",
       "api_sync_visit_batch",
     ])
@@ -127,6 +120,7 @@ describe("offline Parte diario synchronization", () => {
           { operation_id: "regular-id" },
           { operation_id: "set-code-id" },
           { operation_id: "image-id" },
+          { operation_id: "later-regular-id" },
         ],
       },
       error: null,

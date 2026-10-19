@@ -98,57 +98,52 @@ export const offlineSyncHandler: RouteHandler = async ({ request, route, body, d
     if (!Array.isArray(body.operations))
       throw new HttpError(400, "An operations array is required")
     const operations = body.operations
-    const parteDiarioOperations = operations.filter(
-      (operation) => isRecord(operation) &&
-        ["set_part_diario", "attach_part_diario_image"].includes(String(operation.kind)),
-    )
-    const regularOperations = operations.filter(
-      (operation) => !isRecord(operation) ||
-        !["set_part_diario", "attach_part_diario_image"].includes(String(operation.kind)),
-    )
-
-    const parteDiarioResult = parteDiarioOperations.length
-      ? await db.rpc("api_sync_visit_part_diario_batch", {
-        target_visit: segments[1],
-        operations: parteDiarioOperations,
-        target_device: deviceId,
-      })
-      : null
-    if (parteDiarioResult?.error) return parteDiarioResult
-
-    const regularResult = regularOperations.length || !parteDiarioResult
-      ? await db.rpc("api_sync_visit_batch", {
-        target_visit: segments[1],
-        operations: regularOperations,
-        target_device: deviceId,
-      })
-      : null
-    if (regularResult?.error) return regularResult
-    if (!parteDiarioResult) return regularResult!
-    if (!regularResult) return parteDiarioResult
+    const groups: Array<{ isParteDiario: boolean; operations: unknown[] }> = []
+    for (const operation of operations) {
+      const isParteDiario = isRecord(operation) &&
+        ["set_part_diario", "attach_part_diario_image"].includes(String(operation.kind))
+      const current = groups[groups.length - 1]
+      if (!current || current.isParteDiario !== isParteDiario)
+        groups.push({ isParteDiario, operations: [operation] })
+      else current.operations.push(operation)
+    }
 
     const responses = new Map<string, unknown>()
-    for (const result of [parteDiarioResult, regularResult]) {
+    let lastResult: Awaited<ReturnType<typeof db.rpc>> | null = null
+    for (const group of groups) {
+      const result = await db.rpc(
+        group.isParteDiario ? "api_sync_visit_part_diario_batch" : "api_sync_visit_batch",
+        {
+          target_visit: segments[1],
+          operations: group.operations,
+          target_device: deviceId,
+        },
+      )
+      if (result.error) return result
+      lastResult = result
       if (!isRecord(result.data) || !Array.isArray(result.data.operations)) continue
       for (const response of result.data.operations) {
         if (isRecord(response) && typeof response.operation_id === "string")
           responses.set(response.operation_id, response)
       }
     }
+    if (!lastResult) return db.rpc("api_sync_visit_batch", {
+      target_visit: segments[1],
+      operations: [],
+      target_device: deviceId,
+    })
     const orderedResponses = operations.flatMap((operation) => {
       const operationId = isRecord(operation) ? operation.operation_id : null
       const response = typeof operationId === "string" ? responses.get(operationId) : null
       return response ? [response] : []
     })
-    const regularData = isRecord(regularResult.data) ? regularResult.data : {}
-    const parteDiarioData = isRecord(parteDiarioResult.data) ? parteDiarioResult.data : {}
+    const finalData = isRecord(lastResult.data) ? lastResult.data : {}
     return {
       data: {
-        ...regularData,
+        ...finalData,
         visit_id: segments[1],
         operations: orderedResponses,
-        visit_acknowledgement:
-          regularData.visit_acknowledgement ?? parteDiarioData.visit_acknowledgement ?? null,
+        visit_acknowledgement: finalData.visit_acknowledgement ?? null,
       },
       error: null,
     }

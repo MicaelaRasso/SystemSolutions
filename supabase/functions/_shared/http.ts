@@ -18,6 +18,18 @@ export const json = (request: Request, body: unknown, status = 200, id?: string)
     },
   })
 
+export const binary = (request: Request, body: Blob, contentType: string, id?: string) =>
+  new Response(body.stream(), {
+    status: 200,
+    headers: {
+      "content-type": contentType,
+      "cache-control": "private, no-store",
+      "content-disposition": "inline",
+      ...corsHeaders(request.headers.get("origin"), configuredOrigins()),
+      ...(id ? correlationHeaders(id) : {}),
+    },
+  })
+
 export const preflight = (request: Request, id: string) => {
   if (!isAllowedOrigin(request.headers.get("origin"), configuredOrigins())) {
     return json(request, { error: "Origin not allowed" }, 403, id)

@@ -96,6 +96,18 @@ export const removeStorageObject = async (bucket: string, objectName: string): P
   if (error) throw error
 }
 
+export const downloadStorageObject = async (bucket: string, objectName: string): Promise<Blob> => {
+  const { SUPABASE_URL, SUPABASE_SECRET_KEY } = (await import("./runtime-env.ts")).runtimeEnv()
+  if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) throw new Error("Supabase storage is not configured")
+  const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.117.2")
+  const client = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+  const { data, error } = await client.storage.from(bucket).download(objectName)
+  if (error || !data) throw error ?? new Error("Could not download the storage object")
+  return data
+}
+
 export const createSignedStorageUrl = async (
   bucket: string,
   objectName: string,

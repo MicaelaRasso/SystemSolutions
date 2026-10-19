@@ -34,6 +34,7 @@ describe("shared route ownership", () => {
     ["GET", ["visits", "00000000-0000-0000-0000-000000000001", "parte-diario"], "service-workflow"],
     ["PUT", ["visits", "00000000-0000-0000-0000-000000000001", "parte-diario"], "service-workflow"],
     ["POST", ["visits", "00000000-0000-0000-0000-000000000001", "parte-diario", "images"], "service-workflow"],
+    ["GET", ["visits", "00000000-0000-0000-0000-000000000001", "parte-diario", "images", "00000000-0000-0000-0000-000000000002"], "service-workflow"],
     ["GET", ["valves", "00000000-0000-0000-0000-000000000001", "certificates"], "certificate-field"],
     ["GET", ["clients", "me"], "asset-access"],
     ["PUT", ["clients", "me", "logo"], "asset-access"],

@@ -189,6 +189,7 @@ export const routeOwner = (method: string, route: string[]): FunctionName | null
     (method === "GET" && route[0] === "visits" && (route.length === 1 || route.length === 2)) ||
     ((method === "GET" || method === "PUT") && route[0] === "visits" && route.length === 3 && route[2] === "parte-diario") ||
     (method === "POST" && route[0] === "visits" && route.length === 4 && route[2] === "parte-diario" && route[3] === "images") ||
+    (method === "GET" && route[0] === "visits" && route.length === 5 && route[2] === "parte-diario" && route[3] === "images") ||
     (method === "GET" && route[0] === "visits" && route.length === 3 && route[2] === "attachments") ||
     (method === "POST" &&
       route[0] === "visits" &&

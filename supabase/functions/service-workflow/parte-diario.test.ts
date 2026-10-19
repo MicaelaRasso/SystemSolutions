@@ -1,15 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 
-const { createSignedStorageUrl, removeStorageObject, uploadStorageObject, validateStorageObject } =
+const { downloadStorageObject, removeStorageObject, uploadStorageObject, validateStorageObject } =
   vi.hoisted(() => ({
-    createSignedStorageUrl: vi.fn(),
+    downloadStorageObject: vi.fn(),
     removeStorageObject: vi.fn(),
     uploadStorageObject: vi.fn(),
     validateStorageObject: vi.fn(),
   }))
 
 vi.mock("../_shared/storage.ts", () => ({
-  createSignedStorageUrl,
+  downloadStorageObject,
   removeStorageObject,
   uploadStorageObject,
   validateStorageObject,
@@ -121,8 +121,7 @@ describe("service-workflow Parte diario routes", () => {
     })
   })
 
-  it("returns signed image URLs only after the authorized visit read succeeds", async () => {
-    createSignedStorageUrl.mockResolvedValue("https://signed.example/image.jpg")
+  it("returns gateway download paths for private images after the authorized visit read succeeds", async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: {
         visit_id: visitId,
@@ -141,15 +140,43 @@ describe("service-workflow Parte diario routes", () => {
         ),
       ),
     ).resolves.toMatchObject({
-      data: { codigo: "PD123", images: [{ url: "https://signed.example/image.jpg" }] },
+      data: {
+        codigo: "PD123",
+        images: [{ download_path: `visits/${visitId}/parte-diario/images/${imageId}` }],
+      },
       error: null,
     })
     expect(rpc).toHaveBeenCalledWith("api_visit_parte_diario", { target_visit: visitId })
-    expect(createSignedStorageUrl).toHaveBeenCalledWith(
+    expect(downloadStorageObject).not.toHaveBeenCalled()
+  })
+
+  it("proxies image bytes through the authorized Edge route", async () => {
+    downloadStorageObject.mockResolvedValue(new Blob(["image-bytes"], { type: "image/jpeg" }))
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        visit_id: visitId,
+        codigo: "PD123",
+        images: [{ id: imageId, bucket: "certificate-evidence", object_path: `visits/${visitId}/parte-diario/${imageId}.jpg` }],
+      },
+      error: null,
+    })
+
+    const response = await handler(
+      context(
+        new Request(`https://example.test/visits/${visitId}/parte-diario/images/${imageId}`),
+        ["visits", visitId, "parte-diario", "images", imageId],
+        rpc,
+      ),
+    )
+
+    expect(response).toBeInstanceOf(Response)
+    if (!(response instanceof Response)) throw new Error("Expected an image response")
+    expect(response.headers.get("content-type")).toBe("image/jpeg")
+    expect(response.headers.get("cache-control")).toBe("private, no-store")
+    await expect(response.text()).resolves.toBe("image-bytes")
+    expect(downloadStorageObject).toHaveBeenCalledWith(
       "certificate-evidence",
       `visits/${visitId}/parte-diario/${imageId}.jpg`,
-      3600,
-      true,
     )
   })
 })

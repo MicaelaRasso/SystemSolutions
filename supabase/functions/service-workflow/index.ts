@@ -1,8 +1,9 @@
 import { HttpError } from "../_shared/errors.ts"
-import { json, routeNotFound } from "../_shared/http.ts"
+import { binary, json, routeNotFound } from "../_shared/http.ts"
 import { OPERATION_STATUSES, isUuid, parseOperationsQuery } from "../_shared/route.ts"
 import {
   createSignedStorageUrl,
+  downloadStorageObject,
   removeStorageObject,
   uploadStorageObject,
   validateStorageObject,
@@ -435,10 +436,42 @@ export const serviceWorkflowHandler: RouteHandler = async ({
       ) throw new HttpError(502, "Invalid Parte diario image reference")
       return {
         ...value,
-        url: await createSignedStorageUrl("certificate-evidence", value.object_path, 3600, true),
+        download_path: `visits/${segments[1]}/parte-diario/images/${value.id}`,
       }
     }))
     return { data: { ...result.data, images }, error: null }
+  }
+  if (
+    segments[0] === "visits" &&
+    request.method === "GET" &&
+    segments[1] &&
+    segments[2] === "parte-diario" &&
+    segments[3] === "images" &&
+    segments[4] &&
+    segments.length === 5
+  ) {
+    if (!isUuid(segments[1]) || !isUuid(segments[4]))
+      throw new HttpError(400, "visitId and imageId must be UUIDs")
+    const result = await db.rpc("api_visit_parte_diario", { target_visit: segments[1] })
+    if (result.error) return result
+    if (!isRecord(result.data) || !Array.isArray(result.data.images))
+      throw new HttpError(502, "Invalid Parte diario response")
+    const image = result.data.images.find((value) => isRecord(value) && value.id === segments[4])
+    if (
+      !isRecord(image) ||
+      image.bucket !== "certificate-evidence" ||
+      !isNonEmptyString(image.object_path) ||
+      !image.object_path.startsWith(`visits/${segments[1]}/parte-diario/`) ||
+      !new RegExp(`/parte-diario/${segments[4]}\\.(jpg|png|webp)$`, "i").test(image.object_path)
+    )
+      throw new HttpError(404, "Parte diario image not found")
+    const file = await downloadStorageObject("certificate-evidence", image.object_path)
+    const contentType = image.object_path.endsWith(".jpg")
+      ? "image/jpeg"
+      : image.object_path.endsWith(".png")
+        ? "image/png"
+        : "image/webp"
+    return binary(request, file, contentType, correlationId)
   }
   if (
     segments[0] === "visits" &&
