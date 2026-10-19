@@ -64,6 +64,7 @@ export function FirmaPendientePanel() {
             const date = text(visitRecord.starts_at) ?? text(visitRecord.fecha_ejecucion)
             const file = files[visit.visit.id]
             const signerName = names[visit.visit.id] ?? ""
+            const hasFullName = signerName.trim().split(/\s+/).filter(Boolean).length >= 2
             return (
               <div className="rounded-lg border p-4" key={visit.visit.id}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -79,7 +80,7 @@ export function FirmaPendientePanel() {
                 <div className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
                   <div className="space-y-1">
                     <Label htmlFor={`signer-${visit.visit.id}`}>
-                      Nombre que se mostrará junto a la firma
+                      Nombre y apellido de quien firma
                     </Label>
                     <Input
                       id={`signer-${visit.visit.id}`}
@@ -108,8 +109,12 @@ export function FirmaPendientePanel() {
                       className="h-auto"
                     />
                   </div>
+                  <p className="text-xs text-muted-foreground md:col-span-2">
+                    La firma se asocia a la visita del Cliente titular del yacimiento. El nombre no
+                    acredita ni reemplaza la autoridad de quien firma.
+                  </p>
                   <Button
-                    disabled={!signerName.trim() || !file || upload.isPending}
+                    disabled={!hasFullName || !file || upload.isPending}
                     onClick={() => {
                       if (!file) return
                       upload.mutate(
