@@ -194,6 +194,17 @@ function OrdenesTrabajo({ operation }: { operation: OperationRead }) {
         <p className="text-sm text-muted-foreground">
           Se administran dentro de la visita asociada.
         </p>
+        {visits.isPending && (
+          <p className="text-sm text-muted-foreground">Verificando las válvulas asignadas a otras visitas…</p>
+        )}
+        {visits.isError && (
+          <p role="alert" className="text-sm text-destructive">
+            No se pudo verificar el alcance de esta visita. Reintenta antes de agregar órdenes.
+            <Button type="button" variant="link" size="sm" onClick={() => void visits.refetch()}>
+              Reintentar
+            </Button>
+          </p>
+        )}
       </div>
       {selectedValves.length === 0 ? (
         <p className="text-sm text-muted-foreground">
@@ -252,7 +263,7 @@ function OrdenesTrabajo({ operation }: { operation: OperationRead }) {
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={add.isPending}
+                    disabled={add.isPending || visits.isPending || visits.isError}
                     onClick={() => add.mutate({ visitId, valveId: valve.id })}
                   >
                     Agregar orden
