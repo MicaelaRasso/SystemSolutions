@@ -150,10 +150,17 @@ export const certificateFieldHandler: RouteHandler = async ({
     request.method === "GET" &&
     segments[1] &&
     segments[2] === "certificates"
-  )
-    return db.rpc("api_valvula_certificates", {
+  ) {
+    if (!isUuid(segments[1])) throw new HttpError(400, "valveId must be a UUID")
+    const requestedCode = new URL(request.url).searchParams.get("pd_code")
+    const pdCode = requestedCode?.trim() || null
+    if (pdCode !== null && !/^[A-Za-z0-9]+$/.test(pdCode))
+      throw new HttpError(400, "pd_code must be alphanumeric")
+    return db.rpc("api_valvula_certificates_by_pd", {
       target_valvula: segments[1],
+      pd_code: pdCode,
     })
+  }
   if (
     segments[0] === "visits" &&
     request.method === "POST" &&

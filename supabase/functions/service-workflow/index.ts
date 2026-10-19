@@ -3,6 +3,7 @@ import { json, routeNotFound } from "../_shared/http.ts"
 import { OPERATION_STATUSES, isUuid, parseOperationsQuery } from "../_shared/route.ts"
 import {
   createSignedStorageUrl,
+  removeStorageObject,
   uploadStorageObject,
   validateStorageObject,
 } from "../_shared/storage.ts"
@@ -412,6 +413,98 @@ export const serviceWorkflowHandler: RouteHandler = async ({
     })
   if (segments[0] === "visits" && request.method === "GET" && !segments[1])
     return db.rpc("api_visits")
+  if (
+    segments[0] === "visits" &&
+    request.method === "GET" &&
+    segments[1] &&
+    segments[2] === "parte-diario" &&
+    segments.length === 3
+  ) {
+    if (!isUuid(segments[1])) throw new HttpError(400, "visitId must be a UUID")
+    const result = await db.rpc("api_visit_parte_diario", { target_visit: segments[1] })
+    if (result.error) return result
+    if (!isRecord(result.data) || !Array.isArray(result.data.images))
+      throw new HttpError(502, "Invalid Parte diario response")
+    const images = await Promise.all(result.data.images.map(async (value) => {
+      if (
+        !isRecord(value) ||
+        value.bucket !== "certificate-evidence" ||
+        !isNonEmptyString(value.object_path) ||
+        !value.object_path.startsWith(`visits/${segments[1]}/parte-diario/`) ||
+        !/\/parte-diario\/[0-9a-f-]+\.(jpg|png|webp)$/i.test(value.object_path)
+      ) throw new HttpError(502, "Invalid Parte diario image reference")
+      return {
+        ...value,
+        url: await createSignedStorageUrl("certificate-evidence", value.object_path, 3600, true),
+      }
+    }))
+    return { data: { ...result.data, images }, error: null }
+  }
+  if (
+    segments[0] === "visits" &&
+    request.method === "PUT" &&
+    segments[1] &&
+    segments[2] === "parte-diario" &&
+    segments.length === 3
+  ) {
+    if (!isUuid(segments[1])) throw new HttpError(400, "visitId must be a UUID")
+    const code = typeof body.codigo === "string" ? body.codigo.trim() : ""
+    if (!/^[A-Za-z0-9]+$/.test(code))
+      throw new HttpError(400, "A valid alphanumeric Parte diario code is required")
+    return db.rpc("api_set_visit_parte_diario", {
+      target_visit: segments[1],
+      pd_code: code,
+    })
+  }
+  if (
+    segments[0] === "visits" &&
+    request.method === "POST" &&
+    segments[1] &&
+    segments[2] === "parte-diario" &&
+    segments[3] === "images" &&
+    segments.length === 4
+  ) {
+    if (!isUuid(segments[1])) throw new HttpError(400, "visitId must be a UUID")
+    const file = body.file instanceof File ? body.file : null
+    const imageId = typeof body.image_id === "string" ? body.image_id : ""
+    const code = typeof body.codigo === "string" ? body.codigo.trim() : ""
+    if (!file) throw new HttpError(400, "A Parte diario image file is required")
+    if (!isUuid(imageId)) throw new HttpError(400, "A valid image_id is required")
+    if (!/^[A-Za-z0-9]+$/.test(code))
+      throw new HttpError(400, "A valid alphanumeric Parte diario code is required")
+    const extension = ({ "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" } as Record<string, string>)[file.type]
+    const objectPath = extension
+      ? `visits/${segments[1]}/parte-diario/${imageId}.${extension}`
+      : "invalid"
+    const validation = validateStorageObject({
+      objectName: objectPath,
+      contentType: file.type,
+      size: file.size,
+    })
+    if (!validation.ok) throw new HttpError(400, validation.error)
+
+    await uploadStorageObject("certificate-evidence", validation.metadata.objectName, file)
+    const result = await db.rpc("api_register_visit_parte_diario_image", {
+      target_visit: segments[1],
+      pd_code: code,
+      target_image_id: imageId,
+      bucket_name: "certificate-evidence",
+      asset_path: validation.metadata.objectName,
+    })
+    if (result.error) {
+      try {
+        await removeStorageObject("certificate-evidence", validation.metadata.objectName)
+      } catch (cleanupError) {
+        console.error(JSON.stringify({
+          event: "parte_diario_image_cleanup_failed",
+          visitId: segments[1],
+          imageId,
+          error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+        }))
+      }
+    }
+    return result
+  }
   if (segments[0] === "visits" && request.method === "GET" && segments[1] && !segments[2])
     return db.rpc("api_visit", { visit_id: segments[1] })
   if (
