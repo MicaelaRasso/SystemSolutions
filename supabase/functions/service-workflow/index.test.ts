@@ -434,6 +434,27 @@ describe("service-workflow mutation routes", () => {
       },
     },
     {
+      name: "creates a follow-up visit under the same service request",
+      method: "POST",
+      route: ["requests", clientId, "follow-up-visits"],
+      body: {
+        source_visit_id: operationId,
+        valve_ids: [replacementCatalogVersionId],
+        taller_movil_id: clientId,
+        starts_at: "2099-01-02T09:00:00Z",
+        ends_at: "2099-01-02T10:00:00Z",
+      },
+      rpcName: "api_create_followup_visit",
+      rpcArgs: {
+        request_id: clientId,
+        source_visit_id: operationId,
+        valve_ids: [replacementCatalogVersionId],
+        provider_id: clientId,
+        visit_starts_at: "2099-01-02T09:00:00Z",
+        visit_ends_at: "2099-01-02T10:00:00Z",
+      },
+    },
+    {
       name: "assigns an unassigned visit",
       method: "POST",
       route: ["visits", operationId, "assign"],

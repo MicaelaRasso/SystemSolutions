@@ -366,6 +366,15 @@ export const scheduleVisitInputSchema = z.object({
 })
 export type ScheduleVisitInput = z.infer<typeof scheduleVisitInputSchema>
 
+export const createFollowupVisitInputSchema = z.object({
+  sourceVisitId: edgeIdSchema,
+  valveIds: z.array(edgeIdSchema).min(1).refine((ids) => new Set(ids).size === ids.length),
+  tallerMovilId: edgeIdSchema,
+  startsAt: edgeTimestampSchema,
+  endsAt: edgeTimestampSchema,
+})
+export type CreateFollowupVisitInput = z.infer<typeof createFollowupVisitInputSchema>
+
 export const visitAdministrationInputSchema = z.object({
   reason: z.string().trim().min(1),
 })

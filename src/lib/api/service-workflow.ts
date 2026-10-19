@@ -6,6 +6,7 @@ import {
   createAdministrativeServiceRequestInputSchema,
   serviceRequestDtoSchema,
   scheduleVisitInputSchema,
+  createFollowupVisitInputSchema,
   updateServiceRequestInputSchema,
   updateWorkOrderInputSchema,
   visitAdministrationInputSchema,
@@ -17,6 +18,7 @@ import {
   type CreateServiceRequestInput,
   type CreateAdministrativeServiceRequestInput,
   type ScheduleVisitInput,
+  type CreateFollowupVisitInput,
   type UpdateServiceRequestInput,
   type UpdateWorkOrderInput,
 } from "./contracts"
@@ -103,6 +105,20 @@ export function createServiceWorkflowApi(edge: EdgeAccessClient) {
       return edge.request(`requests/${requestId}/schedule`, visitDtoSchema, {
         method: "POST",
         body: json({
+          taller_movil_id: data.tallerMovilId,
+          starts_at: data.startsAt,
+          ends_at: data.endsAt,
+        }),
+      })
+    },
+
+    async createFollowupVisit(requestId: string, input: CreateFollowupVisitInput) {
+      const data = createFollowupVisitInputSchema.parse(input)
+      return edge.request(`requests/${encodeURIComponent(requestId)}/follow-up-visits`, visitDtoSchema, {
+        method: "POST",
+        body: json({
+          source_visit_id: data.sourceVisitId,
+          valve_ids: data.valveIds,
           taller_movil_id: data.tallerMovilId,
           starts_at: data.startsAt,
           ends_at: data.endsAt,

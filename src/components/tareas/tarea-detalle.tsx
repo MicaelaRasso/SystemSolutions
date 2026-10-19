@@ -34,6 +34,7 @@ import { EstadoTareaBadge, TallerChip } from "./badges"
 import { TareaForm } from "./tarea-form"
 import { convertirOperacionATarea } from "./tarea-sheet"
 import { puedeCancelarVisitaAdministrativa, puedeEditarProgramacion } from "./estado-operacion"
+import { VisitaSeguimientoForm } from "./visita-seguimiento-form"
 
 export function TareaDetalle({ id }: { id: string }) {
   const supabase = usaSupabase()
@@ -160,6 +161,9 @@ export function TareaDetalle({ id }: { id: string }) {
         <p className="text-sm text-muted-foreground">La Visita de servicio ya no admite cambios de programación o selección.</p>
       )}
       {supabase && operacion.data && <OrdenesTrabajo operation={operacion.data} />}
+      {supabase && operacion.data?.visit.visit.estado === "completada" && (
+        <VisitaSeguimientoForm operation={operacion.data} />
+      )}
     </>
   )
 }

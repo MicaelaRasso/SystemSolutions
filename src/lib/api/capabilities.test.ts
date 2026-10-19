@@ -307,6 +307,32 @@ describe("capability Edge clients", () => {
     )
   })
 
+  it("serializes follow-up visit commands under the existing service request", async () => {
+    const { edge, request } = client({ visit: { id: "visit-2" }, work_orders: [] })
+
+    await createServiceWorkflowApi(edge).createFollowupVisit("request-1", {
+      sourceVisitId: "visit-1",
+      valveIds: ["valve-1", "valve-2"],
+      tallerMovilId: "workshop-1",
+      startsAt: "2026-10-02T08:00:00Z",
+      endsAt: "2026-10-02T09:00:00Z",
+    })
+
+    expect(request).toHaveBeenCalledWith(
+      "https://example.test/functions/v1/service-workflow/requests/request-1/follow-up-visits",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          source_visit_id: "visit-1",
+          valve_ids: ["valve-1", "valve-2"],
+          taller_movil_id: "workshop-1",
+          starts_at: "2026-10-02T08:00:00Z",
+          ends_at: "2026-10-02T09:00:00Z",
+        }),
+      }),
+    )
+  })
+
   it("serializes administrator visit lifecycle actions with a required reason", async () => {
     const request = vi.fn<typeof fetch>().mockImplementation(async () =>
       new Response(JSON.stringify({ visit: { id: "visit-1" }, work_orders: [] }), { status: 200 }),

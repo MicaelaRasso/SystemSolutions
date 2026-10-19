@@ -371,6 +371,18 @@ export const serviceWorkflowHandler: RouteHandler = async ({
   }
 
   if (
+    segments[0] === "requests" && request.method === "POST" &&
+    segments[1] && segments[2] === "follow-up-visits"
+  )
+    return db.rpc("api_create_followup_visit", {
+      request_id: segments[1],
+      source_visit_id: body.source_visit_id,
+      valve_ids: body.valve_ids,
+      provider_id: body.taller_movil_id,
+      visit_starts_at: body.starts_at,
+      visit_ends_at: body.ends_at,
+    })
+  if (
     segments[0] === "requests" &&
     request.method === "POST" &&
     segments[1] &&

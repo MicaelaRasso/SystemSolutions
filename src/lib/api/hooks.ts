@@ -16,6 +16,7 @@ import type {
   CreateServiceRequestInput,
   SaveYacimientoInput,
   ScheduleVisitInput,
+  CreateFollowupVisitInput,
   SyncVisitInput,
   UpdateCertificateDraftInput,
   CertificateTemplateInput,
@@ -270,6 +271,15 @@ export const useScheduleEdgeVisit = () => {
   return useMutation({
     mutationFn: ({ requestId, input }: { requestId: string; input: ScheduleVisitInput }) =>
       edgeApi.serviceWorkflow.schedule(requestId, input),
+    onSuccess: invalidate,
+  })
+}
+
+export const useCreateEdgeFollowupVisit = () => {
+  const invalidate = useInvalidate([...serviceWorkflowInvalidations, operationQueryKeys.all])
+  return useMutation({
+    mutationFn: ({ requestId, input }: { requestId: string; input: CreateFollowupVisitInput }) =>
+      edgeApi.serviceWorkflow.createFollowupVisit(requestId, input),
     onSuccess: invalidate,
   })
 }
