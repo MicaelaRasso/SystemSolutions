@@ -1,8 +1,9 @@
 "use client"
 
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Check, Mail, Pencil, Plus, Tablet, Truck } from "lucide-react"
+import { Check, Mail, Pencil, Plus, Tablet, Trash2, Truck } from "lucide-react"
 import { Controller, useForm } from "react-hook-form"
+import { toast } from "sonner"
 
 import { EstadoActivoBadge } from "@/components/certificados/badges"
 import { CampoTexto, FormDialog, PieFormulario } from "@/components/common/form-dialog"
@@ -43,6 +44,10 @@ export function TalleresPanel() {
   const reenviar = useServiceMutation((id: string) => edgeApi.identity.administrators.resendInvitation(id), {
     exito: "Invitación reenviada",
   })
+  const eliminarCuenta = useServiceMutation(
+    (id: string) => edgeApi.identity.mobileWorkshops.deleteAccount(id),
+    { invalidar: INVALIDAR },
+  )
 
   if (isError) return <ErrorState error={error} onRetry={() => refetch()} />
 
@@ -113,11 +118,11 @@ export function TalleresPanel() {
                   <Switch
                     id={`activo-${t.id}`}
                     checked={t.activo}
-                    disabled={activar.isPending}
+                    disabled={activar.isPending || !t.usuarioId}
                     onCheckedChange={(activo) => activar.mutate({ id: t.id, activo })}
                   />
                   <label htmlFor={`activo-${t.id}`} className="text-sm">
-                    {t.activo ? "Puede ingresar desde la tablet" : "Cuenta deshabilitada"}
+                    {!t.usuarioId ? "Sin Cuenta de acceso" : t.activo ? "Puede ingresar desde la tablet" : "Cuenta deshabilitada"}
                   </label>
                 </div>
                 {t.usuarioId && t.estadoCuenta === "pendiente" && <Button
@@ -132,6 +137,20 @@ export function TalleresPanel() {
                   disabled={recuperar.isPending}
                   onClick={() => recuperar.mutate(t.usuarioId)}
                 ><Mail />Enviar recuperación</Button>}
+                {t.usuarioId && <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={eliminarCuenta.isPending}
+                  onClick={() => {
+                    if (window.confirm(`¿Eliminar la Cuenta de ${t.nombre} (${t.email})? El acceso se borrará y se conservará el historial del Taller.`))
+                      eliminarCuenta.mutate(t.id, { onSuccess: (result) => {
+                        if (result.audit_logged)
+                          toast.success("Cuenta eliminada. Se conservó el historial del Taller Móvil.")
+                        else
+                          toast.error("Cuenta eliminada, pero no se pudo registrar la auditoría.")
+                      } })
+                  }}
+                ><Trash2 />Eliminar cuenta</Button>}
               </CardContent>
             </Card>
           ))}
@@ -184,14 +203,27 @@ function TallerForm({
       activo: taller?.activo ?? true,
     },
   })
-  const guardar = useServiceMutation(
-    (data: TallerInput) =>
-      taller ? services.talleres.update(taller.id, { nombre: data.nombre, color: data.color, activo: data.activo }) : services.talleres.create(data),
-    { exito: taller ? "Taller actualizado" : "Taller creado", invalidar: INVALIDAR },
-  )
+  const guardar = useServiceMutation(async (data: TallerInput) => {
+    if (!taller) {
+      await services.talleres.create(data)
+      return { emailChangeRequested: false }
+    }
+    await services.talleres.update(taller.id, { nombre: data.nombre, color: data.color, activo: data.activo })
+    const emailChangeRequested = data.email.trim().toLowerCase() !== taller.email.trim().toLowerCase()
+    if (emailChangeRequested) {
+      if (!taller.usuarioId) throw new Error("Este Taller no tiene una Cuenta de acceso")
+      await edgeApi.identity.mobileWorkshops.requestEmailChange(taller.id, data.email.trim())
+    }
+    return { emailChangeRequested }
+  }, { invalidar: INVALIDAR })
 
   return (
-    <form noValidate onSubmit={form.handleSubmit((d) => guardar.mutate(d, { onSuccess: cerrar }))}>
+    <form noValidate onSubmit={form.handleSubmit((d) => guardar.mutate(d, { onSuccess: (result) => {
+      toast.success(result.emailChangeRequested
+        ? "Enviamos verificaciones al correo actual y al nuevo"
+        : taller ? "Taller actualizado" : "Taller creado")
+      cerrar()
+    } }))}>
       <FieldGroup>
         <CampoTexto
           form={form}
@@ -203,8 +235,12 @@ function TallerForm({
         {taller ? (
           <Field>
             <FieldLabel htmlFor="taller-email">Email de la cuenta</FieldLabel>
-            <Input id="taller-email" type="email" readOnly {...form.register("email")} />
-            <FieldDescription>El cambio de email requiere verificación de la nueva dirección.</FieldDescription>
+            <Input id="taller-email" type="email" disabled={!taller.usuarioId} {...form.register("email")} />
+            <FieldDescription>
+              {taller.usuarioId
+                ? "El cambio se aplica al confirmar los enlaces enviados al correo actual y al nuevo."
+                : "Este Taller no tiene una Cuenta de acceso activa para cambiar el correo."}
+            </FieldDescription>
           </Field>
         ) : (
           <CampoTexto
@@ -255,12 +291,18 @@ function TallerForm({
             name="activo"
             render={({ field }) => (
               <Field orientation="horizontal">
-                <Switch id="taller-activo" checked={field.value} onCheckedChange={field.onChange} />
+              <Switch
+                id="taller-activo"
+                checked={field.value}
+                disabled={!taller?.usuarioId}
+                onCheckedChange={field.onChange}
+              />
                 <FieldContent>
                   <FieldLabel htmlFor="taller-activo">Taller activo</FieldLabel>
                   <FieldDescription>
-                    Si se desactiva, su cuenta no puede ingresar y deja de ofrecerse al asignar
-                    tareas.
+                    {taller?.usuarioId
+                      ? "Si se desactiva, su cuenta no puede ingresar y deja de ofrecerse al asignar tareas."
+                      : "Este Taller no tiene Cuenta de acceso y no puede ingresar."}
                   </FieldDescription>
                 </FieldContent>
               </Field>

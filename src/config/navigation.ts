@@ -66,7 +66,6 @@ const TALLER: NavGrupo[] = [
     items: [
       { titulo: "Mis tareas", href: "/taller", icono: ClipboardList },
       { titulo: "Sincronización", href: "/taller/sincronizacion", icono: RefreshCw },
-      { titulo: "Seguridad de la cuenta", href: "/cuenta/seguridad", icono: ShieldCheck },
     ],
   },
 ]

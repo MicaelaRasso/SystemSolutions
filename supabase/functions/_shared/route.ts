@@ -131,7 +131,7 @@ export const routeOwner = (method: string, route: string[]): FunctionName | null
     (method === "GET" && (route.length === 0 || is(route, "context"))) ||
     (route[0] === "accounts" && ["GET", "POST", "PATCH", "DELETE", "PUT"].includes(method)) ||
     (is(route, "account-security", "email-change") && method === "PUT") ||
-    (route[0] === "mobile-workshops" && ["GET", "POST", "PATCH"].includes(method)) ||
+    (route[0] === "mobile-workshops" && ["GET", "POST", "PATCH", "DELETE"].includes(method)) ||
     (route[0] === "technicians" && ["GET", "POST", "PATCH"].includes(method)) ||
     (route[0] === "staffing" && ["GET", "PUT"].includes(method)) ||
     (method === "POST" && is(route, "staffing", "copy-previous-week")) ||

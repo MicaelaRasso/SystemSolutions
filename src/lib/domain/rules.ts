@@ -35,6 +35,7 @@ export const RUTA_INICIO: Record<Rol, string> = {
 }
 
 const PERMISOS_RUTA: { prefijo: string; roles: Rol[] }[] = [
+  { prefijo: "/cuenta/seguridad", roles: ["superadmin", "admin", "cliente"] },
   { prefijo: "/cuenta", roles: ["superadmin", "admin", "taller", "cliente"] },
   { prefijo: "/superadmin", roles: ["superadmin"] },
   { prefijo: "/admin", roles: ["superadmin", "admin"] },

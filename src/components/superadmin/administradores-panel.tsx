@@ -47,6 +47,15 @@ export function AdministradoresPanel() {
     },
     onError: () => toast.error("No se pudo actualizar la cuenta"),
   })
+  const remove = useMutation({
+    mutationFn: (id: string) => edgeApi.identity.administrators.delete(id),
+    onSuccess: async (result) => {
+      if (result.audit_logged) toast.success("Cuenta de administrador eliminada")
+      else toast.error("La cuenta se eliminó, pero no se pudo registrar la auditoría")
+    },
+    onError: () => toast.error("No se pudo eliminar la cuenta de administrador"),
+    onSettled: refresh,
+  })
   const resend = useMutation({
     mutationFn: (id: string) => edgeApi.identity.administrators.resendInvitation(id),
     onSuccess: () => toast.success("Invitación reenviada"),
@@ -96,6 +105,10 @@ export function AdministradoresPanel() {
                     {account.estado === "pendiente" && <Button variant="outline" disabled={resend.isPending} onClick={() => resend.mutate(account.id)}>Reenviar invitación</Button>}
                     {account.estado === "activa" && <Button variant="outline" disabled={recover.isPending} onClick={() => recover.mutate(account.id)}>Enviar recuperación de contraseña</Button>}
                     {account.estado !== "pendiente" && <Button variant="outline" disabled={setActive.isPending} onClick={() => setActive.mutate({ id: account.id, active: account.estado !== "activa" })}>{account.estado === "activa" ? "Deshabilitar" : "Reactivar"}</Button>}
+                    <Button variant="destructive" disabled={remove.isPending} onClick={() => {
+                      if (window.confirm(`¿Eliminar permanentemente la cuenta de ${account.nombre} ${account.apellido} (${account.email})? Esta acción no se puede deshacer.`))
+                        remove.mutate(account.id)
+                    }}>Eliminar cuenta</Button>
                   </div>
                 </section>
               ))}

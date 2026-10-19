@@ -25,13 +25,13 @@ One email sent 30 calendar days before each `Certificado finalizado` expires, wh
 One email sent to the Cliente's single MVP account when a Visita de servicio closes with one or more certificates awaiting the Cliente's signature. It summarizes the Yacimiento and affected Plantas/locaciones and directs the Cliente to the certificate page in the portal. It is not repeated.
 
 **Estado de la Cuenta**:
-The lifecycle state of a Cuenta: `pendiente` while its invitation has not been accepted, `activa` while it may authenticate, or `deshabilitada` while access is blocked but the identity and history remain available for reactivation. An account is never deleted as part of ordinary lifecycle administration.
+The lifecycle state of a Cuenta: `pendiente` while its invitation has not been accepted, `activa` while it may authenticate, or `deshabilitada` while access is blocked but the identity and history remain available for reactivation. Administradores pueden eliminar permanentemente la Cuenta de acceso de un Taller Móvil; el registro del Taller y su historial operativo se conservan.
 
 **Recuperación de Cuenta**:
 The verified process for restoring access when a Cuenta owner loses password or email access. An Administrador may initiate it, but no administrator sets or learns the password; changing the email requires verification of the new address and revokes existing sessions.
 
 **Cuenta compartida de Taller Móvil**:
-The single operational login associated with a Taller Móvil. It may have more than one active session, while accountability comes from the selected Técnico, visit and device events, signatures, and audit records.
+The single operational login associated with a Taller Móvil. It may have more than one active session, while accountability comes from the selected Técnico, visit and device events, signatures, and audit records. Its owner cannot change the Cuenta email from the application; an Administrador can initiate a verified email change.
 
 **Rol**:
 An exclusive permission category assigned to an account. An account cannot hold more than one role, and its role does not change.
@@ -149,7 +149,10 @@ The single Plantilla de certificado version available for creating new Borradore
 An individual belonging to the Taller Móvil who performs certificate work. A Taller Móvil may have multiple Técnicos and may temporarily use one shared account; a visit records the selected Técnico's name under `Ejecutó`. Any Técnico belonging to the assigned Taller Móvil may complete and sign the visit.
 
 **Certificado**:
-A persisted certification record for one Válvula and its Yacimiento, Planta/locación, and Equipo/unidad context. Its data is editable as a Borrador de certificado while the visit remains open, then its Estado de captura is closed when the visit closes. A closed certificate may be a Certificado pendiente or a Certificado finalizado. A closed certificate cannot be reopened or edited; a correction preserves it and creates a new Orden de trabajo, Visita de servicio, and certificate. A Válvula can have multiple certificados over time.
+A persisted certification record for one Válvula and its Yacimiento, Planta/locación, and Equipo/unidad context. It references the Parte diario associated with its Visita de servicio by the Parte diario's code. Its data is editable as a Borrador de certificado while the visit remains open, then its Estado de captura is closed when the visit closes. A closed certificate may be a Certificado pendiente or a Certificado finalizado. A closed certificate cannot be reopened or edited; a correction preserves it and creates a new Orden de trabajo, Visita de servicio, and certificate. A Válvula can have multiple certificados over time.
+
+**Parte diario (PD)**:
+A billing document used by System Solutions and loaded into a Visita de servicio under an alphanumeric code. One Parte diario may have multiple photos, stored as image assets separately from the database records. Certificates for Válvulas covered by that visit reference the Parte diario by its code, allowing the Cliente to filter certificates by that code. A Taller Móvil may capture the photos during the visit or attach existing images.
 
 **Corrección de certificado**:
 A correction is an administrator-authorized new certification lineage for the same Válvula: the original certificate remains closed and historical, while a new Orden de trabajo, Visita de servicio, and Certificado capture the corrected result. An Administrador regular or Super administrador may authorize it, and the Taller Móvil may report the need for correction without requiring a connected frontend workflow.

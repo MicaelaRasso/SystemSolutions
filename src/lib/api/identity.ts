@@ -19,6 +19,17 @@ export function createIdentityApi(
 
   return {
     context: () => edge.request("context", edgeContextResponseSchema),
+    mobileWorkshops: {
+      requestEmailChange: (id: string, email: string) =>
+        edge.request(`mobile-workshops/${id}/email`, z.object({ verificationRequired: z.literal(true) }), {
+          method: "POST",
+          body: json({ email: email.trim() }),
+        }),
+      deleteAccount: (id: string) =>
+        edge.request(`mobile-workshops/${id}/account`, z.object({ deleted: z.literal(true), audit_logged: z.boolean() }), {
+          method: "DELETE",
+        }),
+    },
     administrators: {
       list: () => edge.request("accounts/administrators", accountDtoSchema.array()),
       create: (data: {
@@ -33,6 +44,9 @@ export function createIdentityApi(
       setActive: (id: string, active: boolean) => edge.request(`accounts/administrators/${id}`, accountDtoSchema, {
         method: "PATCH",
         body: json({ activo: active }),
+      }),
+      delete: (id: string) => edge.request(`accounts/administrators/${id}`, z.object({ deleted: z.literal(true), audit_logged: z.boolean() }), {
+        method: "DELETE",
       }),
       resendInvitation: (id: string) => edge.request(`accounts/${id}/invitation/resend`, z.object({ sent: z.boolean() }), {
         method: "POST",

@@ -6,6 +6,7 @@ type AdminClient = {
     admin: {
       inviteUserByEmail(email: string, options?: { data?: Record<string, unknown>; redirectTo?: string }): Promise<{ data: { user: { id: string } | null }; error: { message: string } | null }>
       updateUserById(id: string, attributes: { email?: string; user_metadata?: Record<string, unknown> }): Promise<{ error: { message: string } | null }>
+      generateLink(input: { type: "email_change_current" | "email_change_new"; email: string; newEmail: string; redirectTo?: string }): Promise<{ data: { properties: { action_link: string } } | null; error: { message: string } | null }>
       deleteUser(id: string): Promise<{ error: { message: string } | null }>
     }
   }
@@ -27,7 +28,8 @@ const accountEmailRedirectTo = (request: Request, path: string): string | undefi
   }
 }
 
-export const invitationRedirectTo = (request: Request) => accountEmailRedirectTo(request, "/setup-password")
+export const invitationRedirectTo = (request: Request) => accountEmailRedirectTo(request, "/auth/callback")
+export const emailChangeRedirectTo = (request: Request) => accountEmailRedirectTo(request, "/auth/callback?flow=workshop-email-change")
 export const passwordRecoveryRedirectTo = (request: Request) => accountEmailRedirectTo(request, "/reset-password")
 
 /** Secret-key Auth operations stay inside Edge Functions; the browser never sees this client. */

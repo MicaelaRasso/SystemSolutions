@@ -1,5 +1,5 @@
 import { routeNotFound } from "../_shared/http.ts"
-import { createAuthAdmin, invitationRedirectTo, passwordRecoveryRedirectTo, requireCreatedUser } from "../_shared/admin.ts"
+import { createAuthAdmin, emailChangeRedirectTo, invitationRedirectTo, passwordRecoveryRedirectTo, requireCreatedUser } from "../_shared/admin.ts"
 import { HttpError } from "../_shared/errors.ts"
 import { runtimeEnv } from "../_shared/runtime-env.ts"
 import { serveFunction, type RouteHandler } from "../_shared/transport.ts"
@@ -14,6 +14,7 @@ const mappedRpcErrorCode = (code: unknown) => {
   if (code === "not_found") return "P0002"
   if (code === "duplicate_email") return "23505"
   if (code === "invalid_role" || code === "invalid_email") return "22023"
+  if (code === "last_super_admin") return "23514"
   return typeof code === "string" ? code : undefined
 }
 
@@ -45,6 +46,46 @@ const recordFailedInvite = (db: Parameters<typeof accountRpc>[0], details: Recor
     event_details: details,
   })
 
+const escapeHtml = (value: string) => value
+  .replaceAll("&", "&amp;")
+  .replaceAll("<", "&lt;")
+  .replaceAll(">", "&gt;")
+  .replaceAll('"', "&quot;")
+  .replaceAll("'", "&#39;")
+
+const sendWorkshopEmailChangeLink = async (
+  recipient: string,
+  newEmail: string,
+  actionLink: string,
+  destination: "actual" | "nuevo",
+) => {
+  const env = runtimeEnv()
+  const host = env.SMTP_HOST ?? "smtp.resend.com"
+  const port = Number(env.SMTP_PORT ?? "2587")
+  if (!env.SMTP_USERNAME || !env.SMTP_PASSWORD || !env.SMTP_FROM)
+    throw new HttpError(500, "SMTP sender credentials are not configured")
+  const nodemailer = await import("npm:nodemailer@9.0.3")
+  const transporter = nodemailer.default.createTransport({
+    host,
+    port,
+    secure: port === 465 || port === 2465,
+    requireTLS: port !== 465 && port !== 2465,
+    auth: { user: env.SMTP_USERNAME, pass: env.SMTP_PASSWORD },
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 15_000,
+  })
+  const label = destination === "actual" ? "correo actual" : "nuevo correo"
+  const subject = "Confirmá el cambio de correo — System Solutions"
+  const text = `Se solicitó cambiar el correo de una Cuenta de Taller Móvil a ${newEmail}. Confirmá desde el ${label}: ${actionLink}\n\nEl cambio se completa cuando se confirmen los enlaces del correo actual y del nuevo. Si no esperabas este cambio, contactá a un Administrador.`
+  const html = `<!doctype html><html lang="es"><body style="font-family:Arial,sans-serif;color:#142c4c"><h2>SYSTEM SOLUTIONS</h2><h1>Confirmá el cambio de correo</h1><p>Se solicitó cambiar el correo de una Cuenta de Taller Móvil a <strong>${escapeHtml(newEmail)}</strong>.</p><p>Confirmá desde el ${label} para continuar.</p><p><a href="${escapeHtml(actionLink)}">Confirmar cambio de correo</a></p><p>El cambio se completa cuando se confirmen los enlaces del correo actual y del nuevo. Si no esperabas este cambio, contactá a un Administrador.</p></body></html>`
+  try {
+    await transporter.sendMail({ from: env.SMTP_FROM, to: recipient, subject, text, html })
+  } finally {
+    transporter.close()
+  }
+}
+
 export const completeAdminPasswordRecovery = async (
   db: Parameters<typeof accountRpc>[0],
   accountId: string,
@@ -66,6 +107,19 @@ export const identityAdminHandler: RouteHandler = async ({ request, route, body,
   if (route.length === 0 || route[0] === "context") return db.rpc("api_context")
 
   if (route[0] === "account-security" && route[1] === "email-change" && request.method === "PUT" && route.length === 2) {
+    const contextResult = await accountRpc(db, "api_context")
+    if (contextResult.error) return contextResult
+    const contextRows = Array.isArray(contextResult.data)
+      ? contextResult.data
+      : contextResult.data && typeof contextResult.data === "object"
+        ? [contextResult.data]
+        : []
+    const currentContext = contextRows.find(
+      (row) => row && typeof row === "object" && (row as { cuenta_id?: unknown }).cuenta_id === actor.id,
+    ) as { rol?: unknown } | undefined
+    if (currentContext?.rol === "taller_movil")
+      throw new HttpError(403, "El Taller Móvil no puede cambiar el correo de su Cuenta")
+
     const email = typeof body.email === "string" ? body.email.trim() : ""
     if (!email || !email.includes("@")) throw new HttpError(400, "El email de la cuenta no es válido")
     return accountRpc(db, "api_record_auth_event", {
@@ -135,6 +189,35 @@ export const identityAdminHandler: RouteHandler = async ({ request, route, body,
       target: route[2],
       account_active: body.activo !== false,
     })
+
+  if (route[0] === "accounts" && route[1] === "administrators" && request.method === "DELETE" && route.length === 3) {
+    const authorized = await accountRpc(db, "api_authorize_admin_account_delete", { target: route[2] })
+    if (authorized.error) return authorized
+    const target = authorized.data && typeof authorized.data === "object"
+      ? authorized.data as Record<string, unknown>
+      : null
+    const accountId = typeof target?.id === "string" ? target.id : null
+    if (!accountId) throw new Error("No se pudo obtener la cuenta de administrador")
+
+    const auth = await createAuthAdmin()
+    const deleted = await auth.auth.admin.deleteUser(accountId)
+    if (deleted.error) {
+      await accountRpc(db, "api_record_admin_account_deletion", {
+        target: accountId,
+        event_outcome: "fallido",
+        event_details: { reason: "auth_delete_failed" },
+      })
+      throw new HttpError(502, "No se pudo eliminar la cuenta de administrador")
+    }
+
+    const audited = await accountRpc(db, "api_record_admin_account_deletion", {
+      target: accountId,
+      event_outcome: "exitoso",
+      event_details: {},
+    })
+    if (audited.error) return { data: { deleted: true, audit_logged: false }, error: null }
+    return { data: { deleted: true, audit_logged: true }, error: null }
+  }
 
   if (route[0] === "accounts" && route[2] === "invitation" && route[3] === "resend" && request.method === "POST" && route.length === 4) {
     const target = await accountRpc(db, "api_pending_invitation_target", { target: route[1] })
@@ -279,6 +362,115 @@ export const identityAdminHandler: RouteHandler = async ({ request, route, body,
 
   if (route[0] === "mobile-workshops" && request.method === "GET" && route.length === 1)
     return db.rpc("api_workshops")
+
+  if (route[0] === "mobile-workshops" && route[2] === "email" && request.method === "POST" && route.length === 3) {
+    const email = typeof body.email === "string" ? body.email.trim() : ""
+    if (!/^\S+@\S+\.\S+$/.test(email)) throw new HttpError(400, "Ingresá un email válido")
+
+    const authorized = await accountRpc(db, "api_authorize_workshop_account", { target: route[1] })
+    if (authorized.error) return authorized
+    const target = authorized.data && typeof authorized.data === "object"
+      ? authorized.data as Record<string, unknown>
+      : null
+    const accountId = typeof target?.account_id === "string" ? target.account_id : null
+    const currentEmail = typeof target?.email === "string" ? target.email : null
+    if (!accountId || !currentEmail) throw new HttpError(404, "No se encontró la Cuenta del Taller Móvil")
+    if (email.toLowerCase() === currentEmail.toLowerCase())
+      throw new HttpError(400, "Ingresá un correo distinto al actual")
+
+    const auth = await createAuthAdmin()
+    const redirectTo = emailChangeRedirectTo(request)
+    const currentLink = await auth.auth.admin.generateLink({
+      type: "email_change_current",
+      email: currentEmail,
+      newEmail: email,
+      ...(redirectTo ? { redirectTo } : {}),
+    })
+    if (currentLink.error) throw new HttpError(409, "No se pudo preparar el enlace para el correo actual")
+    const newLink = await auth.auth.admin.generateLink({
+      type: "email_change_new",
+      email: currentEmail,
+      newEmail: email,
+      ...(redirectTo ? { redirectTo } : {}),
+    })
+    const currentActionLink = currentLink.data?.properties?.action_link
+    const newActionLink = newLink.data?.properties?.action_link
+    if (currentLink.error || newLink.error || !currentActionLink || !newActionLink)
+      throw new HttpError(409, "No se pudieron preparar los enlaces de verificación")
+
+    const requestedAudit = await accountRpc(db, "api_record_workshop_account_event", {
+      target: accountId,
+      action_name: "email_change_requested",
+      event_outcome: "solicitado",
+      event_details: { initiated_by_administrator: true },
+    })
+    if (requestedAudit.error) return requestedAudit
+
+    try {
+      await sendWorkshopEmailChangeLink(currentEmail, email, currentActionLink, "actual")
+      await sendWorkshopEmailChangeLink(email, email, newActionLink, "nuevo")
+    } catch {
+      await accountRpc(db, "api_record_workshop_account_event", {
+        target: accountId,
+        action_name: "email_change_requested",
+        event_outcome: "fallido",
+        event_details: { reason: "email_delivery_failed" },
+      })
+      throw new HttpError(502, "No se pudieron enviar los correos de verificación")
+    }
+
+    return { data: { verificationRequired: true }, error: null }
+  }
+
+  if (route[0] === "mobile-workshops" && route[2] === "account" && request.method === "DELETE" && route.length === 3) {
+    const authorized = await accountRpc(db, "api_authorize_workshop_account", { target: route[1] })
+    if (authorized.error) return authorized
+    const target = authorized.data && typeof authorized.data === "object"
+      ? authorized.data as Record<string, unknown>
+      : null
+    const accountId = typeof target?.account_id === "string" ? target.account_id : null
+    const workshopId = typeof target?.workshop_id === "string" ? target.workshop_id : null
+    const workshopName = typeof target?.workshop_name === "string" ? target.workshop_name : null
+    const workshopColor = typeof target?.workshop_color === "string" ? target.workshop_color : null
+    if (!accountId || !workshopId || !workshopName || !workshopColor)
+      throw new HttpError(404, "No se encontró la Cuenta del Taller Móvil")
+
+    const auth = await createAuthAdmin()
+    const suspended = await accountRpc(db, "api_update_workshop", {
+      target: workshopId,
+      workshop_name: workshopName,
+      workshop_color: workshopColor,
+      workshop_active: false,
+    })
+    if (suspended.error) return suspended
+
+    const deleted = await auth.auth.admin.deleteUser(accountId)
+    if (deleted.error) {
+      if (target.workshop_active === true) {
+        await accountRpc(db, "api_update_workshop", {
+          target: workshopId,
+          workshop_name: workshopName,
+          workshop_color: workshopColor,
+          workshop_active: true,
+        })
+      }
+      await accountRpc(db, "api_record_workshop_account_event", {
+        target: accountId,
+        action_name: "account_deleted",
+        event_outcome: "fallido",
+        event_details: { reason: "auth_delete_failed" },
+      })
+      throw new HttpError(502, "No se pudo eliminar la Cuenta del Taller Móvil")
+    }
+
+    const audited = await accountRpc(db, "api_record_workshop_account_event", {
+      target: accountId,
+      action_name: "account_deleted",
+      event_outcome: "exitoso",
+      event_details: {},
+    })
+    return { data: { deleted: true, audit_logged: !audited.error }, error: null }
+  }
 
   if (route[0] === "mobile-workshops" && request.method === "POST" && route.length === 1) {
     const authorized = await accountRpc(db, "api_authorize_account_provisioning", {
