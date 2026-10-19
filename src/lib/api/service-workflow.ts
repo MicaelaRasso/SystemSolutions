@@ -21,6 +21,7 @@ import {
   type CreateFollowupVisitInput,
   type UpdateServiceRequestInput,
   type UpdateWorkOrderInput,
+  type VisitAssignmentInput,
 } from "./contracts"
 
 export const serviceWorkflowQueryKeys = {
@@ -146,7 +147,7 @@ export function createServiceWorkflowApi(edge: EdgeAccessClient) {
       })
     },
 
-    async assignVisit(visitId: string, input: { tallerMovilId: string; reason: string }) {
+    async assignVisit(visitId: string, input: VisitAssignmentInput) {
       const data = visitAssignmentInputSchema.parse(input)
       return edge.request(`visits/${visitId}/assign`, visitTransitionDtoSchema, {
         method: "POST",
@@ -167,7 +168,7 @@ export function createServiceWorkflowApi(edge: EdgeAccessClient) {
       })
     },
 
-    async reassignVisit(visitId: string, input: { tallerMovilId: string; reason: string }) {
+    async reassignVisit(visitId: string, input: VisitAssignmentInput) {
       const data = visitAssignmentInputSchema.parse(input)
       return edge.request(`visits/${visitId}/reassign`, visitTransitionDtoSchema, {
         method: "POST",

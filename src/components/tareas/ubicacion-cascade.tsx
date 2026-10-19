@@ -55,10 +55,12 @@ export function UbicacionCascade({
   value,
   onChange,
   errores = {},
+  disabled = false,
 }: {
   value: Ubicacion
   onChange: (v: Ubicacion) => void
   errores?: Partial<Record<Clave, string | undefined>>
+  disabled?: boolean
 }) {
   const empresas = useEmpresas({ incluirInactivas: false })
   const arbol = useArbol(value.empresaId)
@@ -98,7 +100,7 @@ export function UbicacionCascade({
               // Radix emite "" desde su <select> nativo oculto cuando el valor se fija por código
               // (autocompletado) antes de que existan las opciones: se ignora para no borrarlo.
               onValueChange={(v) => v && elegir(clave, v)}
-              disabled={!padre || cargando}
+              disabled={disabled || !padre || cargando}
             >
               <SelectTrigger id={id} className="w-full" aria-invalid={!!error}>
                 <SelectValue placeholder={cargando ? "Cargando…" : placeholder} />

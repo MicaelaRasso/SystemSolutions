@@ -184,18 +184,22 @@ export async function guardarSolicitudYVisita(
   if (changesAssignment && !actionReason)
     throw new Error("Indica el motivo del cambio de asignación")
 
+  const desiredWindow = operation ? visitWindow(data.fechaEjecucion, data.horario) : undefined
+  const scheduleChanged = !!desiredWindow && (
+    new Date(desiredWindow.startsAt).getTime() !== new Date(operation!.operation.starts_at).getTime()
+  )
   const context = operation ? undefined : await edgeApi.identity.context()
   const isAdministrator =
     context?.rol === "administrador_regular" || context?.rol === "super_administrador"
   const response = operation
-    ? await edgeApi.serviceRequests.updateRequest(requestId!, serviceSelection(data))
+    ? undefined
     : isAdministrator
       ? await edgeApi.serviceRequests.createAdministrativeRequest({
           clientId: data.empresaId,
           ...serviceSelection(data),
         })
       : await edgeApi.serviceRequests.createRequest(serviceSelection(data))
-  const canonicalRequestId = responseRequestId(response)
+  const canonicalRequestId = operation ? requestId! : responseRequestId(response!)
 
   await edgeApi.serviceWorkflow.updateRequestMetadata(canonicalRequestId, {
     contacto: data.contacto.trim(),
@@ -218,17 +222,29 @@ export async function guardarSolicitudYVisita(
 
   if (operation) {
     const visitId = operation.operation.id
+    if (!data.tallerId && currentWorkshopId && scheduleChanged)
+      await edgeApi.serviceWorkflow.schedule(canonicalRequestId, {
+        tallerMovilId: currentWorkshopId,
+        ...desiredWindow!,
+      })
     if (!data.tallerId && currentWorkshopId)
       await edgeApi.serviceWorkflow.unassignVisit(visitId, { reason: actionReason! })
     else if (data.tallerId && !currentWorkshopId)
       await edgeApi.serviceWorkflow.assignVisit(visitId, {
         tallerMovilId: data.tallerId,
         reason: actionReason!,
+        ...desiredWindow!,
       })
     else if (data.tallerId && currentWorkshopId !== data.tallerId)
       await edgeApi.serviceWorkflow.reassignVisit(visitId, {
         tallerMovilId: data.tallerId,
         reason: actionReason!,
+        ...desiredWindow!,
+      })
+    else if (data.tallerId && currentWorkshopId && scheduleChanged)
+      await edgeApi.serviceWorkflow.schedule(canonicalRequestId, {
+        tallerMovilId: data.tallerId,
+        ...desiredWindow!,
       })
     else return operation
     return edgeApi.operations.get(visitId)
