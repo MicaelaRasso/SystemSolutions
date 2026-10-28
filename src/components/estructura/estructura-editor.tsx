@@ -1,6 +1,6 @@
 "use client"
 
-import { MapPinned, Plus, Search } from "lucide-react"
+import { ArrowLeft, MapPinned, Plus, Search } from "lucide-react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useCallback, useMemo, useRef, useState } from "react"
 
@@ -11,6 +11,7 @@ import { Cargando } from "@/components/common/cargando"
 import type { ID } from "@/lib/domain/types"
 import { plural } from "@/lib/format"
 import { useArbol } from "@/lib/hooks/queries"
+import { cn } from "@/lib/utils"
 
 import { ArbolNav } from "./arbol-nav"
 import {
@@ -86,6 +87,8 @@ export function EstructuraEditor({ empresaId }: { empresaId: ID }) {
   }
 
   const totales = contar(arbol)
+  // Bajo 1024 px no entran árbol y detalle juntos: se muestra uno por vez (árbol → detalle).
+  const detalleActivo = Boolean(ubicacion && seleccion)
 
   const nuevoYacimiento = (
     <YacimientoDialog
@@ -115,7 +118,10 @@ export function EstructuraEditor({ empresaId }: { empresaId: ID }) {
     <div className="grid items-start gap-6 lg:grid-cols-[20rem_minmax(0,1fr)]">
       <section
         aria-label="Árbol de estructura"
-        className="flex flex-col gap-3 rounded-xl border bg-card p-3 lg:sticky lg:top-16 lg:max-h-[calc(100svh-5rem)]"
+        className={cn(
+          "flex flex-col gap-3 rounded-xl border bg-card p-3 lg:sticky lg:top-16 lg:max-h-[calc(100svh-5rem)]",
+          detalleActivo && "max-lg:hidden",
+        )}
       >
         <div className="flex items-center justify-between gap-2 px-1">
           <p className="text-xs text-muted-foreground">
@@ -149,14 +155,29 @@ export function EstructuraEditor({ empresaId }: { empresaId: ID }) {
         </div>
       </section>
 
-      <section ref={detalleRef} aria-label="Detalle" className="min-w-0 scroll-mt-16">
+      <section
+        ref={detalleRef}
+        aria-label="Detalle"
+        className={cn("min-w-0 scroll-mt-16", !detalleActivo && "max-lg:hidden")}
+      >
         {ubicacion && seleccion ? (
-          <NodoDetalle
-            empresaId={empresaId}
-            nivel={seleccion.nivel}
-            ubicacion={ubicacion}
-            onSeleccionar={seleccionar}
-          />
+          <div className="space-y-4">
+            <Button
+              type="button"
+              variant="ghost"
+              className="-ml-2 lg:hidden"
+              onClick={() => seleccionar(null)}
+            >
+              <ArrowLeft />
+              Volver al árbol
+            </Button>
+            <NodoDetalle
+              empresaId={empresaId}
+              nivel={seleccion.nivel}
+              ubicacion={ubicacion}
+              onSeleccionar={seleccionar}
+            />
+          </div>
         ) : (
           <EmptyState
             titulo="Seleccioná un elemento del árbol"

@@ -22,6 +22,7 @@ import {
   type Services,
   type TareaResumen,
 } from "./contracts"
+import { nombresDePlantas, resumenPlantas } from "./ubicacion-operacion"
 import {
   browserSupabase,
   EdgeTransport,
@@ -394,7 +395,8 @@ const legacyOperationStatus: Record<OperationSummary["estado"], TareaResumen["es
   cancelada: "cancelada",
 }
 
-function toLegacyTarea(operation: OperationSummary): TareaResumen {
+export function toLegacyTarea(operation: OperationSummary): TareaResumen {
+  const plantasNombres = nombresDePlantas(operation.plantas)
   return {
     id: operation.id,
     nroSolicitud: operation.numero_solicitud,
@@ -403,8 +405,8 @@ function toLegacyTarea(operation: OperationSummary): TareaResumen {
     plantaId: "",
     equipoId: "",
     tallerId: operation.taller_movil?.id,
-    contacto: "",
-    telefono: "",
+    contacto: operation.contacto ?? "",
+    telefono: operation.telefono ?? "",
     fechaSolicitud: "",
     fechaEjecucion: operation.starts_at,
     tipo: "Certificación",
@@ -414,7 +416,8 @@ function toLegacyTarea(operation: OperationSummary): TareaResumen {
     estado: legacyOperationStatus[operation.estado],
     empresaNombre: operation.cliente.nombre,
     yacimientoNombre: operation.yacimiento.nombre,
-    plantaNombre: "—",
+    plantaNombre: resumenPlantas(plantasNombres) || "—",
+    plantasNombres,
     equipoNombre: "—",
     tallerNombre: operation.taller_movil?.nombre,
   }

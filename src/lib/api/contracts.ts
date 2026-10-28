@@ -672,6 +672,18 @@ export const operationSummarySchema = z
         no_evaluadas: z.number().int().nonnegative(),
       })
       .strict(),
+    // Agregados por la migración `operation_summary_location_contact`. Son opcionales para que
+    // el front siga funcionando contra un backend que todavía no la aplicó.
+    contacto: z.string().optional(),
+    telefono: z.string().optional(),
+    plantas: z
+      .object({
+        id: edgeIdSchema,
+        nombre: z.string(),
+      })
+      .strict()
+      .array()
+      .optional(),
   })
   .strict()
 export type OperationSummary = z.infer<typeof operationSummarySchema>

@@ -23,7 +23,7 @@ export function SinAcceso() {
               : "Esta página corresponde a otro perfil de usuario."}
           </p>
         </div>
-        <div className="flex justify-center gap-2">
+        <div className="flex flex-wrap justify-center gap-2">
           <Button asChild>
             <Link href={sesion ? RUTA_INICIO[sesion.rol] : "/login"}>Ir a mi inicio</Link>
           </Button>

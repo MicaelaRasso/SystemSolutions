@@ -14,6 +14,7 @@ export function SignaturePad({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const drawing = useRef(false)
+  const moved = useRef(false)
   const [hasInk, setHasInk] = useState(false)
 
   const resize = useCallback(() => {
@@ -59,6 +60,7 @@ export function SignaturePad({
     context.beginPath()
     context.moveTo(x, y)
     drawing.current = true
+    moved.current = false
   }
 
   const move = (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -68,16 +70,15 @@ export function SignaturePad({
     const { x, y } = point(event)
     context.lineTo(x, y)
     context.stroke()
-    if (!hasInk) {
-      setHasInk(true)
-      onChange(canvasRef.current?.toDataURL("image/png"))
-    } else {
-      onChange(canvasRef.current?.toDataURL("image/png"))
-    }
+    moved.current = true
+    if (!hasInk) setHasInk(true)
   }
 
+  // La imagen se exporta al levantar el dedo: exportarla en cada movimiento traba la tablet.
   const stop = () => {
+    if (!drawing.current) return
     drawing.current = false
+    if (moved.current) onChange(canvasRef.current?.toDataURL("image/png"))
   }
 
   const clear = () => {
@@ -91,16 +92,16 @@ export function SignaturePad({
 
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between">
+      <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
         <CardTitle className="text-sm">{title}</CardTitle>
-        <Button type="button" variant="ghost" size="sm" onClick={clear} disabled={!hasInk}>
+        <Button type="button" variant="outline" onClick={clear} disabled={!hasInk}>
           Limpiar
         </Button>
       </CardHeader>
       <CardContent>
         <canvas
           ref={canvasRef}
-          className="h-32 w-full touch-none rounded-md border bg-white"
+          className="h-[clamp(11rem,34dvh,20rem)] w-full touch-none rounded-md border bg-white"
           onPointerDown={start}
           onPointerMove={move}
           onPointerUp={stop}

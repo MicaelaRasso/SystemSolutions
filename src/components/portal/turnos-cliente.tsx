@@ -3,11 +3,12 @@
 import { CalendarCheck2, History, SearchX } from "lucide-react"
 import { useState } from "react"
 
+import { BarraFiltros, CampoFiltro } from "@/components/common/barra-filtros"
 import { PageHeader } from "@/components/common/page-header"
 import { EmptyState, ErrorState } from "@/components/common/states"
+import { TablaResponsive, type ColumnaTabla } from "@/components/common/tabla-responsive"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import {
   Select,
   SelectContent,
@@ -16,14 +17,6 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Cargando } from "@/components/common/cargando"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { fmt } from "@/lib/fechas"
 
@@ -83,9 +76,13 @@ export function TurnosCliente() {
         descripcion="Visitas de servicio programadas por System Solutions en los Yacimientos de su cuenta."
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Filtros">
-        <div className="min-w-0 space-y-1.5">
-          <Label htmlFor="filtro-yacimiento">Yacimiento</Label>
+      <BarraFiltros
+        activos={
+          [yacimientoId !== TODOS, plantaId !== TODOS, !!desde, !!hasta].filter(Boolean).length
+        }
+        onLimpiar={limpiar}
+      >
+        <CampoFiltro etiqueta="Yacimiento" htmlFor="filtro-yacimiento">
           <Select
             value={yacimientoId}
             onValueChange={(v) => {
@@ -106,9 +103,8 @@ export function TurnosCliente() {
               ))}
             </SelectContent>
           </Select>
-        </div>
-        <div className="min-w-0 space-y-1.5">
-          <Label htmlFor="filtro-planta">Planta / locación</Label>
+        </CampoFiltro>
+        <CampoFiltro etiqueta="Planta / locación" htmlFor="filtro-planta">
           <Select
             value={plantaId}
             onValueChange={(v) => v && setPlantaId(v)}
@@ -128,9 +124,8 @@ export function TurnosCliente() {
               ))}
             </SelectContent>
           </Select>
-        </div>
-        <div className="min-w-0 space-y-1.5">
-          <Label htmlFor="filtro-desde">Desde</Label>
+        </CampoFiltro>
+        <CampoFiltro etiqueta="Desde" htmlFor="filtro-desde">
           <Input
             id="filtro-desde"
             type="date"
@@ -138,9 +133,8 @@ export function TurnosCliente() {
             max={hasta || undefined}
             onChange={(e) => setDesde(e.target.value)}
           />
-        </div>
-        <div className="min-w-0 space-y-1.5">
-          <Label htmlFor="filtro-hasta">Hasta</Label>
+        </CampoFiltro>
+        <CampoFiltro etiqueta="Hasta" htmlFor="filtro-hasta">
           <Input
             id="filtro-hasta"
             type="date"
@@ -148,8 +142,8 @@ export function TurnosCliente() {
             min={desde || undefined}
             onChange={(e) => setHasta(e.target.value)}
           />
-        </div>
-      </div>
+        </CampoFiltro>
+      </BarraFiltros>
 
       {error ? (
         <ErrorState error={error} onRetry={reintentar} />
@@ -207,49 +201,39 @@ function Contador({ n }: { n: number }) {
   )
 }
 
-/** Tabla en escritorio y tarjetas en celular. */
+const COLUMNAS: ColumnaTabla<VisitaCliente>[] = [
+  {
+    id: "fecha",
+    encabezado: "Fecha",
+    celda: (v) => (v.fecha ? fmt(v.fecha, "dd/MM/yyyy") : "—"),
+    className: "tabular-nums",
+  },
+  { id: "horario", encabezado: "Horario", celda: (v) => v.horario, className: "tabular-nums" },
+  { id: "yacimiento", encabezado: "Yacimiento", celda: (v) => v.yacimiento },
+  {
+    id: "ubicaciones",
+    encabezado: "Locación y equipo",
+    celda: (v) => (v.ubicaciones.length ? v.ubicaciones.join("; ") : "—"),
+    className: "text-sm text-muted-foreground",
+  },
+  {
+    id: "valvulas",
+    encabezado: "Válvulas",
+    celda: (v) => v.valvulas,
+    className: "text-right tabular-nums",
+  },
+  { id: "estado", encabezado: "Estado", celda: (v) => <EstadoVisitaBadge visita={v} /> },
+]
+
+/** Tabla desde tablet y tarjetas en celular (patrón `TablaResponsive`). */
 function ListaTurnos({ visitas }: { visitas: VisitaCliente[] }) {
   return (
-    <>
-      <div className="hidden overflow-x-auto rounded-lg border md:block">
-        <Table>
-          <TableHeader className="bg-muted/50">
-            <TableRow>
-              <TableHead>Fecha</TableHead>
-              <TableHead>Horario</TableHead>
-              <TableHead>Yacimiento</TableHead>
-              <TableHead>Locación y equipo</TableHead>
-              <TableHead className="text-right">Válvulas</TableHead>
-              <TableHead>Estado</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {visitas.map((v) => (
-              <TableRow key={v.id}>
-                <TableCell className="tabular-nums">
-                  {v.fecha ? fmt(v.fecha, "dd/MM/yyyy") : "—"}
-                </TableCell>
-                <TableCell className="tabular-nums">{v.horario}</TableCell>
-                <TableCell>{v.yacimiento}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {v.ubicaciones.length ? v.ubicaciones.join("; ") : "—"}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">{v.valvulas}</TableCell>
-                <TableCell>
-                  <EstadoVisitaBadge visita={v} />
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-      <ul className="space-y-3 md:hidden">
-        {visitas.map((v) => (
-          <li key={v.id}>
-            <VisitaTarjeta visita={v} conFecha />
-          </li>
-        ))}
-      </ul>
-    </>
+    <TablaResponsive
+      filas={visitas}
+      clave={(v) => v.id}
+      columnas={COLUMNAS}
+      descripcion="Turnos"
+      tarjeta={(v) => <VisitaTarjeta visita={v} conFecha />}
+    />
   )
 }

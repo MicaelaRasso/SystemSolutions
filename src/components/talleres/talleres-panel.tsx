@@ -37,12 +37,18 @@ export function TalleresPanel() {
     ({ id, activo }: { id: string; activo: boolean }) => services.talleres.update(id, { activo }),
     { invalidar: INVALIDAR },
   )
-  const recuperar = useServiceMutation((id: string) => edgeApi.identity.triggerPasswordRecovery(id), {
-    exito: "Solicitud de recuperación enviada",
-  })
-  const reenviar = useServiceMutation((id: string) => edgeApi.identity.administrators.resendInvitation(id), {
-    exito: "Invitación reenviada",
-  })
+  const recuperar = useServiceMutation(
+    (id: string) => edgeApi.identity.triggerPasswordRecovery(id),
+    {
+      exito: "Solicitud de recuperación enviada",
+    },
+  )
+  const reenviar = useServiceMutation(
+    (id: string) => edgeApi.identity.administrators.resendInvitation(id),
+    {
+      exito: "Invitación reenviada",
+    },
+  )
 
   if (isError) return <ErrorState error={error} onRetry={() => refetch()} />
 
@@ -81,7 +87,7 @@ export function TalleresPanel() {
           {data.map((t) => (
             <Card key={t.id} className={cn(!t.activo && "opacity-70")}>
               <CardHeader className="flex flex-row items-start justify-between gap-2">
-                <div className="flex items-center gap-3">
+                <div className="flex min-w-0 items-center gap-3">
                   <span
                     className="flex size-9 items-center justify-center rounded-lg text-white"
                     style={{ backgroundColor: t.color }}
@@ -89,8 +95,8 @@ export function TalleresPanel() {
                   >
                     <Truck className="size-5" />
                   </span>
-                  <div>
-                    <CardTitle className="text-base">{t.nombre}</CardTitle>
+                  <div className="min-w-0">
+                    <CardTitle className="text-base break-words">{t.nombre}</CardTitle>
                     <EstadoActivoBadge activo={t.activo} />
                   </div>
                 </div>
@@ -120,18 +126,28 @@ export function TalleresPanel() {
                     {t.activo ? "Puede ingresar desde la tablet" : "Cuenta deshabilitada"}
                   </label>
                 </div>
-                {t.usuarioId && t.estadoCuenta === "pendiente" && <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={reenviar.isPending}
-                  onClick={() => reenviar.mutate(t.usuarioId)}
-                ><Mail />Reenviar invitación</Button>}
-                {t.usuarioId && t.estadoCuenta === "activa" && <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={recuperar.isPending}
-                  onClick={() => recuperar.mutate(t.usuarioId)}
-                ><Mail />Enviar recuperación</Button>}
+                {t.usuarioId && t.estadoCuenta === "pendiente" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={reenviar.isPending}
+                    onClick={() => reenviar.mutate(t.usuarioId)}
+                  >
+                    <Mail />
+                    Reenviar invitación
+                  </Button>
+                )}
+                {t.usuarioId && t.estadoCuenta === "activa" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={recuperar.isPending}
+                    onClick={() => recuperar.mutate(t.usuarioId)}
+                  >
+                    <Mail />
+                    Enviar recuperación
+                  </Button>
+                )}
               </CardContent>
             </Card>
           ))}
@@ -154,11 +170,7 @@ function TallerDialog({
     <FormDialog
       trigger={trigger}
       titulo={taller ? `Editar ${taller.nombre}` : "Nuevo taller móvil"}
-      descripcion={
-        taller
-          ? undefined
-          : "Se crea una cuenta de acceso para la tablet."
-      }
+      descripcion={taller ? undefined : "Se crea una cuenta de acceso para la tablet."}
     >
       {(cerrar) => <TallerForm taller={taller} usados={usados} cerrar={cerrar} />}
     </FormDialog>
@@ -186,7 +198,13 @@ function TallerForm({
   })
   const guardar = useServiceMutation(
     (data: TallerInput) =>
-      taller ? services.talleres.update(taller.id, { nombre: data.nombre, color: data.color, activo: data.activo }) : services.talleres.create(data),
+      taller
+        ? services.talleres.update(taller.id, {
+            nombre: data.nombre,
+            color: data.color,
+            activo: data.activo,
+          })
+        : services.talleres.create(data),
     { exito: taller ? "Taller actualizado" : "Taller creado", invalidar: INVALIDAR },
   )
 
@@ -204,7 +222,9 @@ function TallerForm({
           <Field>
             <FieldLabel htmlFor="taller-email">Email de la cuenta</FieldLabel>
             <Input id="taller-email" type="email" readOnly {...form.register("email")} />
-            <FieldDescription>El cambio de email requiere verificación de la nueva dirección.</FieldDescription>
+            <FieldDescription>
+              El cambio de email requiere verificación de la nueva dirección.
+            </FieldDescription>
           </Field>
         ) : (
           <CampoTexto
@@ -221,7 +241,11 @@ function TallerForm({
           render={({ field, fieldState }) => (
             <Field data-invalid={fieldState.invalid}>
               <FieldLabel>Color en agenda y cronograma</FieldLabel>
-              <div role="radiogroup" aria-label="Color" className="flex flex-wrap gap-2">
+              <div
+                role="radiogroup"
+                aria-label="Color"
+                className="flex flex-wrap gap-2 pointer-coarse:gap-3"
+              >
                 {COLORES_TALLER.map((c) => {
                   const elegido = field.value === c
                   const ocupado = usados.includes(c)
@@ -234,7 +258,7 @@ function TallerForm({
                       aria-label={`Color ${c}${ocupado ? " (usado por otro taller)" : ""}`}
                       onClick={() => field.onChange(c)}
                       className={cn(
-                        "flex size-8 items-center justify-center rounded-full ring-offset-2 ring-offset-background transition",
+                        "flex size-8 items-center justify-center rounded-full ring-offset-2 ring-offset-background transition pointer-coarse:size-11",
                         elegido && "ring-2 ring-foreground",
                         ocupado && !elegido && "opacity-40",
                       )}

@@ -150,7 +150,7 @@ export function MonthCalendar<T>({
                     aria-label={`${fmtDiaLargo(d)}: ${lista.length} ${lista.length === 1 ? etiquetas.singular : etiquetas.plural}`}
                     aria-pressed={onDiaSeleccionado ? k === seleccionado : undefined}
                     className={cn(
-                      "flex size-6 items-center justify-center rounded-full text-xs tabular-nums",
+                      "flex size-6 items-center justify-center rounded-full text-xs tabular-nums max-md:after:absolute max-md:after:inset-0 pointer-coarse:size-8",
                       fuera && "text-muted-foreground",
                       hoy && "bg-primary font-semibold text-primary-foreground",
                     )}
@@ -162,7 +162,7 @@ export function MonthCalendar<T>({
                       type="button"
                       onClick={() => onNuevo(k)}
                       aria-label={`Nueva tarea el ${fmtDiaLargo(d)}`}
-                      className="hidden size-6 items-center justify-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100 md:flex"
+                      className="hidden size-6 items-center justify-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100 md:flex pointer-coarse:size-8 pointer-coarse:opacity-100"
                     >
                       <Plus className="size-3.5" />
                     </button>
@@ -198,7 +198,7 @@ export function MonthCalendar<T>({
                       <PopoverTrigger asChild>
                         <button
                           type="button"
-                          className="rounded px-1 text-left text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                          className="rounded px-1 text-left text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground pointer-coarse:py-1.5"
                         >
                           +{resto} más
                         </button>
@@ -253,7 +253,12 @@ export function MonthCalendar<T>({
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium capitalize">{fmtDiaLargo(seleccionado)}</h3>
           {onNuevo && (
-            <Button size="sm" variant="outline" onClick={() => onNuevo(seleccionado)}>
+            <Button
+              size="sm"
+              variant="outline"
+              className="pointer-coarse:h-11"
+              onClick={() => onNuevo(seleccionado)}
+            >
               <Plus />
               Nueva
             </Button>

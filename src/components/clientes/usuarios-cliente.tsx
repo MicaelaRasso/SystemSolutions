@@ -7,6 +7,7 @@ import { Controller, useForm } from "react-hook-form"
 
 import { ConfirmDialog } from "@/components/common/confirm-dialog"
 import { EmptyState, ErrorState } from "@/components/common/states"
+import { TablaResponsive } from "@/components/common/tabla-responsive"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -33,14 +34,6 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Cargando } from "@/components/common/cargando"
 import { Switch } from "@/components/ui/switch"
 import { edgeApi } from "@/lib/api"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { usuarioClienteSchema, type UsuarioClienteInput } from "@/lib/domain/schemas"
 import type { ArbolYacimiento, ID, Usuario } from "@/lib/domain/types"
 import { fmtFecha, nombreCompleto } from "@/lib/format"
@@ -82,9 +75,12 @@ export function UsuariosCliente({ empresaId }: { empresaId: ID }) {
   const recuperar = useServiceMutation((id: ID) => edgeApi.identity.triggerPasswordRecovery(id), {
     exito: "Solicitud de recuperación enviada",
   })
-  const reenviar = useServiceMutation((id: ID) => edgeApi.identity.administrators.resendInvitation(id), {
-    exito: "Invitación reenviada",
-  })
+  const reenviar = useServiceMutation(
+    (id: ID) => edgeApi.identity.administrators.resendInvitation(id),
+    {
+      exito: "Invitación reenviada",
+    },
+  )
 
   if (usuarios.isError || arbol.isError) {
     return (
@@ -131,98 +127,111 @@ export function UsuariosCliente({ empresaId }: { empresaId: ID }) {
           accion={nuevo}
         />
       ) : (
-        <div className="overflow-x-auto rounded-xl border">
-          <Table>
-            <TableHeader className="bg-muted/50">
-              <TableRow>
-                <TableHead>Usuario</TableHead>
-                <TableHead>Accesos</TableHead>
-                <TableHead className="hidden md:table-cell">Alta</TableHead>
-                <TableHead>Estado de la cuenta</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {usuarios.data.map((u) => (
-                <TableRow key={u.id}>
-                  <TableCell>
-                    <div className="font-medium">{nombreCompleto(u)}</div>
-                    <div className="text-xs text-muted-foreground">{u.email}</div>
-                  </TableCell>
-                  <TableCell>
-                    <ResumenAccesos usuarioId={u.id} nombres={nombres} />
-                  </TableCell>
-                  <TableCell className="hidden text-sm md:table-cell">
-                    {fmtFecha(u.creadoEn)}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={u.estadoCuenta === "activa" ? "default" : "secondary"}>
-                        {u.estadoCuenta === "pendiente"
-                          ? "Pendiente"
-                          : u.estadoCuenta === "deshabilitada"
-                            ? "Deshabilitada"
-                            : "Activa"}
-                      </Badge>
-                      <Switch
-                        checked={u.activo}
-                        disabled={activar.isPending || u.estadoCuenta === "pendiente"}
-                        onCheckedChange={(activo) => activar.mutate({ id: u.id, activo })}
-                        aria-label={`${u.activo ? "Deshabilitar" : "Reactivar"} a ${nombreCompleto(u)}`}
-                      />
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex justify-end gap-1">
-                      {u.estadoCuenta === "pendiente" && <Button
-                        variant="ghost"
-                        size="icon"
-                        disabled={reenviar.isPending}
-                        aria-label={`Reenviar invitación a ${nombreCompleto(u)}`}
-                        onClick={() => reenviar.mutate(u.id)}
-                      ><Mail /></Button>}
-                      {u.estadoCuenta === "activa" && <Button
-                        variant="ghost"
-                        size="icon"
-                        disabled={recuperar.isPending}
-                        aria-label={`Enviar recuperación de contraseña a ${nombreCompleto(u)}`}
-                        onClick={() => recuperar.mutate(u.id)}
-                      ><Mail /></Button>}
-                      <UsuarioDialog
-                        empresaId={empresaId}
-                        arbol={arbol.data}
-                        usuario={u}
-                        trigger={
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label={`Editar a ${nombreCompleto(u)}`}
-                          >
-                            <Pencil />
-                          </Button>
-                        }
-                      />
-                      {u.estadoCuenta === "activa" && <ConfirmDialog
-                        trigger={
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label={`Deshabilitar a ${nombreCompleto(u)}`}
-                          >
-                            <Ban />
-                          </Button>
-                        }
-                        titulo={`¿Deshabilitar la cuenta de ${nombreCompleto(u)}?`}
-                        descripcion="Se conserva su identidad y su historial. Podés reactivarla más adelante."
-                        onConfirm={() => deshabilitar.mutateAsync(u.id)}
-                      />}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <TablaResponsive
+          filas={usuarios.data}
+          clave={(u) => u.id}
+          descripcion="Usuarios del cliente"
+          columnas={[
+            {
+              id: "usuario",
+              encabezado: "Usuario",
+              enTarjeta: "titulo",
+              celda: (u) => (
+                <>
+                  <div className="font-medium">{nombreCompleto(u)}</div>
+                  <div className="text-xs font-normal break-all text-muted-foreground">
+                    {u.email}
+                  </div>
+                </>
+              ),
+            },
+            {
+              id: "accesos",
+              encabezado: "Accesos",
+              celda: (u) => <ResumenAccesos usuarioId={u.id} nombres={nombres} />,
+            },
+            {
+              id: "alta",
+              encabezado: "Alta",
+              className: "hidden text-sm md:table-cell",
+              celda: (u) => fmtFecha(u.creadoEn),
+            },
+            {
+              id: "estado",
+              encabezado: "Estado de la cuenta",
+              etiqueta: "Cuenta",
+              celda: (u) => (
+                <div className="flex items-center gap-2">
+                  <Badge variant={u.estadoCuenta === "activa" ? "default" : "secondary"}>
+                    {u.estadoCuenta === "pendiente"
+                      ? "Pendiente"
+                      : u.estadoCuenta === "deshabilitada"
+                        ? "Deshabilitada"
+                        : "Activa"}
+                  </Badge>
+                  <Switch
+                    checked={u.activo}
+                    disabled={activar.isPending || u.estadoCuenta === "pendiente"}
+                    onCheckedChange={(activo) => activar.mutate({ id: u.id, activo })}
+                    aria-label={`${u.activo ? "Deshabilitar" : "Reactivar"} a ${nombreCompleto(u)}`}
+                  />
+                </div>
+              ),
+            },
+          ]}
+          acciones={(u) => (
+            <>
+              {u.estadoCuenta === "pendiente" && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  disabled={reenviar.isPending}
+                  aria-label={`Reenviar invitación a ${nombreCompleto(u)}`}
+                  onClick={() => reenviar.mutate(u.id)}
+                >
+                  <Mail />
+                </Button>
+              )}
+              {u.estadoCuenta === "activa" && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  disabled={recuperar.isPending}
+                  aria-label={`Enviar recuperación de contraseña a ${nombreCompleto(u)}`}
+                  onClick={() => recuperar.mutate(u.id)}
+                >
+                  <Mail />
+                </Button>
+              )}
+              <UsuarioDialog
+                empresaId={empresaId}
+                arbol={arbol.data ?? []}
+                usuario={u}
+                trigger={
+                  <Button variant="ghost" size="icon" aria-label={`Editar a ${nombreCompleto(u)}`}>
+                    <Pencil />
+                  </Button>
+                }
+              />
+              {u.estadoCuenta === "activa" && (
+                <ConfirmDialog
+                  trigger={
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Deshabilitar a ${nombreCompleto(u)}`}
+                    >
+                      <Ban />
+                    </Button>
+                  }
+                  titulo={`¿Deshabilitar la cuenta de ${nombreCompleto(u)}?`}
+                  descripcion="Se conserva su identidad y su historial. Podés reactivarla más adelante."
+                  onConfirm={() => deshabilitar.mutateAsync(u.id)}
+                />
+              )}
+            </>
+          )}
+        />
       )}
     </div>
   )
@@ -276,9 +285,7 @@ function UsuarioDialog({
         <DialogHeader>
           <DialogTitle>{usuario ? "Editar usuario" : "Nuevo usuario del cliente"}</DialogTitle>
           <DialogDescription>
-            {usuario
-              ? usuario.email
-              : "Recibirá un email para definir su contraseña."}
+            {usuario ? usuario.email : "Recibirá un email para definir su contraseña."}
           </DialogDescription>
         </DialogHeader>
         {open && (
@@ -328,7 +335,11 @@ function UsuarioForm({
   const guardar = useServiceMutation(
     async (data: UsuarioClienteInput) => {
       const u = usuario
-        ? await services.usuarios.update(usuario.id, { nombre: data.nombre, apellido: data.apellido, activo: data.activo })
+        ? await services.usuarios.update(usuario.id, {
+            nombre: data.nombre,
+            apellido: data.apellido,
+            activo: data.activo,
+          })
         : await services.usuarios.create({ ...data, rol: "cliente", empresaId })
       await services.usuarios.setAccesos(u.id, accesosDesdeClaves(accesos))
       return u
@@ -342,7 +353,13 @@ function UsuarioForm({
   const texto = (name: "nombre" | "apellido" | "email", label: string, type = "text") => (
     <Field data-invalid={!!errors[name]}>
       <FieldLabel htmlFor={`u-${name}`}>{label}</FieldLabel>
-      <Input id={`u-${name}`} type={type} readOnly={name === "email" && !!usuario} aria-invalid={!!errors[name]} {...form.register(name)} />
+      <Input
+        id={`u-${name}`}
+        type={type}
+        readOnly={name === "email" && !!usuario}
+        aria-invalid={!!errors[name]}
+        {...form.register(name)}
+      />
       <FieldError errors={[errors[name]]} />
     </Field>
   )
@@ -351,7 +368,6 @@ function UsuarioForm({
     <form
       noValidate
       onSubmit={form.handleSubmit((data) => guardar.mutate(data, { onSuccess: cerrar }))}
-      className="max-h-[70vh] overflow-y-auto pr-1"
     >
       <FieldGroup>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -359,7 +375,11 @@ function UsuarioForm({
           {texto("apellido", "Apellido")}
           <div className="sm:col-span-2">
             {texto("email", "Email", "email")}
-            {usuario && <p className="mt-1 text-xs text-muted-foreground">El cambio de email requiere verificación de la nueva dirección.</p>}
+            {usuario && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                El cambio de email requiere verificación de la nueva dirección.
+              </p>
+            )}
           </div>
         </div>
 

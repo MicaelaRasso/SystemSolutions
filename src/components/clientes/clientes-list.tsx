@@ -8,19 +8,12 @@ import { useState } from "react"
 import { EstadoActivoBadge } from "@/components/certificados/badges"
 import { PageHeader } from "@/components/common/page-header"
 import { EmptyState, ErrorState } from "@/components/common/states"
+import { FilaTarjeta, TablaResponsive } from "@/components/common/tabla-responsive"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
 import { useEmpresas } from "@/lib/hooks/queries"
@@ -49,7 +42,7 @@ export function ClientesList() {
         }
       />
 
-      <div className="flex flex-wrap items-center gap-4">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
         <div className="relative w-full max-w-sm">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -78,92 +71,135 @@ export function ClientesList() {
             q ? "Probá con otro término de búsqueda." : "Cargá el primer cliente para empezar."
           }
         />
-      ) : (
-        <div className="overflow-hidden rounded-xl border">
-          <Table>
-            <TableHeader className="bg-muted/50">
-              <TableRow>
-                <TableHead>Cliente</TableHead>
-                <TableHead className="hidden md:table-cell">Contacto</TableHead>
-                <TableHead className="hidden text-right sm:table-cell">Yacimientos</TableHead>
-                <TableHead className="hidden text-right sm:table-cell">Válvulas</TableHead>
-                <TableHead className="hidden text-right lg:table-cell">Usuarios</TableHead>
-                <TableHead className="hidden text-center sm:table-cell">Aviso</TableHead>
-                <TableHead>Estado</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isPending
-                ? Array.from({ length: 3 }, (_, i) => (
-                    <TableRow key={i}>
-                      <TableCell colSpan={7}>
-                        <Skeleton className="h-10 w-full" />
-                      </TableCell>
-                    </TableRow>
-                  ))
-                : data.map((e) => (
-                    <TableRow
-                      key={e.id}
-                      className="cursor-pointer"
-                      onClick={() => router.push(`/admin/clientes/${e.id}`)}
-                    >
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <EmpresaLogo logoUrl={e.logoUrl} nombre={e.razonSocial} />
-                          <div className="min-w-0">
-                            <Link
-                              href={`/admin/clientes/${e.id}`}
-                              className="font-medium hover:underline"
-                              onClick={(ev) => ev.stopPropagation()}
-                            >
-                              {e.razonSocial}
-                            </Link>
-                            <div className="text-xs text-muted-foreground">CUIT {e.cuit}</div>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="hidden md:table-cell">
-                        <div>{e.contacto}</div>
-                        <div className="text-xs text-muted-foreground">{e.telefono}</div>
-                      </TableCell>
-                      <TableCell className="hidden text-right tabular-nums sm:table-cell">
-                        {e.yacimientos}
-                      </TableCell>
-                      <TableCell className="hidden text-right tabular-nums sm:table-cell">
-                        {e.valvulas}
-                      </TableCell>
-                      <TableCell className="hidden text-right tabular-nums lg:table-cell">
-                        {e.usuarios}
-                      </TableCell>
-                      <TableCell className="hidden text-center sm:table-cell">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-flex">
-                              {e.avisoVencimiento ? (
-                                <BellRing className="size-4 text-primary" aria-label="Con aviso" />
-                              ) : (
-                                <BellOff
-                                  className="size-4 text-muted-foreground"
-                                  aria-label="Sin aviso"
-                                />
-                              )}
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            {e.avisoVencimiento
-                              ? "Recibe aviso de vencimiento por email"
-                              : "No recibe aviso de vencimiento"}
-                          </TooltipContent>
-                        </Tooltip>
-                      </TableCell>
-                      <TableCell>
-                        <EstadoActivoBadge activo={e.activo} />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-            </TableBody>
-          </Table>
+      ) : isPending ? (
+        <div className="space-y-3" aria-busy>
+          {Array.from({ length: 3 }, (_, i) => (
+            <Skeleton key={i} className="h-16 w-full rounded-xl" />
+          ))}
         </div>
+      ) : (
+        <TablaResponsive
+          filas={data}
+          clave={(e) => e.id}
+          descripcion="Clientes"
+          onFila={(e) => router.push(`/admin/clientes/${e.id}`)}
+          columnas={[
+            {
+              id: "cliente",
+              encabezado: "Cliente",
+              enTarjeta: "oculta",
+              celda: (e) => (
+                <div className="flex items-center gap-3">
+                  <EmpresaLogo logoUrl={e.logoUrl} nombre={e.razonSocial} />
+                  <div className="min-w-0">
+                    <Link
+                      href={`/admin/clientes/${e.id}`}
+                      className="font-medium hover:underline"
+                      onClick={(ev) => ev.stopPropagation()}
+                    >
+                      {e.razonSocial}
+                    </Link>
+                    <div className="text-xs text-muted-foreground">CUIT {e.cuit}</div>
+                  </div>
+                </div>
+              ),
+            },
+            {
+              id: "contacto",
+              encabezado: "Contacto",
+              enTarjeta: "oculta",
+              celda: (e) => (
+                <>
+                  <div>{e.contacto}</div>
+                  <div className="text-xs text-muted-foreground">{e.telefono}</div>
+                </>
+              ),
+            },
+            {
+              id: "yacimientos",
+              encabezado: "Yacimientos",
+              className: "text-right tabular-nums",
+              enTarjeta: "oculta",
+              celda: (e) => e.yacimientos,
+            },
+            {
+              id: "valvulas",
+              encabezado: "Válvulas",
+              className: "text-right tabular-nums",
+              enTarjeta: "oculta",
+              celda: (e) => e.valvulas,
+            },
+            {
+              id: "usuarios",
+              encabezado: "Usuarios",
+              className: "hidden text-right tabular-nums lg:table-cell",
+              enTarjeta: "oculta",
+              celda: (e) => e.usuarios,
+            },
+            {
+              id: "aviso",
+              encabezado: "Aviso",
+              className: "text-center",
+              enTarjeta: "oculta",
+              celda: (e) => (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex">
+                      {e.avisoVencimiento ? (
+                        <BellRing className="size-4 text-primary" aria-label="Con aviso" />
+                      ) : (
+                        <BellOff className="size-4 text-muted-foreground" aria-label="Sin aviso" />
+                      )}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {e.avisoVencimiento
+                      ? "Recibe aviso de vencimiento por email"
+                      : "No recibe aviso de vencimiento"}
+                  </TooltipContent>
+                </Tooltip>
+              ),
+            },
+            {
+              id: "estado",
+              encabezado: "Estado",
+              enTarjeta: "oculta",
+              celda: (e) => <EstadoActivoBadge activo={e.activo} />,
+            },
+          ]}
+          tarjeta={(e) => (
+            <Link href={`/admin/clientes/${e.id}`} className="block rounded-lg">
+              <FilaTarjeta
+                titulo={
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <EmpresaLogo logoUrl={e.logoUrl} nombre={e.razonSocial} />
+                      <div className="min-w-0">
+                        <div>{e.razonSocial}</div>
+                        <div className="text-xs font-normal text-muted-foreground">
+                          CUIT {e.cuit}
+                        </div>
+                      </div>
+                    </div>
+                    <EstadoActivoBadge activo={e.activo} />
+                  </div>
+                }
+                campos={[
+                  { etiqueta: "Contacto", valor: `${e.contacto} · ${e.telefono}` },
+                  { etiqueta: "Yacimientos", valor: e.yacimientos },
+                  { etiqueta: "Válvulas", valor: e.valvulas },
+                  { etiqueta: "Usuarios", valor: e.usuarios },
+                  {
+                    etiqueta: "Aviso",
+                    valor: e.avisoVencimiento
+                      ? "Recibe aviso de vencimiento"
+                      : "No recibe aviso de vencimiento",
+                  },
+                ]}
+              />
+            </Link>
+          )}
+        />
       )}
     </>
   )

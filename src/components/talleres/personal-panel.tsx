@@ -81,7 +81,7 @@ export function PersonalPanel() {
       ) : data.length === 0 ? (
         <EmptyState icono={Users} titulo="Sin personal cargado" accion={nueva} />
       ) : (
-        <div className="overflow-hidden rounded-xl border">
+        <div className="overflow-x-auto rounded-xl border">
           <Table>
             <TableHeader className="bg-muted/50">
               <TableRow>

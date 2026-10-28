@@ -57,7 +57,7 @@ export function VisitaPill({
   )
 }
 
-/** Detalle de una visita: horario, ubicación, válvulas, taller y estado. */
+/** Detalle de una visita: horario, ubicación, válvulas y estado. */
 export function VisitaTarjeta({
   visita,
   conFecha = false,
@@ -95,8 +95,6 @@ export function VisitaTarjeta({
         </dd>
         <dt className="text-muted-foreground">Válvulas</dt>
         <dd className="tabular-nums">{visita.valvulas}</dd>
-        <dt className="text-muted-foreground">Taller</dt>
-        <dd>{visita.tallerAsignado ? "Asignado" : "A confirmar"}</dd>
       </dl>
     </article>
   )

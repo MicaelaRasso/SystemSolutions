@@ -47,16 +47,23 @@ export function YacimientoDialog({
   empresaId,
   yacimiento,
   trigger,
+  open,
+  onOpenChange,
   onSaved,
 }: {
   empresaId: ID
   yacimiento?: Yacimiento
-  trigger: React.ReactNode
+  /** Sin `trigger`, se controla desde afuera con `open` y `onOpenChange`. */
+  trigger?: React.ReactNode
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
   onSaved?: (id: ID) => void
 }) {
   return (
     <FormDialog
       trigger={trigger}
+      open={open}
+      onOpenChange={onOpenChange}
       titulo={yacimiento ? "Editar yacimiento" : "Nuevo yacimiento"}
       descripcion="Área geográfica donde opera el cliente. Agrupa una o más plantas."
     >
@@ -159,17 +166,24 @@ export function PlantaDialog({
   yacimientoId,
   planta,
   trigger,
+  open,
+  onOpenChange,
   onSaved,
 }: {
   empresaId: ID
   yacimientoId: ID
   planta?: Planta
-  trigger: React.ReactNode
+  /** Sin `trigger`, se controla desde afuera con `open` y `onOpenChange`. */
+  trigger?: React.ReactNode
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
   onSaved?: (id: ID) => void
 }) {
   return (
     <FormDialog
       trigger={trigger}
+      open={open}
+      onOpenChange={onOpenChange}
       titulo={planta ? "Editar planta / locación" : "Nueva planta / locación"}
       descripcion="Instalación dentro del yacimiento, por ejemplo una estación compresora."
     >
@@ -249,17 +263,24 @@ export function EquipoDialog({
   plantaId,
   equipo,
   trigger,
+  open,
+  onOpenChange,
   onSaved,
 }: {
   empresaId: ID
   plantaId: ID
   equipo?: Equipo
-  trigger: React.ReactNode
+  /** Sin `trigger`, se controla desde afuera con `open` y `onOpenChange`. */
+  trigger?: React.ReactNode
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
   onSaved?: (id: ID) => void
 }) {
   return (
     <FormDialog
       trigger={trigger}
+      open={open}
+      onOpenChange={onOpenChange}
       titulo={equipo ? "Editar equipo / unidad" : "Nuevo equipo / unidad"}
       descripcion="Máquina o conjunto de máquinas que contiene válvulas de seguridad."
     >
@@ -511,7 +532,6 @@ function ValvulaForm({
           },
         }),
       )}
-      className="max-h-[70vh] overflow-y-auto pr-1"
     >
       <FieldGroup>
         <div className="flex gap-2 rounded-lg bg-field/60 p-3 text-sm">

@@ -19,7 +19,6 @@ const visita: VisitaCliente = {
   yacimiento: "Yacimiento Norte",
   ubicaciones: ["Planta A · K-100"],
   plantaIds: ["p-1"],
-  tallerAsignado: false,
   estado: "programada",
   valvulas: 2,
 }
@@ -40,7 +39,7 @@ describe("calendario del cliente", () => {
     expect(html).toContain("08:00–12:30")
     expect(html).toContain("Planta A · K-100")
     expect(html).toContain("Programada")
-    expect(html).toContain("A confirmar")
+    expect(html).not.toMatch(/Taller|Asignado|A confirmar/)
     expect(html).toContain("Agenda del mes")
     expect(html).not.toMatch(/Solicitar|Nuevo turno|Nueva visita/)
   })

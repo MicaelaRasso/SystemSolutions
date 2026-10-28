@@ -49,7 +49,7 @@ function Migas({ ubicacion, nivel, onSeleccionar }: Omit<Props, "empresaId">) {
           {i > 0 && <ChevronRight className="size-3.5" />}
           <button
             type="button"
-            className="hover:text-foreground hover:underline"
+            className="hover:text-foreground hover:underline pointer-coarse:py-3"
             onClick={() => onSeleccionar(p)}
           >
             {p.label}
@@ -124,7 +124,7 @@ function Hijos({
                   <button
                     type="button"
                     onClick={() => onSeleccionar(it)}
-                    className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm hover:bg-muted/60"
+                    className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm hover:bg-muted/60 pointer-coarse:py-3.5"
                   >
                     <Icono className="size-4 text-muted-foreground" />
                     <span className="font-medium">{it.label}</span>

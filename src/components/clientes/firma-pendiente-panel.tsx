@@ -66,7 +66,7 @@ export function FirmaPendientePanel() {
             const file = files[visit.visit.id]
             const signerName = names[visit.visit.id] ?? ""
             return (
-              <div className="rounded-lg border p-4" key={visit.visit.id}>
+              <div className="rounded-lg border p-3 sm:p-4" key={visit.visit.id}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="font-medium">{name}</p>
@@ -106,7 +106,7 @@ export function FirmaPendientePanel() {
                           [visit.visit.id]: event.target.files?.[0],
                         }))
                       }
-                      className="h-auto"
+                      className="h-auto pointer-coarse:h-auto"
                     />
                   </div>
                   <Button

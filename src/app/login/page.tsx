@@ -21,10 +21,6 @@ export default async function LoginPage(props: PageProps<"/login">) {
           <h2 className="text-3xl leading-tight font-semibold text-white">
             Mantenimiento y calibración de válvulas de seguridad
           </h2>
-          <p className="text-sidebar-foreground/80">
-            Agenda de talleres móviles, certificados digitales firmados en campo y acceso de cada
-            cliente a sus certificados vigentes.
-          </p>
         </div>
         <p className="text-xs text-sidebar-foreground/60">
           System Solutions SRL · Neuquén · Más de 20 años en instrumentación y control

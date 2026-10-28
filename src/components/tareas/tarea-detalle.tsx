@@ -5,6 +5,7 @@ import Link from "next/link"
 
 import { ConfirmDialog } from "@/components/common/confirm-dialog"
 import { CertificateCaptureForm } from "@/components/certificados/certificate-capture-form"
+import { useMotivo } from "@/components/common/motivo-dialog"
 import { ErrorState } from "@/components/common/states"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -55,11 +56,30 @@ export function TareaDetalle({ id }: { id: string }) {
         : cambiarEstadoTarea(id, input.estado),
     { invalidar: INVALIDAR_TAREAS },
   )
+  const { pedirMotivo, dialogo: dialogoMotivo } = useMotivo()
+
+  /** Con Supabase el motivo es obligatorio: el propio diálogo hace de confirmación. */
+  async function cancelarConMotivo() {
+    if (!tarea) return
+    const reason = await pedirMotivo({
+      titulo: `¿Cancelar la solicitud N° ${tarea.nroSolicitud}?`,
+      descripcion: "Queda en el historial como cancelada y sale de la agenda del taller.",
+      etiqueta: "Motivo de cancelación de la visita",
+      confirmar: "Cancelar tarea",
+      destructivo: true,
+    })
+    if (!reason) return
+    try {
+      await cambiarEstado.mutateAsync({ estado: "cancelada", reason })
+    } catch {
+      // El error ya se notificó (toast).
+    }
+  }
 
   const volver = (
     <Link
       href="/admin/tareas"
-      className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+      className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground pointer-coarse:min-h-11"
     >
       <ChevronLeft className="size-4" />
       Tareas
@@ -93,7 +113,8 @@ export function TareaDetalle({ id }: { id: string }) {
 
   const cerrada = tarea.estado === "completada" || tarea.estado === "cancelada"
   const cancelable = supabase
-    ? Boolean(operacion.data?.visit.visit.id) && puedeCancelarVisitaAdministrativa(operacion.data!.operation.estado)
+    ? Boolean(operacion.data?.visit.visit.id) &&
+      puedeCancelarVisitaAdministrativa(operacion.data!.operation.estado)
     : !cerrada
 
   return (
@@ -125,7 +146,20 @@ export function TareaDetalle({ id }: { id: string }) {
             Reabrir tarea
           </Button>
         ) : (
-          cancelable && (
+          cancelable &&
+          (supabase ? (
+            <>
+              <Button
+                variant="destructive"
+                disabled={cambiarEstado.isPending}
+                onClick={cancelarConMotivo}
+              >
+                <Ban />
+                Cancelar tarea
+              </Button>
+              {dialogoMotivo}
+            </>
+          ) : (
             <ConfirmDialog
               trigger={
                 <Button variant="destructive">
@@ -136,19 +170,14 @@ export function TareaDetalle({ id }: { id: string }) {
               titulo={`¿Cancelar la solicitud N° ${tarea.nroSolicitud}?`}
               descripcion="Queda en el historial como cancelada y sale de la agenda del taller."
               confirmar="Cancelar tarea"
-              onConfirm={() => {
-                const reason = supabase
-                  ? window.prompt("Motivo de cancelación de la visita")?.trim()
-                  : undefined
-                if (supabase && !reason) return Promise.resolve()
-                return cambiarEstado.mutateAsync({ estado: "cancelada", reason })
-              }}
+              onConfirm={() => cambiarEstado.mutateAsync({ estado: "cancelada" })}
             />
-          )
+          ))
         )}
       </div>
       {/* key: al cambiar el estado desde el encabezado, el formulario toma los valores nuevos */}
-      {(!supabase || (operacion.data && puedeEditarProgramacion(operacion.data.operation.estado))) && (
+      {(!supabase ||
+        (operacion.data && puedeEditarProgramacion(operacion.data.operation.estado))) && (
         <TareaForm
           key={`${tarea.id}-${tarea.estado}`}
           tarea={tarea}
@@ -156,7 +185,9 @@ export function TareaDetalle({ id }: { id: string }) {
         />
       )}
       {supabase && operacion.data && !puedeEditarProgramacion(operacion.data.operation.estado) && (
-        <p className="text-sm text-muted-foreground">La Visita de servicio ya no admite cambios de programación o selección.</p>
+        <p className="text-sm text-muted-foreground">
+          La Visita de servicio ya no admite cambios de programación o selección.
+        </p>
       )}
       {supabase && operacion.data && <OrdenesTrabajo operation={operacion.data} />}
     </>
@@ -209,6 +240,7 @@ function OrdenesTrabajo({ operation }: { operation: OperationRead }) {
                         <Button
                           size="sm"
                           variant="outline"
+                          className="pointer-coarse:h-11"
                           disabled={update.isPending}
                           onClick={() =>
                             update.mutate({
@@ -238,6 +270,7 @@ function OrdenesTrabajo({ operation }: { operation: OperationRead }) {
                   <Button
                     size="sm"
                     variant="outline"
+                    className="pointer-coarse:h-11"
                     disabled={add.isPending}
                     onClick={() => add.mutate({ visitId, valveId: valve.id })}
                   >
@@ -275,6 +308,7 @@ function CertificateDraft({ workOrderId }: { workOrderId: string }) {
       <Button
         size="sm"
         variant="ghost"
+        className="pointer-coarse:h-11"
         disabled={start.isPending || draft.isFetching}
         onClick={() => {
           if (certificateId) {
@@ -342,17 +376,18 @@ function NoEvaluadaButton({
 }) {
   const [reason, setReason] = useState("")
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-wrap gap-2">
       <Input
         aria-label="Motivo de no evaluación"
         value={reason}
         onChange={(event) => setReason(event.target.value)}
         placeholder="Motivo requerido"
-        className="h-8 w-40"
+        className="h-8 min-w-0 flex-1 sm:w-40 sm:flex-none"
       />
       <Button
         size="sm"
         variant="outline"
+        className="pointer-coarse:h-11"
         disabled={disabled || !reason.trim()}
         onClick={() => onSubmit(reason.trim())}
       >

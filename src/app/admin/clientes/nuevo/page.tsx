@@ -12,7 +12,7 @@ export default function Page() {
     <>
       <Link
         href="/admin/clientes"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground pointer-coarse:min-h-11"
       >
         <ChevronLeft className="size-4" />
         Clientes

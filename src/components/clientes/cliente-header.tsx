@@ -28,7 +28,7 @@ export function ClienteHeader({ id }: { id: string }) {
     <div className="space-y-4">
       <Link
         href="/admin/clientes"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground pointer-coarse:min-h-11"
       >
         <ChevronLeft className="size-4" />
         Clientes
@@ -61,7 +61,7 @@ export function ClienteHeader({ id }: { id: string }) {
           </>
         )}
       </div>
-      <nav className="flex gap-1 border-b" aria-label="Secciones del cliente">
+      <nav className="flex gap-1 overflow-x-auto border-b" aria-label="Secciones del cliente">
         {tabs.map((t) => {
           const activo = pathname === t.href
           return (
@@ -70,7 +70,7 @@ export function ClienteHeader({ id }: { id: string }) {
               href={t.href}
               aria-current={activo ? "page" : undefined}
               className={cn(
-                "-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors",
+                "-mb-px shrink-0 border-b-2 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors pointer-coarse:py-3",
                 activo
                   ? "border-primary text-foreground"
                   : "border-transparent text-muted-foreground hover:text-foreground",

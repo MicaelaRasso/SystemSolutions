@@ -7,26 +7,18 @@ import { Controller, useForm } from "react-hook-form"
 
 import { CampoTexto, FormDialog, PieFormulario } from "@/components/common/form-dialog"
 import { EmptyState, ErrorState } from "@/components/common/states"
+import { TablaResponsive } from "@/components/common/tabla-responsive"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Field, FieldContent, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Cargando } from "@/components/common/cargando"
 import { Switch } from "@/components/ui/switch"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { estadoPatron } from "@/lib/domain/rules"
 import { patronSchema, type PatronInput } from "@/lib/domain/schemas"
 import type { Patron } from "@/lib/domain/types"
 import { fmtFecha } from "@/lib/format"
 import { qk, usePatrones, useServiceMutation } from "@/lib/hooks/queries"
 import { services } from "@/lib/services"
-import { cn } from "@/lib/utils"
 
 function EstadoPatronBadge({ vencimiento }: { vencimiento: string }) {
   const { estado, diasRestantes } = estadoPatron(vencimiento)
@@ -99,59 +91,59 @@ export function PatronesEditor() {
       ) : data.length === 0 ? (
         <EmptyState icono={Gauge} titulo="Sin patrones cargados" accion={nuevo} />
       ) : (
-        <div className="overflow-hidden rounded-xl border">
-          <Table>
-            <TableHeader className="bg-muted/50">
-              <TableRow>
-                <TableHead>Patrón</TableHead>
-                <TableHead>Vencimiento</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>Activo</TableHead>
-                <TableHead className="text-right">Editar</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.map((p) => (
-                <TableRow key={p.id} className={cn(!p.activo && "opacity-60")}>
-                  <TableCell>
-                    <div className="font-medium">{p.nombre}</div>
-                    <div className="font-mono text-xs text-muted-foreground">N° {p.nroSerie}</div>
-                  </TableCell>
-                  <TableCell>{fmtFecha(p.vencimiento)}</TableCell>
-                  <TableCell>
-                    {p.activo ? (
-                      <EstadoPatronBadge vencimiento={p.vencimiento} />
-                    ) : (
-                      <Badge variant="secondary">Inactivo</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Switch
-                      checked={p.activo}
-                      disabled={activar.isPending}
-                      onCheckedChange={(activo) => activar.mutate({ id: p.id, activo })}
-                      aria-label={`${p.activo ? "Desactivar" : "Activar"} ${p.nombre} ${p.nroSerie}`}
-                    />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <PatronDialog
-                      patron={p}
-                      trigger={
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label={`Editar ${p.nombre} ${p.nroSerie}`}
-                        >
-                          <Pencil />
-                        </Button>
-                      }
-                    />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <TablaResponsive
+          filas={data}
+          clave={(p) => p.id}
+          descripcion="Patrones de calibración"
+          columnas={[
+            {
+              id: "patron",
+              encabezado: "Patrón",
+              enTarjeta: "titulo",
+              celda: (p) => (
+                <>
+                  <div className="font-medium">{p.nombre}</div>
+                  <div className="font-mono text-xs font-normal text-muted-foreground">
+                    N° {p.nroSerie}
+                  </div>
+                </>
+              ),
+            },
+            { id: "vencimiento", encabezado: "Vencimiento", celda: (p) => fmtFecha(p.vencimiento) },
+            {
+              id: "estado",
+              encabezado: "Estado",
+              celda: (p) =>
+                p.activo ? (
+                  <EstadoPatronBadge vencimiento={p.vencimiento} />
+                ) : (
+                  <Badge variant="secondary">Inactivo</Badge>
+                ),
+            },
+            {
+              id: "activo",
+              encabezado: "Activo",
+              celda: (p) => (
+                <Switch
+                  checked={p.activo}
+                  disabled={activar.isPending}
+                  onCheckedChange={(activo) => activar.mutate({ id: p.id, activo })}
+                  aria-label={`${p.activo ? "Desactivar" : "Activar"} ${p.nombre} ${p.nroSerie}`}
+                />
+              ),
+            },
+          ]}
+          acciones={(p) => (
+            <PatronDialog
+              patron={p}
+              trigger={
+                <Button variant="ghost" size="icon" aria-label={`Editar ${p.nombre} ${p.nroSerie}`}>
+                  <Pencil />
+                </Button>
+              }
+            />
+          )}
+        />
       )}
     </div>
   )
@@ -211,7 +203,7 @@ function PatronForm({ patron, cerrar }: { patron?: Patron; cerrar: () => void })
           />
           <CampoTexto form={form} name="nroSerie" label="N° de serie" placeholder="122330" />
         </div>
-        <div className="flex items-end gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
           <div className="flex-1">
             <CampoTexto form={form} name="vencimiento" label="Vencimiento" type="date" />
           </div>

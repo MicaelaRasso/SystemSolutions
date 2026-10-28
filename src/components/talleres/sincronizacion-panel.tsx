@@ -15,6 +15,17 @@ import {
   type VisitaOffline,
 } from "@/lib/offline/sync"
 import { getOfflineDeviceId } from "@/lib/offline/device"
+import { cargarResumenesDeVisitas, conResumenGuardado, resumenGuardado } from "./resumenes-visitas"
+import { tituloDeVisita } from "./visita-titulo"
+
+function tituloGuardado(visit: VisitaOffline) {
+  const context = visit.context as { visit?: Record<string, unknown> } | undefined
+  const row = context?.visit
+  return tituloDeVisita(
+    { id: visit.id, starts_at: row?.starts_at ?? row?.fecha_inicio ?? row?.fecha_ejecucion },
+    resumenGuardado(visit.context),
+  ).titulo
+}
 
 type EstadoConexion = "online" | "offline" | "actualizando" | "error"
 type OperacionesPorVisita = Record<string, OperacionOffline[]>
@@ -100,6 +111,7 @@ export function SincronizacionPanel() {
       )
       const workingSet = await edgeApi.offline.workingSet(getOfflineDeviceId())
       const outcomeResponse = await edgeApi.syncConflicts.workshopOutcomes()
+      const resumenes = await cargarResumenesDeVisitas()
       const nextVisits: VisitaOffline[] = []
       const nextOperations: OperacionesPorVisita = {}
       for (const entry of workingSet.visits) {
@@ -109,7 +121,11 @@ export function SincronizacionPanel() {
         const catalogs = entry.certificate_catalogs ?? workingSet.certificate_catalogs
         const catalogState = refreshedVisitCatalogs({
           previous,
-          refreshedContext: { ...entry, certificate_catalogs: catalogs },
+          refreshedContext: conResumenGuardado(
+            { ...entry, certificate_catalogs: catalogs },
+            resumenes.get(id),
+            previous?.context,
+          ),
           refreshedCatalogs: catalogs,
         })
         const visit: VisitaOffline = {
@@ -190,7 +206,7 @@ export function SincronizacionPanel() {
 
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between">
+      <CardHeader className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <CardTitle>Trabajo offline</CardTitle>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -217,11 +233,12 @@ export function SincronizacionPanel() {
         </Badge>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center justify-between gap-3 rounded-md border p-3 text-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm">
           <span>{visits.length} visita(s) disponible(s) en la ventana de trabajo</span>
           <Button
             type="button"
             variant="outline"
+            className="max-sm:w-full"
             onClick={() => void refresh()}
             disabled={connection === "actualizando"}
           >
@@ -234,7 +251,7 @@ export function SincronizacionPanel() {
             <h3 className="text-sm font-medium">Resoluciones administrativas</h3>
             <ul className="space-y-2 text-sm">
               {conflictOutcomes.map((outcome) => (
-                <li className="rounded border p-2" key={outcome.conflict_id}>
+                <li className="rounded border p-2 break-words" key={outcome.conflict_id}>
                   <p>
                     {outcome.resolution_action === "accepted"
                       ? "Operación aceptada y aplicada"
@@ -272,9 +289,11 @@ export function SincronizacionPanel() {
 
             return (
               <li className="space-y-3 rounded-md border px-3 py-3" key={visit.id}>
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-start">
                   <div className="min-w-0">
-                    <p className="font-mono text-xs">{visit.id}</p>
+                    <p className="font-medium break-words" data-visit-id={visit.id}>
+                      {tituloGuardado(visit)}
+                    </p>
                     <p className="mt-1 text-muted-foreground">
                       {visit.estadoLocal === "completada_local"
                         ? "Completada localmente; el estado backend es independiente"
@@ -287,6 +306,7 @@ export function SincronizacionPanel() {
                     <Button
                       type="button"
                       variant="outline"
+                      className="max-sm:w-full"
                       onClick={() => void syncVisit(visit.id)}
                       disabled={connection === "offline" || syncing}
                     >
@@ -331,8 +351,8 @@ export function SincronizacionPanel() {
                   <ul className="space-y-1 border-t pt-2 text-xs">
                     {operations.map((operation) => (
                       <li className="space-y-1" key={operation.operationId}>
-                        <div className="flex justify-between gap-3">
-                          <span className="font-mono">{operation.operationId}</span>
+                        <div className="flex flex-col justify-between gap-0.5 sm:flex-row sm:gap-3">
+                          <span className="font-mono break-all">{operation.operationId}</span>
                           <span>
                             {operation.estado === "sincronizada"
                               ? `Reconocida: ${operation.receipt?.serverStatus ?? "sincronizada"}`

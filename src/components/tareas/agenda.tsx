@@ -17,6 +17,7 @@ import type { TareaResumen } from "@/lib/services"
 import { cn } from "@/lib/utils"
 
 import { COLOR_SIN_TALLER } from "./badges"
+import { infoAgenda } from "./tarea-info"
 import { convertirOperacionATarea, TareaSheet } from "./tarea-sheet"
 
 const SIN_TALLER = "sin_asignar"
@@ -81,7 +82,7 @@ export function Agenda() {
               aria-pressed={activo}
               onClick={() => alternar(l.id)}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition",
+                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition pointer-coarse:min-h-11",
                 activo ? "bg-card" : "bg-muted text-muted-foreground line-through opacity-70",
               )}
             >
@@ -99,10 +100,7 @@ export function Agenda() {
       </div>
 
       {operaciones.isError ? (
-        <ErrorState
-          error={operaciones.error}
-          onRetry={() => operaciones.refetch()}
-        />
+        <ErrorState error={operaciones.error} onRetry={() => operaciones.refetch()} />
       ) : (
         <MonthCalendar
           mes={mes}
@@ -122,16 +120,25 @@ export function Agenda() {
   )
 }
 
-/** Tarjeta compacta: horario, cliente y locación (RF-11). */
-function TareaPill({ tarea, onClick }: { tarea: TareaResumen; onClick: () => void }) {
+/** Tarjeta compacta: horario, cliente, taller móvil asignado y planta a la que se va (RF-11). */
+export function TareaPill({ tarea, onClick }: { tarea: TareaResumen; onClick: () => void }) {
   const color = tarea.tallerColor ?? COLOR_SIN_TALLER
+  const { taller, planta } = infoAgenda(tarea)
+  const etiquetaTaller = tarea.tallerNombre?.trim() ? `Taller Móvil: ${taller}` : taller
+  const titulo = [
+    `${tarea.horario ?? ""} ${tarea.empresaNombre}`.trim(),
+    etiquetaTaller,
+    planta && `Planta: ${planta}`,
+  ]
+    .filter(Boolean)
+    .join(" · ")
   return (
     <button
       type="button"
       onClick={onClick}
-      title={`${tarea.horario ?? ""} ${tarea.empresaNombre} · ${tarea.plantaNombre}`}
+      title={titulo}
       className={cn(
-        "w-full rounded-md border-l-3 px-1.5 py-1 text-left text-xs leading-tight transition hover:brightness-95",
+        "w-full rounded-md border-l-3 px-1.5 py-1 text-left text-xs leading-tight transition hover:brightness-95 pointer-coarse:py-2.5",
         tarea.estado === "cancelada" && "line-through opacity-60",
         tarea.estado === "completada" && "opacity-75",
       )}
@@ -141,7 +148,10 @@ function TareaPill({ tarea, onClick }: { tarea: TareaResumen; onClick: () => voi
         {tarea.horario && <span className="tabular-nums">{tarea.horario} </span>}
         {tarea.empresaNombre}
       </span>
-      <span className="block truncate text-muted-foreground">{tarea.plantaNombre}</span>
+      <span className="block truncate text-[11px] text-muted-foreground">{etiquetaTaller}</span>
+      {planta && (
+        <span className="block truncate text-[11px] text-muted-foreground">Planta: {planta}</span>
+      )}
     </button>
   )
 }

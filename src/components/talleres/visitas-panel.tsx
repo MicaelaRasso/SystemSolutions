@@ -5,12 +5,14 @@ import { ChevronDown, ChevronUp, CloudOff, FileCheck2, Lock, Paperclip, RefreshC
 
 import { SignaturePad, dataUrlToFile } from "@/components/certificados/signature-pad"
 import { CertificateCaptureForm } from "@/components/certificados/certificate-capture-form"
+import { SelectNativo } from "@/components/common/select-nativo"
 import { ErrorState } from "@/components/common/states"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { cn } from "@/lib/utils"
 import { edgeApi } from "@/lib/api"
 import { type CertificateEvidenceKey } from "@/lib/api/certificates"
 import { useEdgeCertificateCaptureCatalogs, useEdgeCertificateDraft } from "@/lib/api/hooks"
@@ -34,6 +36,8 @@ import {
 import { visitCompletionBlocker } from "@/lib/offline/completion"
 import { getOfflineDeviceId as deviceId } from "@/lib/offline/device"
 import { Cargando } from "@/components/common/cargando"
+import { cargarResumenesDeVisitas, conResumenGuardado, resumenGuardado } from "./resumenes-visitas"
+import { tituloDeVisita, type ResumenVisita, type TituloVisita } from "./visita-titulo"
 
 type StoredVisitContext = VisitDto & {
   context?: unknown
@@ -50,10 +54,31 @@ function contextOf(visit: VisitaOffline) {
   return (visit.context ?? {}) as StoredVisitContext
 }
 
-function visitName(visit: VisitaOffline) {
-  const context = contextOf(visit)
-  const row = context.visit as Record<string, unknown> | undefined
-  return String(row?.yacimiento_nombre ?? row?.yacimiento ?? row?.nombre ?? `Visita ${visit.id}`)
+/** Rótulo de la visita con nombres (nunca el id); sin resumen de operación usa la fecha. */
+function visitLabel(visit: VisitaOffline, resumen: ResumenVisita | undefined): TituloVisita {
+  const row = contextOf(visit).visit as Record<string, unknown> | undefined
+  return tituloDeVisita(
+    { id: visit.id, starts_at: row?.starts_at ?? row?.fecha_inicio ?? row?.fecha_ejecucion },
+    resumen ?? resumenGuardado(visit.context),
+  )
+}
+
+/** Contacto y teléfono de la visita; el teléfono es un enlace `tel:` con área táctil de 44px. */
+function ContactoVisita({ rotulo }: { rotulo: TituloVisita }) {
+  if (!rotulo.contacto && !rotulo.telefono) return null
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
+      {rotulo.contacto ? <span>{rotulo.contacto}</span> : null}
+      {rotulo.telefono ? (
+        <a
+          href={`tel:${rotulo.telefono.replace(/[^\d+]/g, "")}`}
+          className="inline-flex items-center text-primary underline underline-offset-2 pointer-coarse:min-h-11"
+        >
+          {rotulo.telefono}
+        </a>
+      ) : null}
+    </p>
+  )
 }
 
 function visitDate(visit: VisitaOffline) {
@@ -144,6 +169,7 @@ export function VisitasPanel() {
   const [operations, setOperations] = useState<Record<string, OperacionOffline[]>>({})
   const [selectedId, setSelectedId] = useState<string>()
   const [acceptingVisitId, setAcceptingVisitId] = useState<string>()
+  const [resumenes, setResumenes] = useState<Map<string, ResumenVisita>>(() => new Map())
   const [pendingError, setPendingError] = useState<string>()
   const [acceptMessage, setAcceptMessage] = useState<string>()
   const [connection, setConnection] = useState<"online" | "offline" | "loading" | "error">("loading")
@@ -179,6 +205,9 @@ export function VisitasPanel() {
           await createCoordinator(store).sync(cachedVisit.id, deviceId())
       }
       const workingSet = await edgeApi.offline.workingSet(deviceId())
+      // Nombres de cliente, yacimiento y planta: la lista de visitas solo trae ids. Mejor esfuerzo.
+      const loadedSummaries = await cargarResumenesDeVisitas()
+      setResumenes(loadedSummaries)
       try {
         const assignedVisits = await edgeApi.serviceWorkflow.listVisits()
         setPendingVisits(
@@ -209,7 +238,12 @@ export function VisitasPanel() {
         const entryCatalogs = entry.certificate_catalogs ?? workingSet.certificate_catalogs
         const catalogState = refreshedVisitCatalogs({
           previous: old,
-          refreshedContext: { ...entry, certificate_catalogs: entryCatalogs },
+          // El resumen viaja dentro del contexto guardado para rotular la visita sin conexión.
+          refreshedContext: conResumenGuardado(
+            { ...entry, certificate_catalogs: entryCatalogs },
+            loadedSummaries.get(entry.visit.id),
+            old?.context,
+          ),
           refreshedCatalogs: entryCatalogs,
         })
         await store.saveVisit({
@@ -285,6 +319,7 @@ export function VisitasPanel() {
         </div>
         <Button
           variant="outline"
+          className="max-sm:w-full"
           onClick={() => void refresh()}
           disabled={connection === "loading"}
         >
@@ -303,20 +338,24 @@ export function VisitasPanel() {
         {acceptMessage ? <p role="status" className="text-sm text-muted-foreground">{acceptMessage}</p> : null}
         {pendingVisits.length > 0 ? (
           <div className="space-y-2">
-            {pendingVisits.map(({ visit, work_orders: workOrders }) => (
+            {pendingVisits.map(({ visit, work_orders: workOrders }) => {
+              const rotulo = tituloDeVisita(visit, resumenes.get(visit.id))
+              return (
               <Card key={visit.id} size="sm">
                 <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3">
                   <div className="min-w-0 space-y-1">
-                    <p className="font-medium">Yacimiento {String(visit.yacimiento_id ?? "sin identificar")}</p>
+                    <p className="font-medium break-words">{rotulo.titulo}</p>
                     <p className="text-sm text-muted-foreground">
                       {typeof visit.starts_at === "string"
                         ? new Date(visit.starts_at).toLocaleString("es-AR")
                         : "Fecha no informada"}
                       {` · ${workOrders.length} orden${workOrders.length === 1 ? "" : "es"} de trabajo`}
                     </p>
+                    <ContactoVisita rotulo={rotulo} />
                   </div>
                   <Button
                     type="button"
+                    className="max-sm:w-full"
                     onClick={() => void acceptVisit(visit.id)}
                     disabled={connection !== "online" || acceptingVisitId !== undefined}
                   >
@@ -324,7 +363,8 @@ export function VisitasPanel() {
                   </Button>
                 </CardContent>
               </Card>
-            ))}
+              )
+            })}
           </div>
         ) : !pendingError ? (
           <p className="rounded-lg border border-dashed px-4 py-5 text-center text-sm text-muted-foreground">
@@ -341,11 +381,12 @@ export function VisitasPanel() {
             Las visitas aceptadas aparecerán aquí cuando estén dentro de los próximos dos días.
           </p>
         ) : null}
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-4 xl:grid-cols-2">
           {visits.map((visit) => (
             <VisitCard
               key={visit.id}
               visit={visit}
+              resumen={resumenes.get(visit.id)}
               operations={operations[visit.id] ?? []}
               open={selectedId === visit.id}
               onOpen={() => setSelectedId(selectedId === visit.id ? undefined : visit.id)}
@@ -354,19 +395,21 @@ export function VisitasPanel() {
           ))}
         </div>
       </section>
-      {selected ? <div className="sr-only">Visita seleccionada: {selected.id}</div> : null}
+      {selected ? <div className="sr-only">Visita seleccionada: {visitLabel(selected, resumenes.get(selected.id)).titulo}</div> : null}
     </div>
   )
 }
 
 function VisitCard({
   visit,
+  resumen,
   operations,
   open,
   onOpen,
   onChanged,
 }: {
   visit: VisitaOffline
+  resumen?: ResumenVisita
   operations: OperacionOffline[]
   open: boolean
   onOpen: () => void
@@ -374,6 +417,7 @@ function VisitCard({
 }) {
   const store = useMemo(() => new IndexedDbOfflineStore(), [])
   const context = contextOf(visit)
+  const rotulo = visitLabel(visit, resumen)
   const [attachments, setAttachments] = useState<Awaited<ReturnType<typeof edgeApi.serviceWorkflow.visitAttachments>>>([])
   const [attachmentsError, setAttachmentsError] = useState<string | null>(null)
   const [loadingAttachments, setLoadingAttachments] = useState(false)
@@ -396,11 +440,16 @@ function VisitCard({
   }, [open, visit.id])
 
   return (
-    <Card>
+    <Card
+      className={cn(
+        "overflow-visible max-sm:[--card-spacing:--spacing(3)]",
+        open && "xl:col-span-full",
+      )}
+    >
       <CardHeader>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <CardTitle>{visitName(visit)}</CardTitle>
+        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+          <div className="min-w-0">
+            <CardTitle className="break-words" data-visit-id={visit.id}>{rotulo.titulo}</CardTitle>
             <CardDescription>{visitDate(visit)} · Visita de servicio</CardDescription>
           </div>
           <Badge
@@ -423,7 +472,7 @@ function VisitCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <p className="text-xs text-muted-foreground">ID de visita: {visit.id}</p>
+        <ContactoVisita rotulo={rotulo} />
         <div className="flex flex-wrap gap-2 text-sm">
           <span>{context.work_orders?.length ?? 0} Órdenes de trabajo</span>
           {pending.length ? <span>· {pending.length} cambio(s) local(es)</span> : null}
@@ -442,7 +491,7 @@ function VisitCard({
             Hay cambios fallidos. Podés reintentar sin volver a capturar el trabajo.
           </p>
         ) : null}
-        <Button variant="outline" onClick={onOpen}>
+        <Button variant="outline" className="max-sm:w-full" onClick={onOpen}>
           {open ? <ChevronUp className="mr-2 size-4" /> : <ChevronDown className="mr-2 size-4" />}
           {open ? "Cerrar visita" : "Abrir visita"}
         </Button>
@@ -622,7 +671,7 @@ function VisitEditor({
           </p>
         </div>
         {!visit.claimedByDeviceId ? (
-          <Button variant="outline" onClick={() => void claim()}>
+          <Button variant="outline" className="max-sm:w-full" onClick={() => void claim()}>
             Reservar en este dispositivo
           </Button>
         ) : (
@@ -636,6 +685,7 @@ function VisitEditor({
           </p>
           <Button
             type="button"
+            className="max-sm:w-full"
             onClick={() => void start()}
             disabled={!context.certificate_catalogs || closed}
           >
@@ -675,9 +725,8 @@ function VisitEditor({
         <CardContent className="space-y-3">
           <Label htmlFor={`technician-${visit.id}`}>Técnico ejecutor</Label>
           {technicians.length ? (
-            <select
+            <SelectNativo
               id={`technician-${visit.id}`}
-              className="h-8 w-full rounded-lg border bg-transparent px-2 text-sm"
               value={technician}
               onChange={(event) => setTechnician(event.target.value)}
               disabled={closed || !started}
@@ -691,7 +740,7 @@ function VisitEditor({
                   {person.name ?? person.nombre}
                 </option>
               ))}
-            </select>
+            </SelectNativo>
           ) : (
             <Input
               id={`technician-${visit.id}`}
@@ -702,7 +751,7 @@ function VisitEditor({
             />
           )}
           <SignaturePad title="Firma del Técnico" onChange={setSignature} />
-          <Button onClick={() => void complete()} disabled={closed || !started}>
+          <Button className="max-sm:w-full" onClick={() => void complete()} disabled={closed || !started}>
             {closed ? "Visita cerrada" : "Completar visita"}
           </Button>
           {closed ? (
@@ -975,15 +1024,14 @@ function WorkOrderEditor({
   }
 
   return (
-    <Card size="sm" className="bg-muted/20">
+    <Card size="sm" className="overflow-visible bg-muted/20">
       <CardHeader>
         <CardTitle className="text-sm">{workOrderName(order, contextOf(visit))}</CardTitle>
         <CardDescription>Estado: {outcome}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:flex">
           <Button
-            size="sm"
             variant="outline"
             disabled={disabled}
             onClick={() => void updateOutcome("evaluada")}
@@ -991,7 +1039,6 @@ function WorkOrderEditor({
             Evaluada
           </Button>
           <Button
-            size="sm"
             variant="outline"
             disabled={disabled}
             onClick={() => void updateOutcome("no_evaluada")}
@@ -1007,8 +1054,8 @@ function WorkOrderEditor({
         />
         {!certificateId ? (
           <Button
-            size="sm"
             variant="secondary"
+            className="max-sm:w-full"
             disabled={disabled || outcome !== "evaluada" || !catalogs}
             onClick={() => void startDraft()}
           >
@@ -1016,8 +1063,8 @@ function WorkOrderEditor({
           </Button>
         ) : null}
         {certificateId ? (
-          <div className="space-y-3 rounded-md border bg-background p-3">
-            <p className="text-sm font-medium">Borrador de certificado · {certificateId}</p>
+          <div className="space-y-3 rounded-md border bg-background p-2 sm:p-3">
+            <p className="text-sm font-medium break-all">Borrador de certificado · {certificateId}</p>
             {catalogs && boundTemplate ? (
               <CertificateCaptureForm
                 key={`${certificateId}-${String(draft.data?.certificate.updated_at ?? "local")}`}

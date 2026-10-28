@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import { z } from "zod"
 
-import { EdgeAccessClient } from "./edge"
+import { EdgeAccessClient, toLegacyTarea } from "./edge"
 
 describe("EdgeAccessClient", () => {
   it.each([
@@ -376,5 +376,44 @@ describe("EdgeAccessClient", () => {
     })
 
     await expect(client.authenticatedUser()).rejects.toMatchObject({ code: "unauthorized" })
+  })
+})
+
+describe("toLegacyTarea", () => {
+  const operation = {
+    id: "v-1",
+    solicitud_id: "s-1",
+    numero_solicitud: 7,
+    estado: "programada",
+    starts_at: "2026-10-14T15:00:00+00:00",
+    ends_at: "2026-10-14T18:00:00+00:00",
+    cliente: { id: "c-1", nombre: "Cliente A" },
+    yacimiento: { id: "y-1", nombre: "Yacimiento A" },
+    taller_movil: { id: "t-1", nombre: "Taller Movil 2" },
+    ordenes: { total: 1, pendientes: 1, evaluadas: 0, no_evaluadas: 0 },
+  } as const
+
+  it("conserva el comportamiento anterior cuando el backend no envia contacto ni plantas", () => {
+    const tarea = toLegacyTarea(operation)
+    expect(tarea).toMatchObject({ contacto: "", telefono: "", plantaNombre: "—" })
+    expect(tarea.plantasNombres).toEqual([])
+  })
+
+  it("mapea contacto, telefono y plantas del resumen", () => {
+    const tarea = toLegacyTarea({
+      ...operation,
+      contacto: "Ana",
+      telefono: "299 555-1234",
+      plantas: [
+        { id: "p-1", nombre: "Planta Norte" },
+        { id: "p-2", nombre: "Planta Sur" },
+      ],
+    })
+    expect(tarea).toMatchObject({
+      contacto: "Ana",
+      telefono: "299 555-1234",
+      plantaNombre: "Planta Norte +1",
+      plantasNombres: ["Planta Norte", "Planta Sur"],
+    })
   })
 })

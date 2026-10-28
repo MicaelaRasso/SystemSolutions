@@ -17,6 +17,7 @@ import { fmtDiaLargo } from "@/lib/fechas"
 import type { Adjunto } from "@/lib/domain/types"
 import type { OperationRead, OperationSummaryRead } from "@/lib/hooks/queries"
 import type { TareaResumen } from "@/lib/services"
+import { nombresDePlantas, resumenPlantas } from "@/lib/services/ubicacion-operacion"
 
 import { EstadoTareaBadge, TallerChip } from "./badges"
 import { ESTADO_OPERACION_A_TAREA } from "./estado-operacion"
@@ -81,8 +82,10 @@ export function convertirOperacionATarea(operation: OperationView): TareaResumen
     stringField(planta, "id") ?? stringField(workOrder, "planta_id", "plantaId") ?? ""
   const equipoId =
     stringField(equipo, "id") ?? stringField(workOrder, "equipo_id", "equipoId") ?? ""
+  const plantasNombres = nombresDePlantas(summary.plantas)
   const plantaNombre =
-    stringField(planta, "nombre") ?? stringField(workOrder, "planta_nombre", "plantaNombre") ?? "—"
+    resumenPlantas(plantasNombres) ||
+    (stringField(planta, "nombre") ?? stringField(workOrder, "planta_nombre", "plantaNombre") ?? "—")
   const equipoNombre =
     stringField(equipo, "nombre") ?? stringField(workOrder, "equipo_nombre", "equipoNombre") ?? "—"
 
@@ -94,8 +97,8 @@ export function convertirOperacionATarea(operation: OperationView): TareaResumen
     plantaId,
     equipoId,
     tallerId: summary.taller_movil?.id,
-    contacto: stringField(metadata, "contacto") ?? "",
-    telefono: stringField(metadata, "telefono") ?? "",
+    contacto: stringField(metadata, "contacto") ?? summary.contacto ?? "",
+    telefono: stringField(metadata, "telefono") ?? summary.telefono ?? "",
     fechaSolicitud:
       stringField(request, "created_at", "createdAt") ?? fechaDeTimestamp(summary.starts_at),
     fechaEjecucion: fechaDeTimestamp(summary.starts_at),
@@ -110,6 +113,7 @@ export function convertirOperacionATarea(operation: OperationView): TareaResumen
     empresaNombre: summary.cliente.nombre,
     yacimientoNombre: summary.yacimiento.nombre,
     plantaNombre,
+    plantasNombres,
     equipoNombre,
     tallerNombre: summary.taller_movil?.nombre,
     tallerColor: undefined,

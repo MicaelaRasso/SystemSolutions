@@ -18,7 +18,6 @@ const base: VisitaCliente = {
   yacimiento: "Yacimiento Norte",
   ubicaciones: ["Planta A · K-100"],
   plantaIds: ["p-1"],
-  tallerAsignado: true,
   estado: "programada",
   valvulas: 2,
 }

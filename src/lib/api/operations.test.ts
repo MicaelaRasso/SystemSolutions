@@ -168,3 +168,28 @@ describe("operations adapter", () => {
     })
   })
 })
+
+describe("operationSummarySchema contact and location fields", () => {
+  it("accepts a summary from a backend without the contact migration", () => {
+    expect(operationSummarySchema.safeParse(operation).success).toBe(true)
+  })
+
+  it("accepts and preserves contacto, telefono and plantas", () => {
+    const extended = {
+      ...operation,
+      contacto: "Ana",
+      telefono: "299 555-1234",
+      plantas: [{ id: "plant-1", nombre: "Planta" }],
+    }
+    const parsed = operationSummarySchema.parse(extended)
+    expect(parsed.contacto).toBe("Ana")
+    expect(parsed.plantas).toEqual([{ id: "plant-1", nombre: "Planta" }])
+  })
+
+  it("keeps rejecting unknown keys and malformed plantas", () => {
+    expect(operationSummarySchema.safeParse({ ...operation, empresa_id: "x" }).success).toBe(false)
+    expect(operationSummarySchema.safeParse({ ...operation, plantas: [{ id: "p" }] }).success).toBe(
+      false,
+    )
+  })
+})

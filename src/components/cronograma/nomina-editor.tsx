@@ -51,7 +51,7 @@ export function NominaEditor({
         <button
           type="button"
           className={cn(
-            "flex w-full items-start gap-1.5 rounded-md px-1.5 py-1 text-left text-xs hover:bg-muted",
+            "flex w-full items-start gap-1.5 rounded-md px-1.5 py-1 text-left text-xs hover:bg-muted pointer-coarse:min-h-11 pointer-coarse:items-center",
             elegidas.length === 0 && conTareas && "bg-amber-50 text-amber-900 hover:bg-amber-100",
           )}
           aria-label={`Nómina de ${tallerNombre} el ${fmtDiaLargo(fecha)}`}
@@ -78,7 +78,7 @@ export function NominaEditor({
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-72 p-3" align="start">
+      <PopoverContent className="w-72 max-w-[calc(100vw-2rem)] p-3" align="start">
         <p className="text-sm font-medium">{tallerNombre}</p>
         <p className="mb-2 text-xs text-muted-foreground capitalize">{fmtDiaLargo(fecha)}</p>
         <ul className="max-h-64 space-y-1 overflow-y-auto">
@@ -91,7 +91,7 @@ export function NominaEditor({
                 <label
                   htmlFor={id}
                   className={cn(
-                    "flex items-center gap-2 rounded px-1 py-1 text-sm",
+                    "flex items-center gap-2 rounded px-1 py-1 text-sm pointer-coarse:min-h-11",
                     otro && !marcada ? "text-muted-foreground" : "hover:bg-muted",
                   )}
                 >

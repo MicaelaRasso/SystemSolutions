@@ -38,7 +38,10 @@ export default function Page() {
       <PageHeader
         titulo="Detalle del Certificado"
         acciones={
-          <Link className="text-primary underline" href="/admin/certificados">
+          <Link
+            className="inline-flex items-center text-primary underline pointer-coarse:min-h-11"
+            href="/admin/certificados"
+          >
             Volver al historial
           </Link>
         }
@@ -72,7 +75,7 @@ export default function Page() {
                 key={certificate.id}
                 className="flex flex-wrap items-center justify-between gap-3 rounded border p-3 text-sm"
               >
-                <span>
+                <span className="min-w-0 break-words">
                   #{index + 1} ·{" "}
                   {String(
                     certificate.fecha_ejecucion ?? certificate.created_at ?? "Fecha sin registrar",
@@ -86,7 +89,7 @@ export default function Page() {
                   </span>
                 ) : (
                   <Link
-                    className="text-primary underline"
+                    className="inline-flex items-center text-primary underline pointer-coarse:min-h-11"
                     href={`/admin/certificados/${certificate.id}`}
                   >
                     Abrir Certificado
@@ -111,12 +114,14 @@ export default function Page() {
                     {new Date(event.recibida_en).toLocaleString("es-AR")}
                   </time>
                 </p>
-                <p className="mt-1 text-muted-foreground">
+                <p className="mt-1 break-words text-muted-foreground">
                   Actor: {event.actor_email || event.actor_cuenta_id || "Sistema"} · Correlación:{" "}
                   {event.identidad_correlacion ?? "—"}
                 </p>
                 <details className="mt-2">
-                  <summary className="cursor-pointer text-primary">Ver datos del evento</summary>
+                  <summary className="cursor-pointer text-primary pointer-coarse:flex pointer-coarse:min-h-11 pointer-coarse:items-center">
+                    Ver datos del evento
+                  </summary>
                   <pre className="mt-2 overflow-auto rounded bg-muted p-2 text-xs">
                     {JSON.stringify(
                       {

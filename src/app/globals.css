@@ -133,6 +133,20 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Red de seguridad: ningún desborde de contenido genera desplazamiento horizontal de la
+       página. Las tablas y vistas anchas (cronograma, hoja A4) tienen su propio contenedor. */
+    overflow-x: clip;
+  }
+  /* Sin la espera de doble toque para hacer zoom en pantallas táctiles. */
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  label,
+  [role="button"],
+  [role="tab"] {
+    touch-action: manipulation;
   }
   button:not(:disabled),
   [role="button"]:not(:disabled) {
@@ -140,6 +154,8 @@
   }
   html {
     @apply font-sans;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
 }
 /* Impresión del certificado (A4). La copia imprimible se monta como hija directa de

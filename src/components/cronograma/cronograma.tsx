@@ -6,11 +6,14 @@ import Link from "next/link"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
 
+import { useMotivo, type PedidoMotivo } from "@/components/common/motivo-dialog"
 import { PageHeader } from "@/components/common/page-header"
+import { SelectNativo } from "@/components/common/select-nativo"
 import { ErrorState } from "@/components/common/states"
 import { COLOR_SIN_TALLER } from "@/components/tareas/badges"
 import { convertirOperacionATarea, TareaSheet } from "@/components/tareas/tarea-sheet"
 import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
 import { Cargando } from "@/components/common/cargando"
 import { diasSemana, fmt, iso, lunesDe } from "@/lib/fechas"
 import {
@@ -29,6 +32,7 @@ import type { OperationRead } from "@/lib/hooks/queries"
 import { services, type TareaResumen } from "@/lib/services"
 import { cn } from "@/lib/utils"
 
+import { columnaMovilVigente } from "./cronograma-utils"
 import { NominaEditor } from "./nomina-editor"
 import { esMovible, SIN_TALLER, TareaCard } from "./tarea-card"
 
@@ -42,6 +46,12 @@ interface Columna {
  * Cronograma semanal (RF-38, RF-39): un taller móvil por columna, un día por fila.
  * Cada celda tiene la nómina del taller en esa jornada y sus tareas.
  */
+const MOTIVO_REASIGNACION: PedidoMotivo = {
+  titulo: "Cambio de asignación",
+  etiqueta: "Motivo del cambio de asignación de la visita",
+  confirmar: "Reasignar",
+}
+
 export function Cronograma() {
   const [lunes, setLunes] = useState(() => lunesDe(new Date()))
   const dias = useMemo(() => diasSemana(lunes), [lunes])
@@ -49,6 +59,7 @@ export function Cronograma() {
   const hasta = iso(dias[6])
 
   const supabase = usaSupabase()
+  const { pedirMotivo, dialogo: dialogoMotivo } = useMotivo()
   const operaciones = useOperaciones({ desde, hasta })
   const tareas = (operaciones.data ?? []).map(convertirOperacionATarea)
   const talleres = useTalleres()
@@ -58,6 +69,8 @@ export function Cronograma() {
   const [abierta, setAbierta] = useState<TareaResumen | null>(null)
   const [arrastrando, setArrastrando] = useState<string | null>(null)
   const [sobre, setSobre] = useState<string | null>(null)
+  // En el celular se ve un taller por vez (la grilla completa no entra).
+  const [columnaElegida, setColumnaElegida] = useState<string | null>(null)
 
   const invalidarNominas = [["nominas"]]
   const reasignar = useServiceMutation<
@@ -65,10 +78,11 @@ export function Cronograma() {
     OperationRead | TareaResumen
   >(
     ({ id, tallerId, fecha, reason }) =>
-      supabase
-        ? reasignarVisita(id, tallerId, fecha, reason)
-        : reasignarTarea(id, tallerId, fecha),
-    { exito: supabase ? "Asignación de visita actualizada" : "Tarea reprogramada", invalidar: INVALIDAR_TAREAS },
+      supabase ? reasignarVisita(id, tallerId, fecha, reason) : reasignarTarea(id, tallerId, fecha),
+    {
+      exito: supabase ? "Asignación de visita actualizada" : "Tarea reprogramada",
+      invalidar: INVALIDAR_TAREAS,
+    },
   )
   const guardarNomina = useServiceMutation(
     ({ tallerId, fecha, ids }: { tallerId: string; fecha: string; ids: string[] }) =>
@@ -110,7 +124,7 @@ export function Cronograma() {
     return m
   }
 
-  function soltar(e: React.DragEvent, columna: string, fecha: string) {
+  async function soltar(e: React.DragEvent, columna: string, fecha: string) {
     e.preventDefault()
     setSobre(null)
     setArrastrando(null)
@@ -119,9 +133,7 @@ export function Cronograma() {
     if (!tarea || !esMovible(tarea)) return
     const tallerId = columna === SIN_TALLER ? undefined : columna
     if (tarea.tallerId === tallerId && tarea.fechaEjecucion === fecha) return
-    const reason = supabase
-      ? window.prompt("Motivo del cambio de asignación de la visita")?.trim()
-      : ""
+    const reason = supabase ? await pedirMotivo(MOTIVO_REASIGNACION) : ""
     if (supabase && !reason) return
     reasignar.mutate({ id, tallerId, fecha, reason: reason ?? "" })
   }
@@ -131,6 +143,79 @@ export function Cronograma() {
   const tareasPlaceholder = operaciones.isPlaceholderData
   const cargando = tareasPendientes || talleres.isPending || nominas.isPending || personas.isPending
   const error = tareasError ?? talleres.error ?? nominas.error ?? personas.error
+
+  /** Una celda taller × día: nómina y tareas. Misma pieza en la grilla y en la vista de celular. */
+  function celda(c: Columna, fecha: string, finde: boolean, vista: "desktop" | "movil") {
+    const clave = `${c.id}|${fecha}`
+    const lista = tareasPorCelda.get(clave) ?? []
+    const activas = lista.filter((t) => t.estado !== "cancelada")
+    return (
+      <div
+        key={clave}
+        role={vista === "desktop" ? "gridcell" : undefined}
+        onDragOver={(e) => {
+          if (!arrastrando) return
+          e.preventDefault()
+          if (sobre !== clave) setSobre(clave)
+        }}
+        onDragLeave={() => sobre === clave && setSobre(null)}
+        onDrop={(e) => soltar(e, c.id, fecha)}
+        className={cn(
+          "flex min-h-20 flex-col gap-1 p-1.5",
+          vista === "desktop" ? "border-b border-l" : "rounded-lg border",
+          finde && "bg-muted/30",
+          c.id === SIN_TALLER && "bg-amber-50/40",
+          sobre === clave && "bg-primary/10 ring-2 ring-primary/40 ring-inset",
+        )}
+      >
+        {c.id !== SIN_TALLER && personas.data && (
+          <NominaEditor
+            tallerNombre={c.nombre}
+            fecha={fecha}
+            seleccion={nominaDe(c.id, fecha)}
+            personas={personas.data}
+            ocupadas={ocupadasEn(fecha, c.id)}
+            conTareas={activas.length > 0}
+            guardando={guardarNomina.isPending}
+            onChange={(ids) => guardarNomina.mutateAsync({ tallerId: c.id, fecha, ids })}
+          />
+        )}
+        {lista.map((t) => (
+          <TareaCard
+            key={t.id}
+            tarea={t}
+            talleres={(talleres.data ?? []).filter((x) => x.activo)}
+            onVer={() => setAbierta(t)}
+            onAsignar={async (tallerId) => {
+              const reason = supabase ? await pedirMotivo(MOTIVO_REASIGNACION) : ""
+              if (supabase && !reason) return
+              reasignar.mutate({
+                id: t.id,
+                tallerId,
+                fecha: t.fechaEjecucion,
+                reason: reason ?? "",
+              })
+            }}
+            permitirDesasignar={!supabase}
+            onDragStart={() => setArrastrando(t.id)}
+            onDragEnd={() => {
+              setArrastrando(null)
+              setSobre(null)
+            }}
+          />
+        ))}
+      </div>
+    )
+  }
+
+  const columnaMovil = columnaMovilVigente(
+    columnas.map((c) => c.id),
+    columnaElegida,
+    SIN_TALLER,
+  )
+  const columnaMovilDatos = columnas.find((c) => c.id === columnaMovil)
+  const cantidadDe = (id: string) =>
+    tareas.filter((t) => (t.tallerId ?? SIN_TALLER) === id && t.estado !== "cancelada").length
 
   return (
     <>
@@ -174,7 +259,7 @@ export function Cronograma() {
         </div>
         <Button
           variant="outline"
-          className="ml-auto"
+          className="w-full sm:ml-auto sm:w-auto"
           disabled={copiar.isPending}
           onClick={() =>
             copiar.mutate(undefined, {
@@ -203,131 +288,131 @@ export function Cronograma() {
       ) : cargando ? (
         <Cargando texto="Cargando cronograma…" />
       ) : (
-        <div
-          className={cn(
-            "overflow-x-auto rounded-xl border bg-card transition-opacity",
-            (tareasPlaceholder || nominas.isPlaceholderData) && "opacity-60",
-          )}
-        >
+        <>
+          {/* Celular: un taller por vez, un día por bloque. */}
           <div
-            role="grid"
-            aria-label="Cronograma semanal"
-            className="grid min-w-max"
-            style={{
-              gridTemplateColumns: `6.5rem minmax(11rem, 1fr) repeat(${columnas.length - 1}, minmax(13rem, 1fr))`,
-            }}
+            className={cn(
+              "space-y-3 transition-opacity md:hidden",
+              (tareasPlaceholder || nominas.isPlaceholderData) && "opacity-60",
+            )}
           >
-            {/* Encabezado */}
-            <div role="columnheader" className="sticky left-0 z-10 border-b bg-muted/60" />
-            {columnas.map((c) => (
-              <div
-                key={c.id}
-                role="columnheader"
-                className="flex items-center gap-2 border-b border-l bg-muted/60 px-3 py-2 text-sm font-medium"
+            <div className="space-y-1.5">
+              <Label htmlFor="cronograma-taller">Taller</Label>
+              <SelectNativo
+                id="cronograma-taller"
+                value={columnaMovil}
+                onChange={(e) => setColumnaElegida(e.target.value)}
               >
-                <span className="size-2.5 rounded-full" style={{ backgroundColor: c.color }} />
-                {c.nombre}
-              </div>
-            ))}
-
-            {/* Un día por fila */}
-            {dias.map((d) => {
-              const fecha = iso(d)
-              const finde = isWeekend(d)
-              return (
-                <div key={fecha} role="row" className="contents">
-                  <div
-                    role="rowheader"
-                    className={cn(
-                      "sticky left-0 z-10 border-b bg-card px-3 py-2 text-sm",
-                      finde && "bg-muted/40 text-muted-foreground",
-                    )}
+                {columnas.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nombre} ({cantidadDe(c.id)})
+                  </option>
+                ))}
+              </SelectNativo>
+            </div>
+            {columnaMovilDatos &&
+              dias.map((d) => {
+                const fecha = iso(d)
+                return (
+                  <section
+                    key={fecha}
+                    aria-label={fmt(d, "EEEE d 'de' MMMM")}
+                    className="space-y-1.5"
                   >
-                    <div className="font-medium capitalize">{fmt(d, "EEEE")}</div>
-                    <div
+                    <h3
                       className={cn(
-                        "text-xs tabular-nums",
-                        isToday(d)
-                          ? "inline-block rounded bg-primary px-1 text-primary-foreground"
-                          : "text-muted-foreground",
+                        "flex items-baseline gap-2 text-sm font-medium capitalize",
+                        isWeekend(d) && "text-muted-foreground",
                       )}
                     >
-                      {fmt(d, "dd/MM")}
-                    </div>
-                  </div>
-                  {columnas.map((c) => {
-                    const clave = `${c.id}|${fecha}`
-                    const lista = tareasPorCelda.get(clave) ?? []
-                    const activas = lista.filter((t) => t.estado !== "cancelada")
-                    return (
-                      <div
-                        key={clave}
-                        role="gridcell"
-                        onDragOver={(e) => {
-                          if (!arrastrando) return
-                          e.preventDefault()
-                          if (sobre !== clave) setSobre(clave)
-                        }}
-                        onDragLeave={() => sobre === clave && setSobre(null)}
-                        onDrop={(e) => soltar(e, c.id, fecha)}
+                      {fmt(d, "EEEE")}
+                      <span
                         className={cn(
-                          "flex min-h-20 flex-col gap-1 border-b border-l p-1.5",
-                          finde && "bg-muted/30",
-                          c.id === SIN_TALLER && "bg-amber-50/40",
-                          sobre === clave && "bg-primary/10 ring-2 ring-primary/40 ring-inset",
+                          "text-xs font-normal tabular-nums",
+                          isToday(d)
+                            ? "rounded bg-primary px-1 text-primary-foreground"
+                            : "text-muted-foreground",
                         )}
                       >
-                        {c.id !== SIN_TALLER && personas.data && (
-                          <NominaEditor
-                            tallerNombre={c.nombre}
-                            fecha={fecha}
-                            seleccion={nominaDe(c.id, fecha)}
-                            personas={personas.data}
-                            ocupadas={ocupadasEn(fecha, c.id)}
-                            conTareas={activas.length > 0}
-                            guardando={guardarNomina.isPending}
-                            onChange={(ids) =>
-                              guardarNomina.mutateAsync({ tallerId: c.id, fecha, ids })
-                            }
-                          />
-                        )}
-                        {lista.map((t) => (
-                          <TareaCard
-                            key={t.id}
-                            tarea={t}
-                            talleres={(talleres.data ?? []).filter((x) => x.activo)}
-                            onVer={() => setAbierta(t)}
-                            onAsignar={(tallerId) => {
-                              const reason = supabase
-                                ? window.prompt("Motivo del cambio de asignación de la visita")?.trim()
-                                : ""
-                              if (supabase && !reason) return
-                              reasignar.mutate({
-                                id: t.id,
-                                tallerId,
-                                fecha: t.fechaEjecucion,
-                                reason: reason ?? "",
-                              })
-                            }}
-                            permitirDesasignar={!supabase}
-                            onDragStart={() => setArrastrando(t.id)}
-                            onDragEnd={() => {
-                              setArrastrando(null)
-                              setSobre(null)
-                            }}
-                          />
-                        ))}
-                      </div>
-                    )
-                  })}
-                </div>
-              )
-            })}
+                        {fmt(d, "dd/MM")}
+                      </span>
+                    </h3>
+                    {celda(columnaMovilDatos, fecha, isWeekend(d), "movil")}
+                  </section>
+                )
+              })}
           </div>
-        </div>
+
+          {/* Tablet y escritorio: grilla con desplazamiento propio y primera columna fija. */}
+          <p className="hidden text-xs text-muted-foreground pointer-coarse:md:block">
+            Deslizá la grilla hacia los costados para ver todos los talleres.
+          </p>
+          <div
+            tabIndex={0}
+            role="region"
+            aria-label="Cronograma semanal, se desplaza hacia los costados"
+            className={cn(
+              "hidden overflow-x-auto rounded-xl border bg-card transition-opacity md:block",
+              (tareasPlaceholder || nominas.isPlaceholderData) && "opacity-60",
+            )}
+          >
+            <div
+              role="grid"
+              aria-label="Cronograma semanal"
+              className="grid min-w-max"
+              style={{
+                gridTemplateColumns: `6.5rem minmax(11rem, 1fr) repeat(${columnas.length - 1}, minmax(13rem, 1fr))`,
+              }}
+            >
+              {/* Encabezado */}
+              <div role="columnheader" className="sticky left-0 z-10 border-b bg-muted/60" />
+              {columnas.map((c) => (
+                <div
+                  key={c.id}
+                  role="columnheader"
+                  className="flex items-center gap-2 border-b border-l bg-muted/60 px-3 py-2 text-sm font-medium"
+                >
+                  <span className="size-2.5 rounded-full" style={{ backgroundColor: c.color }} />
+                  {c.nombre}
+                </div>
+              ))}
+
+              {/* Un día por fila */}
+              {dias.map((d) => {
+                const fecha = iso(d)
+                const finde = isWeekend(d)
+                return (
+                  <div key={fecha} role="row" className="contents">
+                    <div
+                      role="rowheader"
+                      className={cn(
+                        "sticky left-0 z-10 border-b bg-card px-3 py-2 text-sm",
+                        finde && "bg-muted/40 text-muted-foreground",
+                      )}
+                    >
+                      <div className="font-medium capitalize">{fmt(d, "EEEE")}</div>
+                      <div
+                        className={cn(
+                          "text-xs tabular-nums",
+                          isToday(d)
+                            ? "inline-block rounded bg-primary px-1 text-primary-foreground"
+                            : "text-muted-foreground",
+                        )}
+                      >
+                        {fmt(d, "dd/MM")}
+                      </div>
+                    </div>
+                    {columnas.map((c) => celda(c, fecha, finde, "desktop"))}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </>
       )}
 
       <TareaSheet tarea={abierta} onOpenChange={(o) => !o && setAbierta(null)} />
+      {dialogoMotivo}
     </>
   )
 }

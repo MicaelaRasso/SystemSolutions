@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { ArrowDown, ArrowUp, CheckCircle2, Plus, Save, Sparkles } from "lucide-react"
 
+import { SelectNativo } from "@/components/common/select-nativo"
 import { ErrorState } from "@/components/common/states"
 import { PageHeader } from "@/components/common/page-header"
 import { Badge } from "@/components/ui/badge"
@@ -175,7 +176,7 @@ export function CertificateTemplateEditor() {
           {message}
         </p>
       ) : null}
-      <div className="grid gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
+      <div className="grid gap-6 xl:grid-cols-[18rem_minmax(0,1fr)]">
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Versiones</CardTitle>
@@ -232,7 +233,7 @@ export function CertificateTemplateEditor() {
                 </CardDescription>
               </div>
               {selected?.estado === "borrador" ? (
-                <div className="flex gap-2">
+                <div className="flex w-full gap-2 *:flex-1 sm:w-auto sm:*:flex-none">
                   <Button variant="outline" onClick={saveDraft} disabled={update.isPending}>
                     <Save className="mr-2 size-4" /> Guardar
                   </Button>
@@ -382,8 +383,7 @@ function FieldEditor({
         </div>
         <div className="space-y-1">
           <Label>Tipo</Label>
-          <select
-            className="h-8 w-full rounded-lg border bg-transparent px-2 text-sm"
+          <SelectNativo
             value={field.tipo}
             onChange={(event) =>
               onChange({ tipo: event.target.value as CertificateTemplateFieldType })
@@ -395,10 +395,10 @@ function FieldEditor({
                 {type}
               </option>
             ))}
-          </select>
+          </SelectNativo>
         </div>
       </div>
-      <div className="mt-3 flex items-center gap-2">
+      <div className="mt-3 flex items-center gap-2 pointer-coarse:min-h-11">
         <Switch
           checked={field.obligatorio}
           onCheckedChange={(checked) => onChange({ obligatorio: checked })}

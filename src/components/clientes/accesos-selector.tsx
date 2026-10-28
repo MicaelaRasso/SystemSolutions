@@ -117,7 +117,9 @@ export function AccesosSelector({
         return (
           <li
             key={f.clave}
-            className={cn("flex items-center gap-2 rounded-md py-1 pr-2 hover:bg-muted/60")}
+            className={cn(
+              "flex items-center gap-2 rounded-md py-1 pr-2 hover:bg-muted/60 pointer-coarse:min-h-11",
+            )}
             style={{ paddingLeft: `${f.profundidad * 1.25 + 0.5}rem` }}
           >
             <Checkbox
@@ -129,7 +131,7 @@ export function AccesosSelector({
             <label
               htmlFor={id}
               className={cn(
-                "flex flex-1 cursor-pointer items-center gap-2 text-sm",
+                "flex flex-1 cursor-pointer items-center gap-2 self-stretch text-sm",
                 heredado && "cursor-default text-muted-foreground",
               )}
             >

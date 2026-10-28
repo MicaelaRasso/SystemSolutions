@@ -1,6 +1,6 @@
 begin;
 
-select plan(16);
+select plan(18);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000009101', 'catalog-freeze-client@example.test'),
@@ -202,6 +202,22 @@ select is(
   (select repuestos->>'catalog_version' from public.certificados where id = current_setting('app.catalog_freeze_certificate_id')::uuid),
   current_setting('app.catalog_freeze_downloaded_version'),
   'a new certificate draft initializes its replacement catalog version from the visit snapshot'
+);
+select is(
+  (public.api_start_certificate_draft(
+    (select id from public.ordenes_trabajo where visita_id = current_setting('app.catalog_freeze_visit_id')::uuid limit 1),
+    '00000000-0000-0000-0000-000000009901'::uuid
+  )->'validation'->>'complete')::boolean,
+  false,
+  'a new certificate draft reports an incomplete validation instead of raising'
+);
+select is(
+  (public.api_start_certificate_draft(
+    (select id from public.ordenes_trabajo where visita_id = current_setting('app.catalog_freeze_visit_id')::uuid limit 1),
+    '00000000-0000-0000-0000-000000009901'::uuid
+  )->'validation'->'missing_fields') ? 'fecha_ejecucion',
+  true,
+  'a new certificate draft lists the missing execution date'
 );
 select throws_ok(
   $$select public.api_update_certificate_draft(

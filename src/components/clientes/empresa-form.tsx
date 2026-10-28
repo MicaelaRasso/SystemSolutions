@@ -1,9 +1,11 @@
 "use client"
 
 import { zodResolver } from "@hookform/resolvers/zod"
+import { Info } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { Controller, useForm } from "react-hook-form"
 
+import { PieFormulario } from "@/components/common/form-dialog"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -33,10 +35,23 @@ const VACIO: EmpresaInput = {
   activo: true,
 }
 
-/** Alta y edición de empresa cliente (RF-06). Los campos finales dependen de P-02. */
-export function EmpresaForm({ empresa }: { empresa?: Empresa }) {
+/**
+ * Alta y edición de empresa cliente (RF-06). Los campos finales dependen de P-02.
+ *
+ * Con `dialogo` el formulario vive dentro de un diálogo (solo alta): no navega, avisa con
+ * `onCreated(empresa)` y usa el pie del diálogo.
+ */
+export function EmpresaForm({
+  empresa,
+  dialogo,
+}: {
+  empresa?: Empresa
+  dialogo?: { cerrar: () => void; onCreated: (empresa: Empresa) => void }
+}) {
   const router = useRouter()
   const editando = !!empresa
+  // En un diálogo conviven con el formulario que lo abrió: los ids no pueden repetirse.
+  const idDe = (name: string) => (dialogo ? `empresa-nueva-${name}` : name)
 
   const form = useForm<EmpresaInput>({
     resolver: zodResolver(empresaSchema),
@@ -68,7 +83,10 @@ export function EmpresaForm({ empresa }: { empresa?: Empresa }) {
     const res = await guardar.mutateAsync(data).catch(() => null)
     if (!res) return
     if (editando) form.reset(data)
-    else router.push(`/admin/clientes/${res.id}/estructura`)
+    else if (dialogo) {
+      dialogo.cerrar()
+      dialogo.onCreated(res)
+    } else router.push(`/admin/clientes/${res.id}/estructura`)
   }
 
   const texto = (
@@ -77,14 +95,18 @@ export function EmpresaForm({ empresa }: { empresa?: Empresa }) {
     props: React.ComponentProps<typeof Input> = {},
   ) => (
     <Field data-invalid={!!errors[name]}>
-      <FieldLabel htmlFor={name}>{label}</FieldLabel>
-      <Input id={name} aria-invalid={!!errors[name]} {...props} {...form.register(name)} />
+      <FieldLabel htmlFor={idDe(name)}>{label}</FieldLabel>
+      <Input id={idDe(name)} aria-invalid={!!errors[name]} {...props} {...form.register(name)} />
       <FieldError errors={[errors[name]]} />
     </Field>
   )
 
   return (
-    <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="max-w-3xl">
+    <form
+      onSubmit={form.handleSubmit(onSubmit)}
+      noValidate
+      className={dialogo ? undefined : "max-w-3xl"}
+    >
       <FieldGroup>
         <div className="grid gap-5 sm:grid-cols-2">
           <div className="sm:col-span-2">{texto("razonSocial", "Razón social")}</div>
@@ -103,12 +125,12 @@ export function EmpresaForm({ empresa }: { empresa?: Empresa }) {
           render={({ field }) => (
             <Field orientation="horizontal">
               <Checkbox
-                id="avisoVencimiento"
+                id={idDe("avisoVencimiento")}
                 checked={field.value}
                 onCheckedChange={(v) => field.onChange(v === true)}
               />
               <FieldContent>
-                <FieldLabel htmlFor="avisoVencimiento">
+                <FieldLabel htmlFor={idDe("avisoVencimiento")}>
                   Requiere envío de advertencia de vencimiento
                 </FieldLabel>
                 <FieldDescription>
@@ -138,22 +160,32 @@ export function EmpresaForm({ empresa }: { empresa?: Empresa }) {
           />
         )}
 
-        <div className="flex gap-2">
-          <Button type="submit" disabled={guardar.isPending || (editando && !isDirty)}>
-            {guardar.isPending ? "Guardando…" : editando ? "Guardar cambios" : "Crear cliente"}
-          </Button>
-          {editando ? (
-            isDirty && (
-              <Button type="button" variant="outline" onClick={() => form.reset()}>
-                Descartar
-              </Button>
-            )
-          ) : (
-            <Button type="button" variant="outline" onClick={() => router.back()}>
-              Cancelar
+        {dialogo ? (
+          <>
+            <div className="flex gap-2 rounded-lg bg-field/60 p-3 text-sm">
+              <Info className="mt-0.5 size-4 shrink-0 text-primary" />
+              <p>Se enviará una invitación por correo a la cuenta del cliente.</p>
+            </div>
+            <PieFormulario pendiente={guardar.isPending} cerrar={dialogo.cerrar} crear />
+          </>
+        ) : (
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button type="submit" disabled={guardar.isPending || (editando && !isDirty)}>
+              {guardar.isPending ? "Guardando…" : editando ? "Guardar cambios" : "Crear cliente"}
             </Button>
-          )}
-        </div>
+            {editando ? (
+              isDirty && (
+                <Button type="button" variant="outline" onClick={() => form.reset()}>
+                  Descartar
+                </Button>
+              )
+            ) : (
+              <Button type="button" variant="outline" onClick={() => router.back()}>
+                Cancelar
+              </Button>
+            )}
+          </div>
+        )}
       </FieldGroup>
     </form>
   )

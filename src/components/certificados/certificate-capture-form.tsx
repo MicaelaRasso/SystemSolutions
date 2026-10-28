@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react"
 
+import { SelectNativo } from "@/components/common/select-nativo"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -225,7 +226,7 @@ function DynamicField({
         />
       ) : null}
       {type === "boolean" ? (
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex items-center gap-2 text-sm pointer-coarse:min-h-11">
           <Checkbox
             id={id}
             checked={value === true}
@@ -236,9 +237,8 @@ function DynamicField({
         </label>
       ) : null}
       {type === "select" ? (
-        <select
+        <SelectNativo
           id={id}
-          className="h-8 w-full rounded-lg border bg-transparent px-2 text-sm"
           value={textValue(value)}
           onChange={(event) => onChange(event.target.value)}
           disabled={disabled}
@@ -249,12 +249,12 @@ function DynamicField({
               {option.label}
             </option>
           ))}
-        </select>
+        </SelectNativo>
       ) : null}
       {type === "multiselect" ? (
         <div className="grid gap-2 sm:grid-cols-2">
           {options.map((option) => (
-            <label key={option.id} className="flex items-center gap-2 text-sm">
+            <label key={option.id} className="flex items-center gap-2 text-sm pointer-coarse:min-h-11">
               <Checkbox
                 checked={Array.isArray(value) && value.includes(option.id)}
                 onCheckedChange={(checked) =>
@@ -277,6 +277,7 @@ function DynamicField({
         <Input
           id={id}
           type={type === "number" ? "number" : type === "date" ? "date" : "text"}
+          inputMode={type === "number" ? "decimal" : undefined}
           value={textValue(value)}
           onChange={(event) =>
             onChange(
@@ -439,9 +440,8 @@ export function CertificateCaptureForm({
           <div className="space-y-1">
             <Label htmlFor="certificate-technician">Técnico ejecutor *</Label>
             {technicians.length ? (
-              <select
+              <SelectNativo
                 id="certificate-technician"
-                className="h-8 w-full rounded-lg border bg-transparent px-2 text-sm"
                 value={form.tecnico_ejecutor}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, tecnico_ejecutor: event.target.value }))
@@ -459,7 +459,7 @@ export function CertificateCaptureForm({
                     </option>
                   )
                 })}
-              </select>
+              </SelectNativo>
             ) : (
               <Input
                 id="certificate-technician"
@@ -504,9 +504,8 @@ export function CertificateCaptureForm({
             <Label htmlFor="certificate-technical-availability">
               Disponibilidad de datos técnicos
             </Label>
-            <select
+            <SelectNativo
               id="certificate-technical-availability"
-              className="h-8 w-full rounded-lg border bg-transparent px-2 text-sm"
               value={form.technical.razon_disponibilidad}
               onChange={(event) => updateTechnical("razon_disponibilidad", event.target.value)}
               disabled={disabled}
@@ -514,7 +513,7 @@ export function CertificateCaptureForm({
               <option value="">Dato disponible</option>
               <option value="not_found">Dato no encontrado</option>
               <option value="not_applicable">No aplica</option>
-            </select>
+            </SelectNativo>
           </div>
         </CardContent>
       </Card>
@@ -534,13 +533,13 @@ export function CertificateCaptureForm({
                 <Input
                   id={`certificate-test-${key}`}
                   type="number"
+                  inputMode="decimal"
                   step="any"
                   value={form.tests[key].valor}
                   onChange={(event) => updateTest(key, "valor", event.target.value)}
                   disabled={disabled}
                 />
-                <select
-                  className="h-8 w-full rounded-lg border bg-transparent px-2 text-sm"
+                <SelectNativo
                   value={form.tests[key].unidad}
                   onChange={(event) => updateTest(key, "unidad", event.target.value)}
                   disabled={disabled}
@@ -551,15 +550,14 @@ export function CertificateCaptureForm({
                       {unit.label}
                     </option>
                   ))}
-                </select>
+                </SelectNativo>
               </div>
             ))}
           </div>
           <div className="space-y-1">
             <Label htmlFor="certificate-standard">Patrón de referencia *</Label>
-            <select
+            <SelectNativo
               id="certificate-standard"
-              className="h-8 w-full rounded-lg border bg-transparent px-2 text-sm"
               value={form.tests.patron?.id ?? ""}
               onChange={(event) =>
                 setForm((current) => ({
@@ -580,7 +578,7 @@ export function CertificateCaptureForm({
                   {standard.label}
                 </option>
               ))}
-            </select>
+            </SelectNativo>
           </div>
         </CardContent>
       </Card>
@@ -652,12 +650,12 @@ export function CertificateCaptureForm({
         <CardContent className="space-y-3">
           <div className="grid gap-2 sm:grid-cols-3">
             {CERTIFICATE_EVIDENCE_SECTIONS.map(({ key, label }) => (
-              <Label key={key} className="rounded-md border p-2 text-xs">
+              <Label key={key} className="rounded-md border p-3 text-sm">
                 <span>{label}</span>
                 <Input
                   type="file"
                   accept="image/*"
-                  className="mt-2 h-auto"
+                  className="mt-2 h-auto py-2 pointer-coarse:h-auto"
                   onChange={(event) => onCapturePhoto?.(key, event.target.files?.[0])}
                   disabled={disabled}
                 />
@@ -674,9 +672,12 @@ export function CertificateCaptureForm({
           />
         </CardContent>
       </Card>
-      <Button size="sm" onClick={save} disabled={disabled}>
-        {disabled ? "Certificado cerrado" : "Guardar Borrador de certificado"}
-      </Button>
+      {/* Barra fija: en un formulario largo el guardado queda siempre al alcance del pulgar. */}
+      <div className="sticky bottom-0 z-10 -mx-2 border-t bg-background px-2 py-2 sm:mx-0 sm:px-0">
+        <Button className="w-full sm:w-auto" onClick={save} disabled={disabled}>
+          {disabled ? "Certificado cerrado" : "Guardar Borrador de certificado"}
+        </Button>
+      </div>
     </div>
   )
 }
@@ -704,7 +705,7 @@ function OptionChecklist({
       <p className="text-sm font-medium">{title}</p>
       <div className="grid gap-2 sm:grid-cols-2">
         {options.map((option) => (
-          <label key={option.id} className="flex items-center gap-2 text-sm">
+          <label key={option.id} className="flex items-center gap-2 text-sm pointer-coarse:min-h-11">
             <Checkbox
               checked={selected(option, values)}
               onCheckedChange={() => onChange(toggleOption(option, values))}
@@ -714,7 +715,7 @@ function OptionChecklist({
           </label>
         ))}
         {savedInactive.map((value, index) => (
-          <label key={`saved-${index}`} className="flex items-center gap-2 text-sm">
+          <label key={`saved-${index}`} className="flex items-center gap-2 text-sm pointer-coarse:min-h-11">
             <Checkbox
               checked
               onCheckedChange={() =>

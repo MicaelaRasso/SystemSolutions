@@ -105,43 +105,91 @@ export function ManualBackupPanel() {
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="backup-from">Desde (Argentina, inclusivo)</Label>
-                <Input id="backup-from" type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
+                <Input
+                  id="backup-from"
+                  type="date"
+                  value={from}
+                  onChange={(event) => setFrom(event.target.value)}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="backup-to">Hasta (Argentina, inclusivo)</Label>
-                <Input id="backup-to" type="date" value={to} onChange={(event) => setTo(event.target.value)} />
+                <Input
+                  id="backup-to"
+                  type="date"
+                  value={to}
+                  onChange={(event) => setTo(event.target.value)}
+                />
               </div>
-              {!validRange ? <p className="text-sm text-destructive sm:col-span-2">El rango debe ser válido y Desde no puede ser posterior a Hasta.</p> : null}
+              {!validRange ? (
+                <p className="text-sm text-destructive sm:col-span-2">
+                  El rango debe ser válido y Desde no puede ser posterior a Hasta.
+                </p>
+              ) : null}
             </div>
           ) : null}
 
           <label className="flex items-start gap-3 rounded-lg border bg-muted/30 p-4 text-sm">
-            <Checkbox checked={confirmed} onCheckedChange={(value) => setConfirmed(value === true)} />
+            <Checkbox
+              checked={confirmed}
+              onCheckedChange={(value) => setConfirmed(value === true)}
+            />
             <span>
               Confirmo que entiendo que esta descarga es inmediata, contiene información sensible y
               se entrega sin cifrar.
             </span>
           </label>
 
-          <Button disabled={!confirmed || !validRange || pending} onClick={() => void generate()}>
+          <Button
+            className="h-auto min-h-8 w-full py-2 whitespace-normal sm:w-auto pointer-coarse:h-auto pointer-coarse:min-h-11"
+            disabled={!confirmed || !validRange || pending}
+            onClick={() => void generate()}
+          >
             <Download className="mr-2 size-4" />
             {pending ? "Generando y preparando descarga…" : "Generar y descargar ZIP"}
           </Button>
 
-          {pending ? <p className="text-sm text-muted-foreground" role="status">Procesando en una instantánea consistente. La descarga no se conserva en el servidor.</p> : null}
+          {pending ? (
+            <p className="text-sm text-muted-foreground" role="status">
+              Procesando en una instantánea consistente. La descarga no se conserva en el servidor.
+            </p>
+          ) : null}
           {state.kind === "success" ? (
-            <div className="space-y-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm" role="status">
-              <p className="flex items-center gap-2 font-medium"><CheckCircle2 className="size-4 text-emerald-600" />Descarga iniciada: {state.filename}</p>
-              {state.checksum ? <p className="break-all text-xs text-muted-foreground">SHA-256: {state.checksum}</p> : null}
+            <div
+              className="space-y-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm"
+              role="status"
+            >
+              <p className="flex items-center gap-2 font-medium">
+                <CheckCircle2 className="size-4 text-emerald-600" />
+                Descarga iniciada: {state.filename}
+              </p>
+              {state.checksum ? (
+                <p className="text-xs break-all text-muted-foreground">SHA-256: {state.checksum}</p>
+              ) : null}
               {state.warnings.length ? (
                 <div className="space-y-1 text-amber-700">
-                  <p className="flex items-center gap-2 font-medium"><AlertTriangle className="size-4" />El backup se descargó con advertencias.</p>
-                  {state.warnings.map((warning) => <p key={warning}>· {warning}</p>)}
+                  <p className="flex items-center gap-2 font-medium">
+                    <AlertTriangle className="size-4" />
+                    El backup se descargó con advertencias.
+                  </p>
+                  {state.warnings.map((warning) => (
+                    <p key={warning}>· {warning}</p>
+                  ))}
                 </div>
-              ) : <Badge variant="secondary">Integridad registrada</Badge>}
+              ) : (
+                <Badge variant="secondary">Integridad registrada</Badge>
+              )}
             </div>
           ) : null}
-          {state.kind === "error" ? <p className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive" role="alert">{state.message} Puedes corregir el rango o reintentar; cada intento genera un nuevo registro.</p> : null}
+          {state.kind === "error" ? (
+            <p
+              className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive"
+              role="alert"
+            >
+              {state.message} Puedes corregir el rango o reintentar; cada intento genera un nuevo
+              registro.
+            </p>
+          ) : null}
         </CardContent>
       </Card>
     </div>

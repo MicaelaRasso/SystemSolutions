@@ -32,7 +32,6 @@ export interface VisitaCliente {
   /** "Planta · Equipo" de las Válvulas incluidas, sin repetir. */
   ubicaciones: string[]
   plantaIds: string[]
-  tallerAsignado: boolean
   estado: OperationStatus
   /** Válvulas (órdenes de trabajo) incluidas en la visita. */
   valvulas: number
@@ -116,7 +115,6 @@ export function aVisitaCliente(dto: VisitDto, contexto: ContextoVisitas): Visita
     yacimiento: contexto.yacimientos.get(yacimientoId) ?? "Yacimiento sin acceso",
     ubicaciones: [...ubicaciones],
     plantaIds: [...plantaIds],
-    tallerAsignado: typeof visita.taller_movil_id === "string" && visita.taller_movil_id !== "",
     estado: visita.estado ?? "solicitada",
     valvulas: dto.work_orders.length,
   }

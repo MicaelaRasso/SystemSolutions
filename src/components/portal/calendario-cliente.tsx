@@ -35,7 +35,7 @@ export function CalendarioCliente() {
 
   function elegir(visita: VisitaCliente) {
     setDia(visita.fecha)
-    if (window.matchMedia("(max-width: 1023px)").matches) {
+    if (window.matchMedia("(max-width: 1279px)").matches) {
       panel.current?.scrollIntoView({ behavior: "smooth", block: "start" })
     }
   }
@@ -50,7 +50,7 @@ export function CalendarioCliente() {
       {error ? (
         <ErrorState error={error} onRetry={reintentar} />
       ) : (
-        <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
           <div className="min-w-0 space-y-3">
             {!cargando && visitas.length === 0 && (
               <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
@@ -88,7 +88,7 @@ export function CalendarioCliente() {
           <aside
             ref={panel}
             aria-label="Detalle del día"
-            className="min-w-0 scroll-mt-16 space-y-3 self-start lg:sticky lg:top-16"
+            className="min-w-0 scroll-mt-16 space-y-3 self-start xl:sticky xl:top-16"
           >
             <h2 className="font-medium capitalize">{fmtDiaLargo(dia)}</h2>
             {delDia.length === 0 ? (

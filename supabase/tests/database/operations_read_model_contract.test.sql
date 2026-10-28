@@ -1,6 +1,6 @@
 begin;
 
-select plan(66);
+select plan(74);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000001101', 'operations-contract-admin@example.test'),
@@ -48,7 +48,7 @@ insert into public.valvulas (id, equipo_id, nombre) values
 
 insert into public.solicitudes_servicio (id, numero_solicitud, yacimiento_id, cliente_cuenta_id, metadata) values
   ('00000000-0000-0000-0000-000000001171', 11001, '00000000-0000-0000-0000-000000001131', '00000000-0000-0000-0000-000000001102', '{"contacto":"Ana Contract","tipo":"Certificacion","condiciones":["acceso"],"adjuntos":[]}'),
-  ('00000000-0000-0000-0000-000000001172', 11002, '00000000-0000-0000-0000-000000001131', '00000000-0000-0000-0000-000000001102', '{"contacto":"Ana Contract","tipo":"Mantenimiento"}'),
+  ('00000000-0000-0000-0000-000000001172', 11002, '00000000-0000-0000-0000-000000001131', '00000000-0000-0000-0000-000000001102', '{"contacto":"Ana Contract","telefono":"299 555-1234","tipo":"Mantenimiento"}'),
   ('00000000-0000-0000-0000-000000001173', 11003, '00000000-0000-0000-0000-000000001131', '00000000-0000-0000-0000-000000001102', '{"contacto":"Ana Contract"}'),
   ('00000000-0000-0000-0000-000000001174', 11004, '00000000-0000-0000-0000-000000001132', '00000000-0000-0000-0000-000000001103', '{"contacto":"Beto Contract"}');
 
@@ -73,6 +73,17 @@ insert into public.ordenes_trabajo (id, visita_id, valvula_id) values
   ('00000000-0000-0000-0000-000000001202', '00000000-0000-0000-0000-000000001192', '00000000-0000-0000-0000-000000001162'),
   ('00000000-0000-0000-0000-000000001203', '00000000-0000-0000-0000-000000001193', '00000000-0000-0000-0000-000000001163'),
   ('00000000-0000-0000-0000-000000001204', '00000000-0000-0000-0000-000000001194', '00000000-0000-0000-0000-000000001164');
+
+-- Second planta in the same Yacimiento so visit ...1192 spans two plantas. Its name sorts before
+-- "Planta Contract Alpha" although its id sorts after, which pins ordering by name.
+insert into public.plantas_locaciones (id, yacimiento_id, nombre) values
+  ('00000000-0000-0000-0000-000000001143', '00000000-0000-0000-0000-000000001131', 'Planta Contract Aardvark');
+insert into public.equipos_unidades (id, planta_id, nombre) values
+  ('00000000-0000-0000-0000-000000001153', '00000000-0000-0000-0000-000000001143', 'Equipo Contract Aardvark');
+insert into public.valvulas (id, equipo_id, nombre) values
+  ('00000000-0000-0000-0000-000000001165', '00000000-0000-0000-0000-000000001153', 'TAG-CONTRACT-04');
+insert into public.ordenes_trabajo (id, visita_id, valvula_id) values
+  ('00000000-0000-0000-0000-000000001205', '00000000-0000-0000-0000-000000001192', '00000000-0000-0000-0000-000000001165');
 
 create function public.test_set_operations_contract_actor(target uuid)
 returns void
@@ -133,6 +144,17 @@ select is(public.api_operations(null, null, null, null, null, null, 1, 0)->'item
 select is(public.api_operations(null, null, null, null, null, null, 1, 0)->'items'->0->'taller_movil'->>'id', '00000000-0000-0000-0000-000000001121', 'the summary nests the Taller Móvil identity');
 select is(public.api_operations(null, null, null, null, null, null, 1, 0)->'items'->0->'ordenes', '{"total":1,"pendientes":1,"evaluadas":0,"no_evaluadas":0}'::jsonb, 'the summary aggregates Orden de trabajo states');
 select is((public.api_operations(null, null, null, null, null, null, 1, 0)->'items'->0 ? 'empresa_id'), false, 'the summary has no legacy Empresa alias');
+select is(public.api_operations(null, null, null, null, null, null, 1, 0)->'items'->0->>'contacto', 'Ana Contract', 'the summary exposes the Solicitud contact name');
+select is(public.api_operations(null, null, null, null, null, null, 1, 0)->'items'->0->>'telefono', '', 'the summary exposes an empty phone when the Solicitud has none');
+select is(public.api_operations(null, null, null, null, null, null, 1, 1)->'items'->0->>'telefono', '299 555-1234', 'the summary exposes the Solicitud phone');
+select is(public.api_operations(null, null, null, null, null, null, 1, 0)->'items'->0->'plantas', '[{"id":"00000000-0000-0000-0000-000000001141","nombre":"Planta Contract Alpha"}]'::jsonb, 'the summary lists the Planta of the visit work orders');
+select is(public.api_operations(null, null, null, null, null, null, 1, 1)->'items'->0->'plantas', '[{"id":"00000000-0000-0000-0000-000000001143","nombre":"Planta Contract Aardvark"},{"id":"00000000-0000-0000-0000-000000001141","nombre":"Planta Contract Alpha"}]'::jsonb, 'a visit spanning two Plantas lists each once, ordered by name');
+select is(jsonb_array_length(public.api_operation('00000000-0000-0000-0000-000000001192')->'operation'->'plantas'), 2, 'the detail operation carries the same Planta list');
+select is(
+  array(select key from jsonb_object_keys(public.api_operations(null, null, null, null, null, null, 1, 0)->'items'->0) as key order by key collate "C"),
+  ARRAY['cliente','contacto','ends_at','estado','id','numero_solicitud','ordenes','plantas','solicitud_id','starts_at','taller_movil','telefono','yacimiento']::text[],
+  'the summary keeps the canonical keys and only adds contacto, telefono and plantas'
+);
 select is(public.api_operations(null, null, null, null, null, null, 100, 0)->>'has_more', 'false', 'the envelope reports whether another page exists');
 select is((public.api_operations(null, null, null, null, null, null, 100, 0)->>'limit')::integer, 100, 'the envelope reports the applied limit');
 select is((public.api_operations(null, null, null, null, null, null, 100, 0)->>'offset')::integer, 0, 'the envelope reports the applied offset');
@@ -166,6 +188,7 @@ select throws_ok($$select count(*) from public.api_operations(null, null, null, 
 select public.test_set_operations_contract_actor('00000000-0000-0000-0000-000000001102');
 select is(jsonb_array_length(public.api_operations(null, null, null, null, null, null, 100, 0)->'items'), 3, 'a Cliente sees only visits in its own Yacimiento');
 select throws_ok($$select public.api_operation('00000000-0000-0000-0000-000000001194')$$, '42501', 'Not authorized', 'a Cliente cannot read another Cliente operation detail');
+select is(public.api_operations(null, null, null, null, null, null, 1, 0)->'items'->0->'plantas'->0->>'nombre', 'Planta Contract Alpha', 'a Cliente sees the Planta of its own visits');
 
 select public.test_set_operations_contract_actor('00000000-0000-0000-0000-000000001104');
 select is(jsonb_array_length(public.api_operations(null, null, null, null, null, null, 100, 0)->'items'), 3, 'an assigned Taller Móvil sees only its assigned visits');

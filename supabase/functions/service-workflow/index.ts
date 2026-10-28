@@ -57,9 +57,26 @@ type OperationDetailEnvelope = {
   work_orders: Record<string, unknown>[]
 }
 
+// `contacto`, `telefono` and `plantas` come from the operation_summary_location_contact
+// migration. They stay optional so this function keeps working before and after it is applied.
+const OPERATION_REQUIRED_KEYS = 10
+const OPERATION_OPTIONAL_KEYS = ["contacto", "telefono", "plantas"] as const
+
+const hasCanonicalSummaryKeys = (value: Record<string, unknown>) => {
+  const keys = Object.keys(value)
+  const optional = keys.filter((key) =>
+    (OPERATION_OPTIONAL_KEYS as readonly string[]).includes(key),
+  )
+  return keys.length - optional.length === OPERATION_REQUIRED_KEYS
+}
+
 const isOperationSummary = (value: unknown): value is OperationSummary =>
   isRecord(value) &&
-  Object.keys(value).length === 10 &&
+  hasCanonicalSummaryKeys(value) &&
+  (value.contacto === undefined || isString(value.contacto)) &&
+  (value.telefono === undefined || isString(value.telefono)) &&
+  (value.plantas === undefined ||
+    (Array.isArray(value.plantas) && value.plantas.every(isNamedReference))) &&
   isNonEmptyString(value.id) &&
   isNonEmptyString(value.solicitud_id) &&
   typeof value.numero_solicitud === "number" &&

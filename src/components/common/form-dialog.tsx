@@ -21,21 +21,32 @@ import { Input } from "@/components/ui/input"
  */
 export function FormDialog({
   trigger,
+  open: abiertoControlado,
+  onOpenChange,
   titulo,
   descripcion,
   ancho = "sm:max-w-lg",
   children,
 }: {
-  trigger: React.ReactNode
+  /** Sin `trigger`, el diálogo se controla desde afuera con `open` y `onOpenChange`. */
+  trigger?: React.ReactNode
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
   titulo: string
   descripcion?: string
   ancho?: string
   children: (cerrar: () => void) => React.ReactNode
 }) {
-  const [open, setOpen] = useState(false)
+  const [abierto, setAbierto] = useState(false)
+  const controlado = abiertoControlado !== undefined
+  const open = controlado ? abiertoControlado : abierto
+  function setOpen(valor: boolean) {
+    if (!controlado) setAbierto(valor)
+    onOpenChange?.(valor)
+  }
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent className={ancho}>
         <DialogHeader>
           <DialogTitle>{titulo}</DialogTitle>

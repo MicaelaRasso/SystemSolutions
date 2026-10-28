@@ -18,13 +18,15 @@ export function SeguridadCuenta({ verificationStatus }: { verificationStatus: st
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    void browserSupabase().auth.getUser().then(({ data, error: userError }) => {
-      if (!userError) {
-        setCurrentEmail(data.user?.email ?? null)
-        setEmail(data.user?.email ?? "")
-      }
-      setLoading(false)
-    })
+    void browserSupabase()
+      .auth.getUser()
+      .then(({ data, error: userError }) => {
+        if (!userError) {
+          setCurrentEmail(data.user?.email ?? null)
+          setEmail(data.user?.email ?? "")
+        }
+        setLoading(false)
+      })
   }, [])
 
   async function requestChange(event: React.FormEvent<HTMLFormElement>) {
@@ -42,11 +44,10 @@ export function SeguridadCuenta({ verificationStatus }: { verificationStatus: st
 
     setSubmitting(true)
     try {
-      await edgeApi.identity.requestEmailChange(
-        email,
-        `${window.location.origin}/cuenta/seguridad`,
+      await edgeApi.identity.requestEmailChange(email, `${window.location.origin}/cuenta/seguridad`)
+      setMessage(
+        "Enviamos enlaces de verificación al email actual y al nuevo. Confirmá ambos para completar el cambio.",
       )
-      setMessage("Enviamos enlaces de verificación al email actual y al nuevo. Confirmá ambos para completar el cambio.")
     } catch {
       setError("No se pudo iniciar el cambio. Revisá el email e intentá nuevamente.")
     } finally {
@@ -58,25 +59,52 @@ export function SeguridadCuenta({ verificationStatus }: { verificationStatus: st
     <div className="mx-auto w-full max-w-2xl space-y-6">
       <header>
         <h1 className="text-2xl font-semibold">Seguridad de la cuenta</h1>
-        <p className="text-sm text-muted-foreground">Administrá el email de acceso y recuperá tu contraseña desde la pantalla de ingreso.</p>
+        <p className="text-sm text-muted-foreground">
+          Administrá el email de acceso y recuperá tu contraseña desde la pantalla de ingreso.
+        </p>
       </header>
       <Card>
         <CardHeader>
           <CardTitle>Cambiar email de la cuenta</CardTitle>
-          <CardDescription>Para proteger la cuenta, el nuevo email debe verificarse antes de que se aplique el cambio.</CardDescription>
+          <CardDescription>
+            Para proteger la cuenta, el nuevo email debe verificarse antes de que se aplique el
+            cambio.
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          {currentEmail && <p className="mb-4 text-sm text-muted-foreground">Email actual: <span className="font-medium text-foreground">{currentEmail}</span></p>}
+          {currentEmail && (
+            <p className="mb-4 text-sm text-muted-foreground">
+              Email actual:{" "}
+              <span className="font-medium break-all text-foreground">{currentEmail}</span>
+            </p>
+          )}
           <form className="space-y-4" onSubmit={(event) => void requestChange(event)}>
             <div className="space-y-2">
               <Label htmlFor="account-email">Nuevo email</Label>
-              <Input id="account-email" type="email" autoComplete="email" required disabled={loading || submitting} value={email} onChange={(event) => setEmail(event.target.value)} />
+              <Input
+                id="account-email"
+                type="email"
+                autoComplete="email"
+                required
+                disabled={loading || submitting}
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+              />
             </div>
-            {message && <p role="status" className="text-sm text-green-700">{message}</p>}
-            {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+            {message && (
+              <p role="status" className="text-sm text-green-700">
+                {message}
+              </p>
+            )}
+            {error && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
             {verificationStatus === "verified" && (
               <p role="status" className="text-sm text-green-700">
-                Se procesó el enlace de verificación. Si recibiste un segundo enlace en el email actual, confirmalo para completar el cambio.
+                Se procesó el enlace de verificación. Si recibiste un segundo enlace en el email
+                actual, confirmalo para completar el cambio.
               </p>
             )}
             {verificationStatus === "invalid" && (

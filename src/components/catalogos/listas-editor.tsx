@@ -233,12 +233,17 @@ function FilaOpcion({
   }
 
   return (
-    <li className={cn("flex items-center gap-2 px-3 py-2", !opcion.activo && "bg-muted/40")}>
+    <li
+      className={cn(
+        "flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2",
+        !opcion.activo && "bg-muted/40",
+      )}
+    >
       <span className="w-6 text-right text-xs text-muted-foreground tabular-nums">
         {indice + 1}
       </span>
       {editando ? (
-        <form onSubmit={guardar} className="flex flex-1 items-center gap-1">
+        <form onSubmit={guardar} className="flex min-w-48 flex-1 items-center gap-1">
           <Input
             value={valor}
             onChange={(e) => setValor(e.target.value)}
@@ -265,7 +270,12 @@ function FilaOpcion({
         </form>
       ) : (
         <>
-          <span className={cn("flex-1 text-sm", !opcion.activo && "text-muted-foreground")}>
+          <span
+            className={cn(
+              "min-w-36 flex-1 text-sm break-words",
+              !opcion.activo && "text-muted-foreground",
+            )}
+          >
             {opcion.valor}
           </span>
           {!opcion.activo && <Badge variant="secondary">Inactiva</Badge>}

@@ -4,6 +4,7 @@ import { ArrowRightLeft, Eye, GripVertical, MoreHorizontal, Pencil } from "lucid
 import Link from "next/link"
 
 import { COLOR_SIN_TALLER } from "@/components/tareas/badges"
+import { infoCronograma, telefonoHref } from "@/components/tareas/tarea-info"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,7 +24,8 @@ import { cn } from "@/lib/utils"
 export const SIN_TALLER = "sin_asignar"
 
 /** Solo se reprograman las tareas que todavía no empezaron. */
-export const esMovible = (t: TareaResumen) => t.estado === "pendiente" || t.estado === "asignada" || t.estado === "programada"
+export const esMovible = (t: TareaResumen) =>
+  t.estado === "pendiente" || t.estado === "asignada" || t.estado === "programada"
 
 /**
  * Tarjeta de tarea en el cronograma. Se arrastra a otra celda para reasignar taller y/o día;
@@ -48,6 +50,8 @@ export function TareaCard({
 }) {
   const movible = esMovible(tarea)
   const color = tarea.tallerColor ?? COLOR_SIN_TALLER
+  const info = infoCronograma(tarea)
+  const telefono = telefonoHref(info.telefono)
 
   return (
     <div
@@ -69,28 +73,56 @@ export function TareaCard({
       {movible && (
         <GripVertical className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/60" aria-hidden />
       )}
-      <button type="button" onClick={onVer} className="min-w-0 flex-1 text-left leading-tight">
-        <span className="block truncate font-medium">
-          {tarea.horario && <span className="tabular-nums">{tarea.horario} </span>}
-          {tarea.empresaNombre}
-        </span>
-        <span className="block truncate text-muted-foreground">
-          {tarea.plantaNombre} · {tarea.equipoNombre}
-        </span>
-        {!movible && (
-          <span className="block text-[10px] text-muted-foreground">
-            {ESTADO_TAREA_LABEL[tarea.estado]}
+      <div className="min-w-0 flex-1 leading-tight">
+        <button
+          type="button"
+          onClick={onVer}
+          className="block w-full text-left pointer-coarse:flex pointer-coarse:min-h-11 pointer-coarse:flex-col pointer-coarse:justify-center"
+        >
+          <span className="block truncate font-medium">
+            {tarea.horario && <span className="tabular-nums">{tarea.horario} </span>}
+            {tarea.empresaNombre}
           </span>
+          {info.yacimiento && (
+            <span className="block truncate text-muted-foreground">{info.yacimiento}</span>
+          )}
+          {info.locacion && (
+            <span className="block truncate text-muted-foreground">{info.locacion}</span>
+          )}
+          {!movible && (
+            <span className="block text-[10px] text-muted-foreground">
+              {ESTADO_TAREA_LABEL[tarea.estado]}
+            </span>
+          )}
+        </button>
+        {/* Fuera del botón: un enlace no puede ir dentro de otro control interactivo. */}
+        {(info.contacto || info.telefono) && (
+          <p className="flex min-w-0 items-center gap-1 truncate text-muted-foreground">
+            {info.contacto && <span className="truncate">{info.contacto}</span>}
+            {info.contacto && info.telefono && <span aria-hidden>·</span>}
+            {info.telefono &&
+              (telefono ? (
+                <a
+                  href={telefono}
+                  draggable={false}
+                  className="shrink-0 tabular-nums underline-offset-2 hover:underline pointer-coarse:flex pointer-coarse:min-h-11 pointer-coarse:items-center"
+                >
+                  {info.telefono}
+                </a>
+              ) : (
+                <span className="shrink-0 tabular-nums">{info.telefono}</span>
+              ))}
+          </p>
         )}
-      </button>
+      </div>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="flex items-center justify-center rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground pointer-coarse:size-11"
             aria-label={`Acciones de la solicitud ${tarea.nroSolicitud}`}
           >
-            <MoreHorizontal className="size-3.5" />
+            <MoreHorizontal className="size-3.5 pointer-coarse:size-5" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">

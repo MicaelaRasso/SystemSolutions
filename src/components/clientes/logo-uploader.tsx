@@ -62,7 +62,6 @@ export function LogoUploader({ empresa }: { empresa: Empresa }) {
           <Button
             type="button"
             variant="outline"
-            size="sm"
             disabled={guardar.isPending}
             onClick={() => input.current?.click()}
           >
@@ -73,7 +72,6 @@ export function LogoUploader({ empresa }: { empresa: Empresa }) {
             <Button
               type="button"
               variant="ghost"
-              size="sm"
               disabled={guardar.isPending}
               onClick={() =>
                 guardar.mutate(null, { onSuccess: () => toast.success("Logo quitado") })

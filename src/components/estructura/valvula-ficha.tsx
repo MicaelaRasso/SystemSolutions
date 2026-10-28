@@ -4,17 +4,10 @@ import { FileCheck2 } from "lucide-react"
 
 import { FirmaBadge, VigenciaBadge } from "@/components/certificados/badges"
 import { EmptyState, ErrorState } from "@/components/common/states"
+import { TablaResponsive } from "@/components/common/tabla-responsive"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Cargando } from "@/components/common/cargando"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { formatNroCertificado, vigencia } from "@/lib/domain/rules"
 import type { Valvula } from "@/lib/domain/types"
 import { fmtFecha } from "@/lib/format"
@@ -111,52 +104,54 @@ function HistorialCertificados({ valvulaId }: { valvulaId: string }) {
             className="py-8"
           />
         ) : (
-          <div className="overflow-x-auto rounded-lg border">
-            <Table>
-              <TableHeader className="bg-muted/50">
-                <TableRow>
-                  <TableHead>Certificado</TableHead>
-                  <TableHead>Ejecución</TableHead>
-                  <TableHead>Vence</TableHead>
-                  <TableHead>Vigencia</TableHead>
-                  <TableHead>Firma</TableHead>
-                  <TableHead className="hidden xl:table-cell">Archivo</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.map((c) => (
-                  <TableRow key={c.id}>
-                    <TableCell className="font-mono text-xs font-medium">
-                      {c.fechaEjecucion
-                        ? formatNroCertificado(c.nro, c.fechaEjecucion)
-                        : c.nro > 0
-                          ? `Certificado ${c.nro}`
-                          : "Pendiente de numeración"}
-                    </TableCell>
-                    <TableCell>
-                      {c.fechaEjecucion ? fmtFecha(c.fechaEjecucion) : "Pendiente"}
-                    </TableCell>
-                    <TableCell>
-                      {c.fechaEjecucion ? fmtFecha(vigencia(c.fechaEjecucion).vence) : "Pendiente"}
-                    </TableCell>
-                    <TableCell>
-                      {c.fechaEjecucion ? (
-                        <VigenciaBadge fechaEjecucion={c.fechaEjecucion} />
-                      ) : (
-                        <Badge variant="outline">Pendiente</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <FirmaBadge cert={c} />
-                    </TableCell>
-                    <TableCell className="hidden max-w-64 truncate font-mono text-xs text-muted-foreground xl:table-cell">
-                      {c.nombreArchivo || "—"}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          <TablaResponsive
+            filas={data}
+            clave={(c) => c.id}
+            descripcion="Certificados de la válvula"
+            columnas={[
+              {
+                id: "certificado",
+                encabezado: "Certificado",
+                className: "font-mono text-xs font-medium",
+                enTarjeta: "titulo",
+                celda: (c) =>
+                  c.fechaEjecucion
+                    ? formatNroCertificado(c.nro, c.fechaEjecucion)
+                    : c.nro > 0
+                      ? `Certificado ${c.nro}`
+                      : "Pendiente de numeración",
+              },
+              {
+                id: "ejecucion",
+                encabezado: "Ejecución",
+                celda: (c) => (c.fechaEjecucion ? fmtFecha(c.fechaEjecucion) : "Pendiente"),
+              },
+              {
+                id: "vence",
+                encabezado: "Vence",
+                celda: (c) =>
+                  c.fechaEjecucion ? fmtFecha(vigencia(c.fechaEjecucion).vence) : "Pendiente",
+              },
+              {
+                id: "vigencia",
+                encabezado: "Vigencia",
+                celda: (c) =>
+                  c.fechaEjecucion ? (
+                    <VigenciaBadge fechaEjecucion={c.fechaEjecucion} />
+                  ) : (
+                    <Badge variant="outline">Pendiente</Badge>
+                  ),
+              },
+              { id: "firma", encabezado: "Firma", celda: (c) => <FirmaBadge cert={c} /> },
+              {
+                id: "archivo",
+                encabezado: "Archivo",
+                className:
+                  "hidden max-w-64 truncate font-mono text-xs text-muted-foreground xl:table-cell",
+                celda: (c) => c.nombreArchivo || "—",
+              },
+            ]}
+          />
         )}
       </CardContent>
     </Card>

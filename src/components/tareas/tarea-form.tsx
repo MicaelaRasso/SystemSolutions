@@ -7,7 +7,9 @@ import { useRef, useState } from "react"
 import { Controller, useForm, useWatch } from "react-hook-form"
 import { toast } from "sonner"
 
+import { DatePicker } from "@/components/common/date-picker"
 import { CampoTexto } from "@/components/common/form-dialog"
+import { useMotivo } from "@/components/common/motivo-dialog"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -97,6 +99,7 @@ export function TareaForm({
 }) {
   const router = useRouter()
   const supabase = usaSupabase()
+  const { pedirMotivo, dialogo: dialogoMotivo } = useMotivo()
   const editando = !!tarea
   const form = useForm<TareaInput>({
     resolver: zodResolver(tareaSchema),
@@ -112,13 +115,22 @@ export function TareaForm({
   const [subiendo, setSubiendo] = useState(false)
   const inputArchivo = useRef<HTMLInputElement>(null)
 
-  const [empresaId, yacimientoId, plantaId, equipoId, tallerActual, condiciones] = useWatch({
-    control: form.control,
-    name: ["empresaId", "yacimientoId", "plantaId", "equipoId", "tallerId", "condiciones"],
-  })
+  const [empresaId, yacimientoId, plantaId, equipoId, tallerActual, condiciones, fechaSolicitud] =
+    useWatch({
+      control: form.control,
+      name: [
+        "empresaId",
+        "yacimientoId",
+        "plantaId",
+        "equipoId",
+        "tallerId",
+        "condiciones",
+        "fechaSolicitud",
+      ],
+    })
 
   const guardar = useServiceMutation<TareaInput, TareaResumen | OperationRead | undefined>(
-    (data: TareaInput) => {
+    async (data: TareaInput) => {
       const payload: NuevaTarea = {
         ...data,
         tallerId: data.tallerId || undefined,
@@ -134,7 +146,11 @@ export function TareaForm({
         const assignmentChanged =
           (payload.tallerId || undefined) !== operation.operation.taller_movil?.id
         if (assignmentChanged) {
-          const reason = window.prompt("Motivo del cambio de asignación de la visita")?.trim()
+          const reason = await pedirMotivo({
+            titulo: "Cambio de asignación",
+            etiqueta: "Motivo del cambio de asignación de la visita",
+            confirmar: "Guardar cambios",
+          })
           if (!reason) throw new Error("Indica el motivo del cambio de asignación")
           return guardarSolicitudYVisita(operation, payload, reason)
         }
@@ -199,6 +215,7 @@ export function TareaForm({
           <UbicacionCascade
             value={{ empresaId, yacimientoId, plantaId, equipoId }}
             onChange={setUbicacion}
+            permitirCrear
             errores={{
               empresaId: errors.empresaId?.message,
               yacimientoId: errors.yacimientoId?.message,
@@ -213,8 +230,34 @@ export function TareaForm({
         <FieldSet>
           <FieldLegend>Programación</FieldLegend>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <CampoTexto form={form} name="fechaSolicitud" label="Fecha de solicitud" type="date" />
-            <CampoTexto form={form} name="fechaEjecucion" label="Fecha de ejecución" type="date" />
+            <Controller
+              control={form.control}
+              name="fechaSolicitud"
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="fechaSolicitud">Fecha de solicitud</FieldLabel>
+                  <DatePicker id="fechaSolicitud" aria-invalid={fieldState.invalid} {...field} />
+                  <FieldError errors={[fieldState.error]} />
+                </Field>
+              )}
+            />
+            <Controller
+              control={form.control}
+              name="fechaEjecucion"
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="fechaEjecucion">Fecha de ejecución</FieldLabel>
+                  {/* El esquema exige que no sea anterior a la fecha de solicitud. */}
+                  <DatePicker
+                    id="fechaEjecucion"
+                    min={fechaSolicitud}
+                    aria-invalid={fieldState.invalid}
+                    {...field}
+                  />
+                  <FieldError errors={[fieldState.error]} />
+                </Field>
+              )}
+            />
             <CampoTexto form={form} name="horario" label="Horario" type="time" />
             <Controller
               control={form.control}
@@ -286,7 +329,7 @@ export function TareaForm({
                 </Field>
               )}
             />
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
               <CampoTexto form={form} name="ordenTrabajo" label="Orden de trabajo" />
               <CampoTexto form={form} name="pdRto" label="PD / RTO" />
             </div>
@@ -314,7 +357,11 @@ export function TareaForm({
                 {opcionesCondiciones.map((c) => {
                   const id = `cond-${c}`
                   return (
-                    <label key={c} htmlFor={id} className="flex items-center gap-2 text-sm">
+                    <label
+                      key={c}
+                      htmlFor={id}
+                      className="flex items-center gap-2 text-sm pointer-coarse:min-h-11"
+                    >
                       <Checkbox
                         id={id}
                         checked={field.value.includes(c)}
@@ -378,6 +425,7 @@ export function TareaForm({
               type="button"
               variant="outline"
               size="sm"
+              className="pointer-coarse:h-11"
               disabled={subiendo}
               onClick={() => inputArchivo.current?.click()}
             >
@@ -414,7 +462,7 @@ export function TareaForm({
           />
         )}
 
-        <div className="flex gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:flex">
           <Button
             type="submit"
             disabled={guardar.isPending || subiendo || (editando && !isDirty && !adjuntosCambiados)}
@@ -436,6 +484,7 @@ export function TareaForm({
           </Button>
         </div>
       </FieldGroup>
+      {dialogoMotivo}
     </form>
   )
 }

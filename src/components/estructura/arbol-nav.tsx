@@ -86,7 +86,7 @@ export function ArbolNav({
                   tabIndex={-1}
                   onClick={() => tieneHijos && onToggle(clave)}
                   className={cn(
-                    "flex size-6 shrink-0 items-center justify-center rounded",
+                    "flex size-6 shrink-0 items-center justify-center rounded pointer-coarse:size-11",
                     !tieneHijos && "invisible",
                   )}
                   aria-label={abierto ? "Contraer" : "Expandir"}
@@ -98,7 +98,7 @@ export function ArbolNav({
                 <button
                   type="button"
                   onClick={() => onSeleccionar({ nivel: n.nivel, id: n.id })}
-                  className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left"
+                  className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left pointer-coarse:min-h-11"
                 >
                   <Icono
                     className={cn(

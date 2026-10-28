@@ -41,20 +41,83 @@ export function AdminDashboard() {
   const [to, setTo] = useState(() => dashboardMonthBounds().to)
   const query = useEdgeAdminMetrics(from, to)
   const validPeriod = Boolean(from && to && from <= to)
-  const cards = query.data ? [
-    ["Certificados finalizados", query.data.finalized_certificates],
-    ["Visitas completadas", query.data.completed_visits],
-    ["Certificados pendientes", query.data.pending_certificates],
-    ["Vencen en 30 días", query.data.expiring_certificates],
-    ["Visitas sin Taller Móvil", query.data.unassigned_visits],
-  ] as const : []
-  return <div className="space-y-6"><PageHeader titulo="Panel" descripcion="Métricas operativas por fecha calendario de Argentina." acciones={<div className="flex gap-2"><Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} aria-label="Desde" /><Input type="date" value={to} onChange={(event) => setTo(event.target.value)} aria-label="Hasta" /></div>} />
-    {!validPeriod && <p className="text-sm text-destructive" role="alert">La fecha Desde debe ser anterior o igual a la fecha Hasta.</p>}
-    {validPeriod && <p className="text-sm text-muted-foreground">Período: {displayArgentinaDate(from)} al {displayArgentinaDate(to)} (Argentina)</p>}
-    {validPeriod && query.isLoading && <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5" aria-label="Cargando métricas">{[1,2,3,4,5].map((item) => <Card key={item}><CardContent className="h-28 animate-pulse" /></Card>)}</div>}
-    {validPeriod && query.isError && <ErrorState error={query.error} onRetry={() => void query.refetch()} />}
-    {validPeriod && query.data && <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">{cards.map(([title, value]) => <Card key={title}><CardHeader><CardTitle className="text-sm text-muted-foreground">{title}</CardTitle></CardHeader><CardContent><p className="text-3xl font-semibold">{value}</p></CardContent></Card>)}</div>}
-    {validPeriod && query.data && cards.every(([, value]) => value === 0) && <EmptyState titulo="Sin actividad en el período" descripcion="Elegí otro período para consultar métricas operativas." />}
-    <SyncConflictsPanel />
-  </div>
+  const cards = query.data
+    ? ([
+        ["Certificados finalizados", query.data.finalized_certificates],
+        ["Visitas completadas", query.data.completed_visits],
+        ["Certificados pendientes", query.data.pending_certificates],
+        ["Vencen en 30 días", query.data.expiring_certificates],
+        ["Visitas sin Taller Móvil", query.data.unassigned_visits],
+      ] as const)
+    : []
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        titulo="Panel"
+        descripcion="Métricas operativas por fecha calendario de Argentina."
+        acciones={
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+            <Input
+              type="date"
+              value={from}
+              onChange={(event) => setFrom(event.target.value)}
+              aria-label="Desde"
+            />
+            <Input
+              type="date"
+              value={to}
+              onChange={(event) => setTo(event.target.value)}
+              aria-label="Hasta"
+            />
+          </div>
+        }
+      />
+      {!validPeriod && (
+        <p className="text-sm text-destructive" role="alert">
+          La fecha Desde debe ser anterior o igual a la fecha Hasta.
+        </p>
+      )}
+      {validPeriod && (
+        <p className="text-sm text-muted-foreground">
+          Período: {displayArgentinaDate(from)} al {displayArgentinaDate(to)} (Argentina)
+        </p>
+      )}
+      {validPeriod && query.isLoading && (
+        <div
+          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
+          aria-label="Cargando métricas"
+        >
+          {[1, 2, 3, 4, 5].map((item) => (
+            <Card key={item}>
+              <CardContent className="h-28 animate-pulse" />
+            </Card>
+          ))}
+        </div>
+      )}
+      {validPeriod && query.isError && (
+        <ErrorState error={query.error} onRetry={() => void query.refetch()} />
+      )}
+      {validPeriod && query.data && (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          {cards.map(([title, value]) => (
+            <Card key={title}>
+              <CardHeader>
+                <CardTitle className="text-sm text-muted-foreground">{title}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-semibold">{value}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+      {validPeriod && query.data && cards.every(([, value]) => value === 0) && (
+        <EmptyState
+          titulo="Sin actividad en el período"
+          descripcion="Elegí otro período para consultar métricas operativas."
+        />
+      )}
+      <SyncConflictsPanel />
+    </div>
+  )
 }

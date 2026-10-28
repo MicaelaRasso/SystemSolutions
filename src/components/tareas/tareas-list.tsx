@@ -5,8 +5,10 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 
+import { BarraFiltros, CampoFiltro } from "@/components/common/barra-filtros"
 import { EmptyState, ErrorState } from "@/components/common/states"
 import { PageHeader } from "@/components/common/page-header"
+import { FilaTarjeta, TablaResponsive } from "@/components/common/tabla-responsive"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -17,14 +19,6 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Cargando } from "@/components/common/cargando"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
 import { edgeApi } from "@/lib/api"
@@ -71,7 +65,9 @@ export function TareasList() {
   const isPlaceholderData = operaciones.isPlaceholderData
   const talleres = useTalleres()
   const empresas = useEmpresas({ incluirInactivas: true })
-  const visitRequestIds = new Set((visits.data ?? []).map(({ visit }) => String(visit.solicitud_id ?? "")))
+  const visitRequestIds = new Set(
+    (visits.data ?? []).map(({ visit }) => String(visit.solicitud_id ?? "")),
+  )
   const requestsWithoutVisit = usaSupabase()
     ? (requests.data ?? []).filter(({ request }) => {
         const id = String(request.id ?? "")
@@ -79,10 +75,22 @@ export function TareasList() {
         if (vista === "pasadas" || (estado !== TODOS && estado !== "pendiente")) return false
         if (taller !== TODOS && taller !== "sin_asignar") return false
         if (empresa !== TODOS && request.cliente_cuenta_id !== empresa) return false
-        return !q || String(request.numero_solicitud ?? "").includes(q) ||
-          String(request.yacimiento_id ?? "").toLowerCase().includes(q.toLowerCase())
+        return (
+          !q ||
+          String(request.numero_solicitud ?? "").includes(q) ||
+          String(request.yacimiento_id ?? "")
+            .toLowerCase()
+            .includes(q.toLowerCase())
+        )
       })
     : []
+
+  const filtrosActivos = [estado, taller, empresa].filter((v) => v !== TODOS).length
+  const limpiarFiltros = () => {
+    setEstado(TODOS)
+    setTaller(TODOS)
+    setEmpresa(TODOS)
+  }
 
   const filas = vista === "pasadas" ? [...(data ?? [])].reverse() : (data ?? [])
   const sinAsignar = filas.filter((t) => t.estado === "pendiente").length
@@ -120,47 +128,56 @@ export function TareasList() {
             aria-label="Buscar tareas"
           />
         </div>
-        <Select value={estado} onValueChange={setEstado}>
-          <SelectTrigger className="w-40" aria-label="Estado">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={TODOS}>Todos los estados</SelectItem>
-            {(Object.keys(ESTADO_TAREA_LABEL) as EstadoTarea[]).map((e) => (
-              <SelectItem key={e} value={e}>
-                {ESTADO_TAREA_LABEL[e]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={taller} onValueChange={setTaller}>
-          <SelectTrigger className="w-44" aria-label="Taller">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={TODOS}>Todos los talleres</SelectItem>
-            <SelectItem value="sin_asignar">Sin asignar</SelectItem>
-            {talleres.data?.map((t) => (
-              <SelectItem key={t.id} value={t.id}>
-                {t.nombre}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={empresa} onValueChange={setEmpresa}>
-          <SelectTrigger className="w-56" aria-label="Cliente">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={TODOS}>Todos los clientes</SelectItem>
-            {empresas.data?.map((e) => (
-              <SelectItem key={e.id} value={e.id}>
-                {e.razonSocial}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
       </div>
+
+      <BarraFiltros activos={filtrosActivos} onLimpiar={limpiarFiltros} columnas="sm:grid-cols-3">
+        <CampoFiltro etiqueta="Estado">
+          <Select value={estado} onValueChange={setEstado}>
+            <SelectTrigger className="w-full" aria-label="Estado">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={TODOS}>Todos los estados</SelectItem>
+              {(Object.keys(ESTADO_TAREA_LABEL) as EstadoTarea[]).map((e) => (
+                <SelectItem key={e} value={e}>
+                  {ESTADO_TAREA_LABEL[e]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </CampoFiltro>
+        <CampoFiltro etiqueta="Taller">
+          <Select value={taller} onValueChange={setTaller}>
+            <SelectTrigger className="w-full" aria-label="Taller">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={TODOS}>Todos los talleres</SelectItem>
+              <SelectItem value="sin_asignar">Sin asignar</SelectItem>
+              {talleres.data?.map((t) => (
+                <SelectItem key={t.id} value={t.id}>
+                  {t.nombre}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </CampoFiltro>
+        <CampoFiltro etiqueta="Cliente">
+          <Select value={empresa} onValueChange={setEmpresa}>
+            <SelectTrigger className="w-full" aria-label="Cliente">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={TODOS}>Todos los clientes</SelectItem>
+              {empresas.data?.map((e) => (
+                <SelectItem key={e.id} value={e.id}>
+                  {e.razonSocial}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </CampoFiltro>
+      </BarraFiltros>
 
       {data && (
         <p className="-mt-2 text-sm text-muted-foreground">
@@ -191,8 +208,14 @@ export function TareasList() {
                 numero={String(request.numero_solicitud ?? "—")}
                 yacimientoId={String(request.yacimiento_id ?? "—")}
                 valvulas={selected_valves.length}
-                talleres={(talleres.data ?? []).filter((item) => item.activo).map((item) => ({ id: item.id, nombre: item.nombre }))}
-                onScheduled={() => { void refetch(); void requests.refetch(); void visits.refetch() }}
+                talleres={(talleres.data ?? [])
+                  .filter((item) => item.activo)
+                  .map((item) => ({ id: item.id, nombre: item.nombre }))}
+                onScheduled={() => {
+                  void refetch()
+                  void requests.refetch()
+                  void visits.refetch()
+                }}
               />
             ))}
           </ul>
@@ -200,7 +223,14 @@ export function TareasList() {
       )}
 
       {isError || requests.isError || visits.isError ? (
-        <ErrorState error={error ?? requests.error ?? visits.error} onRetry={() => { void refetch(); void requests.refetch(); void visits.refetch() }} />
+        <ErrorState
+          error={error ?? requests.error ?? visits.error}
+          onRetry={() => {
+            void refetch()
+            void requests.refetch()
+            void visits.refetch()
+          }}
+        />
       ) : isPending || (usaSupabase() && (requests.isPending || visits.isPending)) ? (
         <Cargando texto="Cargando tareas…" />
       ) : filas.length === 0 && requestsWithoutVisit.length === 0 ? (
@@ -211,65 +241,126 @@ export function TareasList() {
         />
       ) : filas.length > 0 ? (
         <div className={isPlaceholderData ? "opacity-60 transition-opacity" : undefined}>
-          <div className="overflow-hidden rounded-xl border">
-            <Table>
-              <TableHeader className="bg-muted/50">
-                <TableRow>
-                  <TableHead className="w-20">N°</TableHead>
-                  <TableHead>Ejecución</TableHead>
-                  <TableHead>Cliente y locación</TableHead>
-                  <TableHead className="hidden lg:table-cell">Tipo</TableHead>
-                  <TableHead className="hidden md:table-cell">Taller</TableHead>
-                  <TableHead>Estado</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filas.map((t) => (
-                  <TableRow
-                    key={t.id}
-                    className="cursor-pointer"
-                    onClick={() => router.push(`/admin/tareas/${t.id}`)}
+          <TablaResponsive
+            filas={filas}
+            clave={(t) => t.id}
+            descripcion="Tareas"
+            onFila={(t) => router.push(`/admin/tareas/${t.id}`)}
+            columnas={[
+              {
+                id: "nro",
+                encabezado: "N°",
+                className: "w-20 font-mono text-xs",
+                enTarjeta: "oculta",
+                celda: (t) => (
+                  <Link
+                    href={`/admin/tareas/${t.id}`}
+                    className="hover:underline"
+                    onClick={(e) => e.stopPropagation()}
                   >
-                    <TableCell className="font-mono text-xs">
-                      <Link
-                        href={`/admin/tareas/${t.id}`}
-                        className="hover:underline"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {t.nroSolicitud}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      <div className="capitalize">{fmt(t.fechaEjecucion, "EEE dd/MM/yy")}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {t.horario ? `${t.horario} h` : "Sin horario"}
+                    {t.nroSolicitud}
+                  </Link>
+                ),
+              },
+              {
+                id: "ejecucion",
+                encabezado: "Ejecución",
+                className: "whitespace-nowrap",
+                enTarjeta: "oculta",
+                celda: (t) => (
+                  <>
+                    <div className="capitalize">{fmt(t.fechaEjecucion, "EEE dd/MM/yy")}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {t.horario ? `${t.horario} h` : "Sin horario"}
+                    </div>
+                  </>
+                ),
+              },
+              {
+                id: "cliente",
+                encabezado: "Cliente y locación",
+                className: "max-w-72",
+                enTarjeta: "oculta",
+                celda: (t) => (
+                  <>
+                    <div className="truncate font-medium">{t.empresaNombre}</div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {t.plantaNombre} · {t.yacimientoNombre} · {t.equipoNombre}
+                    </div>
+                  </>
+                ),
+              },
+              {
+                id: "tipo",
+                encabezado: "Tipo",
+                className: "hidden text-sm lg:table-cell",
+                enTarjeta: "oculta",
+                celda: (t) => t.tipo,
+              },
+              {
+                id: "taller",
+                encabezado: "Taller",
+                className: "hidden md:table-cell",
+                enTarjeta: "oculta",
+                celda: (t) => <TallerChip nombre={t.tallerNombre} color={t.tallerColor} />,
+              },
+              {
+                id: "estado",
+                encabezado: "Estado",
+                enTarjeta: "oculta",
+                celda: (t) => <EstadoTareaBadge estado={t.estado} />,
+              },
+            ]}
+            tarjeta={(t) => (
+              <Link href={`/admin/tareas/${t.id}`} className="block rounded-lg">
+                <FilaTarjeta
+                  titulo={
+                    <>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-xs">N° {t.nroSolicitud}</span>
+                        <EstadoTareaBadge estado={t.estado} />
                       </div>
-                    </TableCell>
-                    <TableCell className="max-w-72">
-                      <div className="truncate font-medium">{t.empresaNombre}</div>
-                      <div className="truncate text-xs text-muted-foreground">
-                        {t.plantaNombre} · {t.yacimientoNombre} · {t.equipoNombre}
-                      </div>
-                    </TableCell>
-                    <TableCell className="hidden text-sm lg:table-cell">{t.tipo}</TableCell>
-                    <TableCell className="hidden md:table-cell">
-                      <TallerChip nombre={t.tallerNombre} color={t.tallerColor} />
-                    </TableCell>
-                    <TableCell>
-                      <EstadoTareaBadge estado={t.estado} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                      <div>{t.empresaNombre}</div>
+                    </>
+                  }
+                  campos={[
+                    {
+                      etiqueta: "Ejecución",
+                      valor: (
+                        <span className="capitalize">
+                          {fmt(t.fechaEjecucion, "EEE dd/MM/yy")}
+                          {t.horario ? ` · ${t.horario} h` : ""}
+                        </span>
+                      ),
+                    },
+                    {
+                      etiqueta: "Locación",
+                      valor: `${t.plantaNombre} · ${t.yacimientoNombre} · ${t.equipoNombre}`,
+                    },
+                    { etiqueta: "Tipo", valor: t.tipo },
+                    {
+                      etiqueta: "Taller",
+                      valor: <TallerChip nombre={t.tallerNombre} color={t.tallerColor} />,
+                    },
+                  ]}
+                />
+              </Link>
+            )}
+          />
         </div>
       ) : null}
     </>
   )
 }
 
-function SolicitudSinVisita({ requestId, numero, yacimientoId, valvulas, talleres, onScheduled }: {
+function SolicitudSinVisita({
+  requestId,
+  numero,
+  yacimientoId,
+  valvulas,
+  talleres,
+  onScheduled,
+}: {
   requestId: string
   numero: string
   yacimientoId: string
@@ -305,17 +396,53 @@ function SolicitudSinVisita({ requestId, numero, yacimientoId, valvulas, tallere
 
   return (
     <li className="space-y-2 rounded-lg border p-3 text-sm">
-      <p>Solicitud N° {numero} · Yacimiento {yacimientoId} <span className="text-muted-foreground">· Sin visita · {valvulas} válvulas seleccionadas</span></p>
-      <div className="flex flex-wrap items-center gap-2">
-        <Input type="date" aria-label={`Fecha de visita para solicitud ${numero}`} value={fecha} onChange={(event) => setFecha(event.target.value)} className="w-40" />
-        <Input type="time" aria-label={`Hora de visita para solicitud ${numero}`} value={hora} onChange={(event) => setHora(event.target.value)} className="w-32" />
+      <p>
+        Solicitud N° {numero} · Yacimiento {yacimientoId}{" "}
+        <span className="text-muted-foreground">
+          · Sin visita · {valvulas} válvulas seleccionadas
+        </span>
+      </p>
+      <div className="grid gap-2 sm:flex sm:flex-wrap sm:items-center">
+        <Input
+          type="date"
+          aria-label={`Fecha de visita para solicitud ${numero}`}
+          value={fecha}
+          onChange={(event) => setFecha(event.target.value)}
+          className="w-full sm:w-40"
+        />
+        <Input
+          type="time"
+          aria-label={`Hora de visita para solicitud ${numero}`}
+          value={hora}
+          onChange={(event) => setHora(event.target.value)}
+          className="w-full sm:w-32"
+        />
         <Select value={tallerId} onValueChange={setTallerId}>
-          <SelectTrigger className="w-48" aria-label={`Taller para solicitud ${numero}`}><SelectValue placeholder="Elegir Taller Móvil" /></SelectTrigger>
-          <SelectContent>{talleres.map((item) => <SelectItem key={item.id} value={item.id}>{item.nombre}</SelectItem>)}</SelectContent>
+          <SelectTrigger className="w-full sm:w-48" aria-label={`Taller para solicitud ${numero}`}>
+            <SelectValue placeholder="Elegir Taller Móvil" />
+          </SelectTrigger>
+          <SelectContent>
+            {talleres.map((item) => (
+              <SelectItem key={item.id} value={item.id}>
+                {item.nombre}
+              </SelectItem>
+            ))}
+          </SelectContent>
         </Select>
-        <Button type="button" disabled={busy || !fecha || !tallerId} onClick={() => void schedule()}>{busy ? "Programando…" : "Programar visita"}</Button>
+        <Button
+          type="button"
+          className="w-full sm:w-auto"
+          disabled={busy || !fecha || !tallerId}
+          onClick={() => void schedule()}
+        >
+          {busy ? "Programando…" : "Programar visita"}
+        </Button>
       </div>
-      {error && <p role="alert" className="text-destructive">{error}</p>}
+      {error && (
+        <p role="alert" className="text-destructive">
+          {error}
+        </p>
+      )}
     </li>
   )
 }

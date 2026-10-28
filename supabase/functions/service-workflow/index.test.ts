@@ -182,6 +182,43 @@ describe("service-workflow operations read routes", () => {
     })
   })
 
+  it("accepts the contact and planta fields added to the operation summary", async () => {
+    const extended = {
+      ...operation,
+      contacto: "Ana",
+      telefono: "299 555-1234",
+      plantas: [{ id: "00000000-0000-0000-0000-000000000011", nombre: "Planta" }],
+    }
+    const envelope = { ...listEnvelope, items: [extended] }
+    const rpc = vi.fn().mockResolvedValue({ data: envelope, error: null })
+    const request = new Request(
+      "https://example.test/functions/v1/service-workflow/operations?status=solicitada&limit=1&offset=0",
+    )
+
+    await expect(handler(context(request, ["operations"], rpc))).resolves.toEqual({
+      data: envelope,
+      error: null,
+    })
+  })
+
+  it.each([
+    ["a malformed plantas list", { plantas: [{ id: "x" }] }],
+    ["a non-string contacto", { contacto: 7 }],
+    ["an unknown summary key", { empresa_id: "legacy" }],
+  ])("rejects %s in the operation summary", async (_name, extra) => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: { ...listEnvelope, items: [{ ...operation, ...extra }] },
+      error: null,
+    })
+    const request = new Request(
+      "https://example.test/functions/v1/service-workflow/operations?status=solicitada&limit=1&offset=0",
+    )
+
+    await expect(handler(context(request, ["operations"], rpc))).rejects.toMatchObject({
+      status: 502,
+    })
+  })
+
   it("rejects a detail response without the canonical request envelope", async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: {

@@ -53,7 +53,6 @@ describe("aVisitaCliente", () => {
       yacimiento: "Yacimiento Norte",
       ubicaciones: ["Planta A · K-100", "Planta A · K-200"],
       plantaIds: ["p-1"],
-      tallerAsignado: true,
       estado: "aceptada",
       valvulas: 3,
     })
@@ -72,7 +71,6 @@ describe("aVisitaCliente", () => {
     )
     expect(v.yacimiento).toBe("Yacimiento sin acceso")
     expect(v.ubicaciones).toEqual([])
-    expect(v.tallerAsignado).toBe(false)
   })
 })
 

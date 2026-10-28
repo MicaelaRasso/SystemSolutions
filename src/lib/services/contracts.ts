@@ -155,6 +155,8 @@ export interface TareaResumen extends Tarea {
   yacimientoNombre: string
   plantaNombre: string
   equipoNombre: string
+  /** Plantas de las órdenes de la visita (puede haber varias); `plantaNombre` es la primera. */
+  plantasNombres?: string[]
   tallerNombre?: string
   tallerColor?: string
 }
