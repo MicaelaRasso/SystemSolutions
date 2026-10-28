@@ -35,8 +35,9 @@ const context = (
   rpc: ReturnType<typeof vi.fn>,
   route = ["visits", visitId, "signatures"],
   method = "POST",
+  query = "",
 ) => ({
-  request: new Request(`https://example.test/functions/v1/certificate-field/${route.join("/")}`, {
+  request: new Request(`https://example.test/functions/v1/certificate-field/${route.join("/")}${query}`, {
     method,
   }),
   route,
@@ -48,6 +49,23 @@ const context = (
 })
 
 describe("certificate signature upload seam", () => {
+  it("passes a validated Parte diario filter to the Cliente certificate history RPC", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { certificates: [] }, error: null })
+
+    await expect(
+      handler(context({}, rpc, ["valves", visitId, "certificates"], "GET", "?pd_code=PD123")),
+    ).resolves.toEqual({ data: { certificates: [] }, error: null })
+    expect(rpc).toHaveBeenCalledWith("api_valvula_certificates_by_pd", {
+      target_valvula: visitId,
+      pd_code: "PD123",
+    })
+
+    await expect(
+      handler(context({}, rpc, ["valves", visitId, "certificates"], "GET", "?pd_code=PD%20123")),
+    ).rejects.toThrow("pd_code must be alphanumeric")
+    expect(rpc).toHaveBeenCalledTimes(1)
+  })
+
   it("requires an administrator correction reason and routes the new visit authorization", async () => {
     const rpc = vi.fn().mockResolvedValue({ data: { correction_id: visitId }, error: null })
     const route = ["certificates", visitId, "corrections"]

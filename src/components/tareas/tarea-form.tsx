@@ -216,6 +216,7 @@ export function TareaForm({
             value={{ empresaId, yacimientoId, plantaId, equipoId }}
             onChange={setUbicacion}
             permitirCrear
+            disabled={!!operation}
             errores={{
               empresaId: errors.empresaId?.message,
               yacimientoId: errors.yacimientoId?.message,
@@ -223,6 +224,12 @@ export function TareaForm({
               equipoId: errors.equipoId?.message,
             }}
           />
+          {operation && (
+            <p className="text-sm text-muted-foreground">
+              La ubicación y las válvulas de una tarea existente no se modifican desde la
+              programación.
+            </p>
+          )}
         </FieldSet>
 
         <FieldSeparator />

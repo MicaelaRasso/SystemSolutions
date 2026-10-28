@@ -6,6 +6,7 @@ import {
   createAdministrativeServiceRequestInputSchema,
   serviceRequestDtoSchema,
   scheduleVisitInputSchema,
+  createFollowupVisitInputSchema,
   updateServiceRequestInputSchema,
   updateWorkOrderInputSchema,
   visitAdministrationInputSchema,
@@ -17,8 +18,10 @@ import {
   type CreateServiceRequestInput,
   type CreateAdministrativeServiceRequestInput,
   type ScheduleVisitInput,
+  type CreateFollowupVisitInput,
   type UpdateServiceRequestInput,
   type UpdateWorkOrderInput,
+  type VisitAssignmentInput,
 } from "./contracts"
 
 export const serviceWorkflowQueryKeys = {
@@ -110,6 +113,20 @@ export function createServiceWorkflowApi(edge: EdgeAccessClient) {
       })
     },
 
+    async createFollowupVisit(requestId: string, input: CreateFollowupVisitInput) {
+      const data = createFollowupVisitInputSchema.parse(input)
+      return edge.request(`requests/${encodeURIComponent(requestId)}/follow-up-visits`, visitDtoSchema, {
+        method: "POST",
+        body: json({
+          source_visit_id: data.sourceVisitId,
+          valve_ids: data.valveIds,
+          taller_movil_id: data.tallerMovilId,
+          starts_at: data.startsAt,
+          ends_at: data.endsAt,
+        }),
+      })
+    },
+
     listVisits: () => edge.request("visits", visitDtoSchema.array()),
     visit: (visitId: string) => edge.request(`visits/${visitId}`, visitDtoSchema),
 
@@ -130,7 +147,7 @@ export function createServiceWorkflowApi(edge: EdgeAccessClient) {
       })
     },
 
-    async assignVisit(visitId: string, input: { tallerMovilId: string; reason: string }) {
+    async assignVisit(visitId: string, input: VisitAssignmentInput) {
       const data = visitAssignmentInputSchema.parse(input)
       return edge.request(`visits/${visitId}/assign`, visitTransitionDtoSchema, {
         method: "POST",
@@ -151,7 +168,7 @@ export function createServiceWorkflowApi(edge: EdgeAccessClient) {
       })
     },
 
-    async reassignVisit(visitId: string, input: { tallerMovilId: string; reason: string }) {
+    async reassignVisit(visitId: string, input: VisitAssignmentInput) {
       const data = visitAssignmentInputSchema.parse(input)
       return edge.request(`visits/${visitId}/reassign`, visitTransitionDtoSchema, {
         method: "POST",

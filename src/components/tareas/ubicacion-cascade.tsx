@@ -69,20 +69,25 @@ export function OpcionesNivel({
  * Con `permitirCrear`, cada desplegable de cliente, yacimiento y planta termina con una opción
  * «+ Agregar …» que abre un diálogo de alta sin tocar el valor ni el formulario que lo contiene;
  * al guardar, lo creado queda elegido.
+ *
+ * Con `disabled`, la ubicación se muestra pero no se puede cambiar (ni crear desde acá).
  */
 export function UbicacionCascade({
   value,
   onChange,
   errores = {},
   permitirCrear = false,
+  disabled = false,
 }: {
   value: Ubicacion
   onChange: (v: Ubicacion) => void
   errores?: Partial<Record<Clave, string | undefined>>
   permitirCrear?: boolean
+  disabled?: boolean
 }) {
   const empresas = useEmpresas({ incluirInactivas: false })
   const arbol = useArbol(value.empresaId)
+  const puedeCrear = permitirCrear && !disabled
 
   const [dialogo, setDialogo] = useState<Clave | null>(null)
   const pendiente = useRef<Clave | null>(null)
@@ -128,7 +133,7 @@ export function UbicacionCascade({
             clave === "empresaId" ? empresas.isPending : !!value.empresaId && arbol.isPending
           const error = errores[clave]
           const id = `ubicacion-${clave}`
-          const crear = permitirCrear ? etiquetaCrear(clave, value) : null
+          const crear = puedeCrear ? etiquetaCrear(clave, value) : null
           return (
             <Field key={clave} data-invalid={!!error}>
               <FieldLabel htmlFor={id}>{label}</FieldLabel>
@@ -141,7 +146,7 @@ export function UbicacionCascade({
                   if (v === CREAR) pedirCrear(clave)
                   else elegir(clave, v)
                 }}
-                disabled={!padre || cargando}
+                disabled={disabled || !padre || cargando}
               >
                 <SelectTrigger id={id} className="w-full" aria-invalid={!!error}>
                   <SelectValue placeholder={cargando ? "Cargando…" : placeholder} />
@@ -163,7 +168,7 @@ export function UbicacionCascade({
         })}
       </div>
 
-      {permitirCrear && (
+      {puedeCrear && (
         // Los diálogos viven en un portal, pero sus eventos suben por el árbol de React hasta el
         // <form> de la tarea: el envío de un alta no debe enviar la tarea.
         <div className="contents" onSubmit={(e) => e.stopPropagation()}>

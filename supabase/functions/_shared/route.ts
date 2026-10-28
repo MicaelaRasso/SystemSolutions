@@ -131,7 +131,7 @@ export const routeOwner = (method: string, route: string[]): FunctionName | null
     (method === "GET" && (route.length === 0 || is(route, "context"))) ||
     (route[0] === "accounts" && ["GET", "POST", "PATCH", "DELETE", "PUT"].includes(method)) ||
     (is(route, "account-security", "email-change") && method === "PUT") ||
-    (route[0] === "mobile-workshops" && ["GET", "POST", "PATCH"].includes(method)) ||
+    (route[0] === "mobile-workshops" && ["GET", "POST", "PATCH", "DELETE"].includes(method)) ||
     (route[0] === "technicians" && ["GET", "POST", "PATCH"].includes(method)) ||
     (route[0] === "staffing" && ["GET", "PUT"].includes(method)) ||
     (method === "POST" && is(route, "staffing", "copy-previous-week")) ||
@@ -187,6 +187,9 @@ export const routeOwner = (method: string, route: string[]): FunctionName | null
     (method === "PATCH" && route[0] === "requests" && route.length === 2) ||
     (method === "PATCH" && route[0] === "requests" && route.length === 3 && route[2] === "metadata") ||
     (method === "GET" && route[0] === "visits" && (route.length === 1 || route.length === 2)) ||
+    ((method === "GET" || method === "PUT") && route[0] === "visits" && route.length === 3 && route[2] === "parte-diario") ||
+    (method === "POST" && route[0] === "visits" && route.length === 4 && route[2] === "parte-diario" && route[3] === "images") ||
+    (method === "GET" && route[0] === "visits" && route.length === 5 && route[2] === "parte-diario" && route[3] === "images") ||
     (method === "GET" && route[0] === "visits" && route.length === 3 && route[2] === "attachments") ||
     (method === "POST" &&
       route[0] === "visits" &&

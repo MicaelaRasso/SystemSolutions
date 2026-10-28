@@ -15,6 +15,7 @@ import {
   useAddEdgeWorkOrder,
   useEdgeCertificateCaptureCatalogs,
   useEdgeCertificateDraft,
+  useEdgeVisits,
   useStartEdgeCertificateDraft,
   useUpdateEdgeCertificateDraft,
   useUpdateEdgeWorkOrder,
@@ -35,6 +36,7 @@ import { EstadoTareaBadge, TallerChip } from "./badges"
 import { TareaForm } from "./tarea-form"
 import { convertirOperacionATarea } from "./tarea-sheet"
 import { puedeCancelarVisitaAdministrativa, puedeEditarProgramacion } from "./estado-operacion"
+import { VisitaSeguimientoForm } from "./visita-seguimiento-form"
 
 export function TareaDetalle({ id }: { id: string }) {
   const supabase = usaSupabase()
@@ -190,6 +192,9 @@ export function TareaDetalle({ id }: { id: string }) {
         </p>
       )}
       {supabase && operacion.data && <OrdenesTrabajo operation={operacion.data} />}
+      {supabase && operacion.data?.visit.visit.estado === "completada" && (
+        <VisitaSeguimientoForm operation={operacion.data} />
+      )}
     </>
   )
 }
@@ -197,8 +202,18 @@ export function TareaDetalle({ id }: { id: string }) {
 function OrdenesTrabajo({ operation }: { operation: OperationRead }) {
   const add = useAddEdgeWorkOrder()
   const update = useUpdateEdgeWorkOrder()
+  const visits = useEdgeVisits()
   const visitId = operation.visit.visit.id
-  const selectedValves = operation.request.selected_valves
+  const hasSiblingVisits = (visits.data ?? []).some(
+    ({ visit }) =>
+      visit.solicitud_id === operation.visit.visit.solicitud_id && visit.id !== visitId,
+  )
+  const limitToVisitScope = visits.isPending || visits.isError || hasSiblingVisits
+  const selectedValves = operation.request.selected_valves.filter(
+    (valve) =>
+      !limitToVisitScope ||
+      operation.work_orders.some(({ work_order }) => work_order.valvula_id === valve.id),
+  )
   const orderForValve = (valveId: string) =>
     operation.work_orders.find((entry) => entry.work_order.valvula_id === valveId)
 
@@ -211,6 +226,19 @@ function OrdenesTrabajo({ operation }: { operation: OperationRead }) {
         <p className="text-sm text-muted-foreground">
           Se administran dentro de la visita asociada.
         </p>
+        {visits.isPending && (
+          <p className="text-sm text-muted-foreground">
+            Verificando las válvulas asignadas a otras visitas…
+          </p>
+        )}
+        {visits.isError && (
+          <p role="alert" className="text-sm text-destructive">
+            No se pudo verificar el alcance de esta visita. Reintenta antes de agregar órdenes.
+            <Button type="button" variant="link" size="sm" onClick={() => void visits.refetch()}>
+              Reintentar
+            </Button>
+          </p>
+        )}
       </div>
       {selectedValves.length === 0 ? (
         <p className="text-sm text-muted-foreground">
@@ -271,7 +299,7 @@ function OrdenesTrabajo({ operation }: { operation: OperationRead }) {
                     size="sm"
                     variant="outline"
                     className="pointer-coarse:h-11"
-                    disabled={add.isPending}
+                    disabled={add.isPending || visits.isPending || visits.isError}
                     onClick={() => add.mutate({ visitId, valveId: valve.id })}
                   >
                     Agregar orden

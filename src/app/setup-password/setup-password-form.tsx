@@ -8,19 +8,23 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { browserSupabase } from "@/lib/services/edge-transport"
 
-export function SetupPasswordForm() {
+export function SetupPasswordForm({ invitationUserId }: { invitationUserId: string | null }) {
   const router = useRouter()
-  const [hasSession, setHasSession] = useState<boolean | null>(null)
+  const [hasInvitationSession, setHasInvitationSession] = useState<boolean | null>(null)
   const [password, setPassword] = useState("")
   const [confirmation, setConfirmation] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
-    void browserSupabase()
-      .auth.getSession()
-      .then(({ data, error: sessionError }) => setHasSession(!sessionError && !!data.session))
-  }, [])
+    if (!invitationUserId) {
+      setHasInvitationSession(false)
+      return
+    }
+    void browserSupabase().auth.getSession().then(({ data, error: sessionError }) => {
+      setHasInvitationSession(!sessionError && data.session?.user.id === invitationUserId)
+    })
+  }, [invitationUserId])
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -37,8 +41,13 @@ export function SetupPasswordForm() {
 
     setIsSubmitting(true)
     try {
-      const { error: updateError } = await browserSupabase().auth.updateUser({ password })
+      const client = browserSupabase()
+      const { data, error: userError } = await client.auth.getUser()
+      if (userError || data.user?.id !== invitationUserId)
+        throw new Error("La sesión no corresponde a la invitación")
+      const { error: updateError } = await client.auth.updateUser({ password })
       if (updateError) throw updateError
+      await fetch("/api/auth/invitation-setup", { method: "DELETE" }).catch(() => undefined)
     } catch {
       setError("No se pudo configurar la contraseña. Pedí un nuevo enlace de invitación.")
       setIsSubmitting(false)
@@ -48,15 +57,15 @@ export function SetupPasswordForm() {
     window.location.replace("/")
   }
 
-  if (hasSession === null) {
+  if (hasInvitationSession === null) {
     return <p className="text-sm text-muted-foreground" role="status">Verificando el enlace…</p>
   }
 
-  if (!hasSession) {
+  if (!hasInvitationSession) {
     return (
       <div className="space-y-4">
         <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" role="alert">
-          El enlace de invitación venció o ya fue usado. Pedí que te envíen uno nuevo.
+          Esta sesión no corresponde a una invitación de cuenta nueva. Abrí el enlace más reciente o pedí que te envíen uno nuevo.
         </p>
         <Button type="button" variant="outline" onClick={() => router.replace("/login")}>
           Ir a ingresar

@@ -208,8 +208,15 @@ export function VisitasPanel() {
       // Nombres de cliente, yacimiento y planta: la lista de visitas solo trae ids. Mejor esfuerzo.
       const loadedSummaries = await cargarResumenesDeVisitas()
       setResumenes(loadedSummaries)
+      const signaturesByVisit = new Map<string, { parte?: string; nombre_firmante?: string }[]>()
       try {
         const assignedVisits = await edgeApi.serviceWorkflow.listVisits()
+        for (const entry of assignedVisits) {
+          const visitRow = entry.visit as typeof entry.visit & {
+            signatures?: { parte?: string; nombre_firmante?: string }[]
+          }
+          if (visitRow.signatures) signaturesByVisit.set(entry.visit.id, visitRow.signatures)
+        }
         setPendingVisits(
           assignedVisits
             .filter((entry) => entry.visit.estado === "programada")
@@ -236,11 +243,24 @@ export function VisitasPanel() {
       for (const entry of workingSet.visits) {
         const old = await store.getVisit(entry.visit.id)
         const entryCatalogs = entry.certificate_catalogs ?? workingSet.certificate_catalogs
+        const oldContext = old?.context as StoredVisitContext | undefined
+        const signatures =
+          signaturesByVisit.get(entry.visit.id) ??
+          (entry.visit as typeof entry.visit & {
+            signatures?: { parte?: string; nombre_firmante?: string }[]
+          }).signatures ??
+          (oldContext?.visit as (typeof entry.visit & {
+            signatures?: { parte?: string; nombre_firmante?: string }[]
+          }) | undefined)?.signatures
         const catalogState = refreshedVisitCatalogs({
           previous: old,
           // El resumen viaja dentro del contexto guardado para rotular la visita sin conexión.
           refreshedContext: conResumenGuardado(
-            { ...entry, certificate_catalogs: entryCatalogs },
+            {
+              ...entry,
+              visit: signatures ? { ...entry.visit, signatures } : entry.visit,
+              certificate_catalogs: entryCatalogs,
+            },
             loadedSummaries.get(entry.visit.id),
             old?.context,
           ),
@@ -526,9 +546,19 @@ function VisitEditor({
   onChanged: () => Promise<void>
 }) {
   const [message, setMessage] = useState<string>()
+  const [clientSigner, setClientSigner] = useState("")
+  const [clientSignature, setClientSignature] = useState<string>()
+  const [clientSignatureSaved, setClientSignatureSaved] = useState(false)
+  const [clientSignatureSkipped, setClientSignatureSkipped] = useState(false)
+  const [clientSignatureOperationId, setClientSignatureOperationId] = useState<string>()
+  const [savingClientSignature, setSavingClientSignature] = useState(false)
   const [technician, setTechnician] = useState("")
-  const [signature, setSignature] = useState<string>()
+  const [technicianSignature, setTechnicianSignature] = useState<string>()
   const context = contextOf(visit)
+  const visitRow = context.visit as
+    | { signatures?: { parte?: string; nombre_firmante?: string }[] }
+    | undefined
+  const existingClientSignature = visitRow?.signatures?.find((signature) => signature.parte === "cliente")
   const coordinator = useMemo(() => createCoordinator(store), [store])
   const technicians = context.assigned_technicians ?? []
   const catalogsQuery = useEdgeCertificateCaptureCatalogs(
@@ -539,10 +569,34 @@ function VisitEditor({
     context.certificate_catalogs ?? catalogsQuery.data,
   )
   const closed = visit.estadoLocal === "completada_local"
+  const clientSignatureStepDone = clientSignatureSaved || clientSignatureSkipped
   const started =
     visit.estadoLocal === "en_curso_local" ||
     visit.backendStatus === "en_curso" ||
     context.visit?.estado === "en_curso"
+
+  useEffect(() => {
+    if (existingClientSignature) {
+      setClientSigner(existingClientSignature.nombre_firmante ?? "")
+      setClientSignatureSaved(true)
+      return
+    }
+
+    void store.listOperations(visit.id).then((pendingOperations) => {
+      const clientOperation = pendingOperations.find(
+        (operation) =>
+          operation.kind === "submit_signature" &&
+          operation.payload.party === "cliente" &&
+          operation.estado !== "conflicto" &&
+          operation.estado !== "fallida",
+      )
+      if (clientOperation) {
+        setClientSigner(String(clientOperation.payload.signer_name ?? ""))
+        setClientSignatureOperationId(clientOperation.operationId)
+        setClientSignatureSaved(true)
+      }
+    })
+  }, [existingClientSignature, store, visit.id])
 
   const start = async () => {
     try {
@@ -601,8 +655,56 @@ function VisitEditor({
     }
   }
 
+  const captureClientSignature = async () => {
+    const signerName = clientSigner.trim()
+    if (!/^\S+\s+\S+/.test(signerName) || !clientSignature) {
+      setMessage("Ingresá el nombre y apellido del representante y registrá su firma.")
+      return
+    }
+    setSavingClientSignature(true)
+    setMessage(undefined)
+    try {
+      const file = dataUrlToFile(clientSignature, `firma-cliente-${visit.id}.png`)
+      if (navigator.onLine) {
+        await edgeApi.certificates.uploadVisitSignature(visit.id, {
+          party: "cliente",
+          captureMethod: "pwa_cliente_presencial",
+          signerName,
+          file,
+        })
+      } else {
+        const { signatureOperation } = await queueOfflineSignatureCapture({
+          store,
+          coordinator,
+          visitId: visit.id,
+          deviceId: deviceId(),
+          party: "cliente",
+          signerName,
+          file,
+          dependencies: await pendingStartOperationIds(store, visit.id),
+        })
+        setClientSignatureOperationId(signatureOperation.operationId)
+      }
+      setClientSignatureSaved(true)
+      setMessage(
+        navigator.onLine
+          ? "Firma del Cliente registrada. Ahora puede firmar el Técnico."
+          : "Firma del Cliente guardada en el dispositivo. Se sincronizará antes que la firma del Técnico.",
+      )
+      await onChanged()
+    } catch (caught) {
+      setMessage(caught instanceof Error ? caught.message : "No se pudo registrar la firma del Cliente")
+    } finally {
+      setSavingClientSignature(false)
+    }
+  }
+
   const complete = async () => {
-    if (!technician.trim() || !signature) {
+    if (!clientSignatureStepDone) {
+      setMessage("Registrá la firma del Cliente o indicá que no hay un representante presente.")
+      return
+    }
+    if (!technician.trim() || !technicianSignature) {
       setMessage("Seleccioná el Técnico ejecutor y registrá su firma antes de completar la visita.")
       return
     }
@@ -617,8 +719,10 @@ function VisitEditor({
           return
         }
       }
-      const file = dataUrlToFile(signature, `firma-tecnico-${visit.id}.png`)
+      const file = dataUrlToFile(technicianSignature, `firma-tecnico-${visit.id}.png`)
       if (navigator.onLine) {
+        if (clientSignatureOperationId)
+          await coordinator.sync(visit.id, deviceId())
         await edgeApi.certificates.uploadVisitSignature(visit.id, {
           party: "tecnico",
           signerName: technician,
@@ -634,7 +738,10 @@ function VisitEditor({
           party: "tecnico",
           signerName: technician,
           file,
-          dependencies: await pendingStartOperationIds(store, visit.id),
+          dependencies: [
+            ...(await pendingStartOperationIds(store, visit.id)),
+            ...(clientSignatureOperationId ? [clientSignatureOperationId] : []),
+          ],
         })
         await coordinator.queue(
           visit.id,
@@ -718,42 +825,93 @@ function VisitEditor({
         <CardHeader>
           <CardTitle className="text-sm">Cierre de la Visita de servicio</CardTitle>
           <CardDescription>
-            La firma del Técnico es obligatoria. La firma del Cliente puede llegar después desde su
-            panel.
+            La firma del Cliente es opcional durante la visita. Si está presente, firma antes que el
+            Técnico; si no, podrá firmar luego desde su cuenta.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Label htmlFor={`technician-${visit.id}`}>Técnico ejecutor</Label>
-          {technicians.length ? (
-            <SelectNativo
-              id={`technician-${visit.id}`}
-              value={technician}
-              onChange={(event) => setTechnician(event.target.value)}
-              disabled={closed || !started}
-            >
-              <option value="">Seleccionar Técnico</option>
-              {technicians.map((person) => (
-                <option
-                  key={person.id ?? person.name ?? person.nombre}
-                  value={person.name ?? person.nombre ?? ""}
-                >
-                  {person.name ?? person.nombre}
-                </option>
-              ))}
-            </SelectNativo>
+          {!clientSignatureStepDone ? (
+            <section aria-label="Firma del Cliente" className="space-y-3 rounded-md border p-3">
+              <h3 className="font-medium">Paso 1 · Firma opcional del Cliente o representante</h3>
+              <Label htmlFor={`client-signer-${visit.id}`}>Nombre y apellido</Label>
+              <Input
+                id={`client-signer-${visit.id}`}
+                value={clientSigner}
+                onChange={(event) => setClientSigner(event.target.value)}
+                placeholder="Nombre y apellido"
+                disabled={closed || !started || savingClientSignature}
+              />
+              <SignaturePad title="Firma del Cliente" onChange={setClientSignature} />
+              <p className="text-xs text-muted-foreground">
+                Esta firma registra quién firmó y cuándo. No acredita ni reemplaza la autoridad del
+                representante. La visita conserva su asociación con el Cliente titular del yacimiento.
+              </p>
+              <Button
+                type="button"
+                className="max-sm:w-full"
+                onClick={() => void captureClientSignature()}
+                disabled={closed || !started || savingClientSignature}
+              >
+                {savingClientSignature ? "Guardando firma…" : "Registrar firma del Cliente y continuar"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="max-sm:w-full"
+                onClick={() => {
+                  setClientSignatureSkipped(true)
+                  setMessage("Se omitió la firma presencial. El Cliente podrá firmar luego desde su cuenta.")
+                }}
+                disabled={closed || !started || savingClientSignature}
+              >
+                No hay representante presente · Continuar
+              </Button>
+            </section>
+          ) : clientSignatureSaved ? (
+            <p className="rounded-md border bg-muted/30 p-3 text-sm">
+              Firma presencial registrada para {clientSigner || "el representante"}.
+            </p>
           ) : (
-            <Input
-              id={`technician-${visit.id}`}
-              value={technician}
-              onChange={(event) => setTechnician(event.target.value)}
-              placeholder="Nombre del Técnico ejecutor"
-              disabled={closed || !started}
-            />
+            <p className="rounded-md border bg-muted/30 p-3 text-sm">
+              Se omitió la firma presencial. El Cliente podrá firmar después desde su cuenta.
+            </p>
           )}
-          <SignaturePad title="Firma del Técnico" onChange={setSignature} />
-          <Button className="max-sm:w-full" onClick={() => void complete()} disabled={closed || !started}>
-            {closed ? "Visita cerrada" : "Completar visita"}
-          </Button>
+          {clientSignatureStepDone ? (
+            <section aria-label="Firma del Técnico" className="space-y-3 rounded-md border p-3">
+              <h3 className="font-medium">Paso 2 · Firma del Técnico</h3>
+              <Label htmlFor={`technician-${visit.id}`}>Técnico ejecutor</Label>
+              {technicians.length ? (
+                <SelectNativo
+                  id={`technician-${visit.id}`}
+                  value={technician}
+                  onChange={(event) => setTechnician(event.target.value)}
+                  disabled={closed || !started}
+                >
+                  <option value="">Seleccionar Técnico</option>
+                  {technicians.map((person) => (
+                    <option
+                      key={person.id ?? person.name ?? person.nombre}
+                      value={person.name ?? person.nombre ?? ""}
+                    >
+                      {person.name ?? person.nombre}
+                    </option>
+                  ))}
+                </SelectNativo>
+              ) : (
+                <Input
+                  id={`technician-${visit.id}`}
+                  value={technician}
+                  onChange={(event) => setTechnician(event.target.value)}
+                  placeholder="Nombre del Técnico ejecutor"
+                  disabled={closed || !started}
+                />
+              )}
+              <SignaturePad title="Firma del Técnico" onChange={setTechnicianSignature} />
+              <Button className="max-sm:w-full" onClick={() => void complete()} disabled={closed || !started}>
+                {closed ? "Visita cerrada" : "Completar visita"}
+              </Button>
+            </section>
+          ) : null}
           {closed ? (
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
               <Lock className="size-4" /> Los borradores están cerrados; la sincronización se

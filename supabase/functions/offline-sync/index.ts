@@ -4,6 +4,9 @@ import { isUuid } from "../_shared/route.ts"
 import { uploadStorageObject, validateStorageObject } from "../_shared/storage.ts"
 import { serveFunction, type RouteHandler } from "../_shared/transport.ts"
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value)
+
 export const offlineSyncHandler: RouteHandler = async ({ request, route, body, db, correlationId }) => {
   const segments = route
 
@@ -28,7 +31,7 @@ export const offlineSyncHandler: RouteHandler = async ({ request, route, body, d
       throw new HttpError(400, "A valid media kind is required")
     if (kind === "signature" && (!party || (category && category !== `firma_${party}`)))
       throw new HttpError(400, "A signature category must match its party")
-    if (kind === "photo" && !["desarmada", "ensamblada_prueba", "placa_precinto"].includes(category))
+    if (kind === "photo" && !["desarmada", "ensamblada_prueba", "placa_precinto", "parte_diario"].includes(category))
       throw new HttpError(400, "A valid certificate evidence category is required")
 
     const claim = await db.rpc("api_claim_visit_device", {
@@ -52,7 +55,9 @@ export const offlineSyncHandler: RouteHandler = async ({ request, route, body, d
     const objectPath =
       kind === "signature"
         ? `visits/${visitId}/${party}/${mediaId}.${extension}`
-        : `visits/${visitId}/evidence/${mediaId}.${extension}`
+        : category === "parte_diario"
+          ? `visits/${visitId}/parte-diario/${mediaId}.${extension}`
+          : `visits/${visitId}/evidence/${mediaId}.${extension}`
     await uploadStorageObject(bucket, objectPath, file)
     return {
       data: {
@@ -92,11 +97,56 @@ export const offlineSyncHandler: RouteHandler = async ({ request, route, body, d
       throw new HttpError(400, "A valid visit id and device_id are required")
     if (!Array.isArray(body.operations))
       throw new HttpError(400, "An operations array is required")
-    return db.rpc("api_sync_visit_batch", {
+    const operations = body.operations
+    const groups: Array<{ isParteDiario: boolean; operations: unknown[] }> = []
+    for (const operation of operations) {
+      const isParteDiario = isRecord(operation) &&
+        ["set_part_diario", "attach_part_diario_image"].includes(String(operation.kind))
+      const current = groups[groups.length - 1]
+      if (!current || current.isParteDiario !== isParteDiario)
+        groups.push({ isParteDiario, operations: [operation] })
+      else current.operations.push(operation)
+    }
+
+    const responses = new Map<string, unknown>()
+    let lastResult: Awaited<ReturnType<typeof db.rpc>> | null = null
+    for (const group of groups) {
+      const result = await db.rpc(
+        group.isParteDiario ? "api_sync_visit_part_diario_batch" : "api_sync_visit_batch",
+        {
+          target_visit: segments[1],
+          operations: group.operations,
+          target_device: deviceId,
+        },
+      )
+      if (result.error) return result
+      lastResult = result
+      if (!isRecord(result.data) || !Array.isArray(result.data.operations)) continue
+      for (const response of result.data.operations) {
+        if (isRecord(response) && typeof response.operation_id === "string")
+          responses.set(response.operation_id, response)
+      }
+    }
+    if (!lastResult) return db.rpc("api_sync_visit_batch", {
       target_visit: segments[1],
-      operations: body.operations,
+      operations: [],
       target_device: deviceId,
     })
+    const orderedResponses = operations.flatMap((operation) => {
+      const operationId = isRecord(operation) ? operation.operation_id : null
+      const response = typeof operationId === "string" ? responses.get(operationId) : null
+      return response ? [response] : []
+    })
+    const finalData = isRecord(lastResult.data) ? lastResult.data : {}
+    return {
+      data: {
+        ...finalData,
+        visit_id: segments[1],
+        operations: orderedResponses,
+        visit_acknowledgement: finalData.visit_acknowledgement ?? null,
+      },
+      error: null,
+    }
   }
   if (segments[0] === "offline" && segments[1] === "working-set" && request.method === "GET")
     return db.rpc("api_offline_working_set")
