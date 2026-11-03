@@ -347,6 +347,7 @@ describe("capability Edge clients", () => {
       reason: "Cambio de cobertura",
     })
     await api.cancelVisitAsAdministrator("visit-1", { reason: "Solicitud del Cliente" })
+    await api.reopenVisitAsAdministrator("visit-1")
 
     expect(request).toHaveBeenNthCalledWith(
       1,
@@ -373,6 +374,13 @@ describe("capability Edge clients", () => {
       4,
       "https://example.test/functions/v1/service-workflow/visits/visit-1/cancel-administrator",
       expect.objectContaining({ method: "POST", body: JSON.stringify({ reason: "Solicitud del Cliente" }) }),
+
+    )
+    expect(request).toHaveBeenNthCalledWith(
+      5,
+      "https://example.test/functions/v1/service-workflow/visits/visit-1/reopen-administrator",
+      expect.objectContaining({ method: "POST" }),
+
     )
   })
 

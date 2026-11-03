@@ -199,6 +199,7 @@ export const routeOwner = (method: string, route: string[]): FunctionName | null
         "reject",
         "cancel",
         "cancel-administrator",
+        "reopen-administrator",
         "assign",
         "unassign",
         "reassign",

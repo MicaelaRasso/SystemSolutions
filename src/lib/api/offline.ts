@@ -15,7 +15,12 @@ export const offlineQueryKeys = {
 
 export const offlineInvalidations = [offlineQueryKeys.all] as const
 
-const photoCategories = new Set(["desarmada", "ensamblada_prueba", "placa_precinto"])
+const photoCategories = new Set([
+  "desarmada",
+  "ensamblada_prueba",
+  "placa_precinto",
+  "parte_diario",
+])
 
 export function createOfflineApi(edge: EdgeAccessClient) {
   return {

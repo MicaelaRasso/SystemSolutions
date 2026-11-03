@@ -15,12 +15,13 @@ import {
 } from "@/components/ui/sheet"
 import { fmtDiaLargo } from "@/lib/fechas"
 import type { Adjunto } from "@/lib/domain/types"
-import type { OperationRead, OperationSummaryRead } from "@/lib/hooks/queries"
+import { useOperacion, type OperationRead, type OperationSummaryRead } from "@/lib/hooks/queries"
 import type { TareaResumen } from "@/lib/services"
 import { nombresDePlantas, resumenPlantas } from "@/lib/services/ubicacion-operacion"
 
 import { EstadoTareaBadge, TallerChip } from "./badges"
 import { ESTADO_OPERACION_A_TAREA } from "./estado-operacion"
+import { telefonoHref } from "./tarea-info"
 
 type OperationView = OperationSummaryRead | OperationRead
 type OperationSummaryView = OperationSummaryRead
@@ -65,6 +66,9 @@ function horaDeTimestamp(value: string) {
   }).format(new Date(value))
 }
 
+const isUuid = (val: string | undefined) =>
+  val ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val.trim()) : false
+
 /** Compatibilidad exclusiva de presentación: el dominio canónico sigue siendo OperationRead. */
 export function convertirOperacionATarea(operation: OperationView): TareaResumen {
   const summary = operationSummary(operation)
@@ -89,6 +93,12 @@ export function convertirOperacionATarea(operation: OperationView): TareaResumen
   const equipoNombre =
     stringField(equipo, "nombre") ?? stringField(workOrder, "equipo_nombre", "equipoNombre") ?? "—"
 
+  const rawOrdenTrabajo =
+    stringField(metadata, "orden_trabajo", "ordenTrabajo") ??
+    stringField(request, "orden_trabajo", "ordenTrabajo") ??
+    (summary as unknown as { orden_trabajo?: string }).orden_trabajo
+  const ordenTrabajo = isUuid(rawOrdenTrabajo) ? undefined : (rawOrdenTrabajo?.trim() || undefined)
+
   return {
     id: summary.id,
     nroSolicitud: summary.numero_solicitud,
@@ -103,10 +113,10 @@ export function convertirOperacionATarea(operation: OperationView): TareaResumen
       stringField(request, "created_at", "createdAt") ?? fechaDeTimestamp(summary.starts_at),
     fechaEjecucion: fechaDeTimestamp(summary.starts_at),
     horario: horaDeTimestamp(summary.starts_at),
-    tipo: stringField(metadata, "tipo") ?? "Certificación",
-    detalle: stringField(metadata, "detalle") ?? "",
-    pdRto: stringField(metadata, "pd_rto", "pdRto"),
-    ordenTrabajo: stringField(workOrder, "id"),
+    tipo: stringField(metadata, "tipo") ?? summary.tipo ?? "Certificación",
+    detalle: stringField(metadata, "detalle") ?? summary.detalle ?? "",
+    pdRto: stringField(metadata, "pd_rto", "pdRto") ?? summary.pd_rto ?? undefined,
+    ordenTrabajo,
     condiciones: stringArrayField(metadata, "condiciones") ?? [],
     adjuntos: (metadata?.adjuntos as Adjunto[] | undefined) ?? [],
     estado: ESTADO_OPERACION_A_TAREA[summary.estado],
@@ -137,62 +147,98 @@ export function TareaSheet({
   tarea: TareaResumen | null
   onOpenChange: (open: boolean) => void
 }) {
+  const operacionDetalle = useOperacion(tarea?.id ?? "")
+  const actual: TareaResumen | null = tarea
+    ? operacionDetalle.data
+      ? {
+          ...convertirOperacionATarea(operacionDetalle.data),
+          tallerColor: tarea.tallerColor,
+        }
+      : tarea
+    : null
+  const telHref = actual ? telefonoHref(actual.telefono) : undefined
+
   return (
-    <Sheet open={!!tarea} onOpenChange={onOpenChange}>
+    <Sheet open={!!actual} onOpenChange={onOpenChange}>
       <SheetContent className="w-full sm:max-w-md">
-        {tarea && (
+        {actual && (
           <>
             <SheetHeader>
               <div className="flex flex-wrap items-center gap-2">
-                <EstadoTareaBadge estado={tarea.estado} />
-                <Badge variant="outline">{tarea.tipo}</Badge>
+                <EstadoTareaBadge estado={actual.estado} />
+                <Badge variant="outline">{actual.tipo}</Badge>
               </div>
-              <SheetTitle className="text-lg">Solicitud N° {tarea.nroSolicitud}</SheetTitle>
-              <SheetDescription>{tarea.empresaNombre}</SheetDescription>
+              <SheetTitle className="text-lg">Solicitud N° {actual.nroSolicitud}</SheetTitle>
+              <SheetDescription>{actual.empresaNombre}</SheetDescription>
             </SheetHeader>
             <div className="flex-1 space-y-4 overflow-y-auto px-4">
               <Dato icono={Clock}>
                 <span className="inline-block first-letter:uppercase">
-                  {fmtDiaLargo(tarea.fechaEjecucion)}
+                  {fmtDiaLargo(actual.fechaEjecucion)}
                 </span>
-                {tarea.horario && (
-                  <span className="text-muted-foreground"> · {tarea.horario} h</span>
+                {actual.horario && (
+                  <span className="text-muted-foreground"> · {actual.horario} h</span>
                 )}
               </Dato>
               <Dato icono={MapPin}>
-                <div className="font-medium">{tarea.plantaNombre}</div>
+                <div className="font-medium">{actual.plantaNombre}</div>
                 <div className="text-muted-foreground">
-                  {tarea.yacimientoNombre} · Equipo {tarea.equipoNombre}
+                  {actual.yacimientoNombre}
+                  {actual.equipoNombre && actual.equipoNombre !== "—" && (
+                    <> · Equipo {actual.equipoNombre}</>
+                  )}
                 </div>
               </Dato>
               <Dato icono={User}>
-                <TallerChip nombre={tarea.tallerNombre} color={tarea.tallerColor} />
+                <TallerChip nombre={actual.tallerNombre} color={actual.tallerColor} />
               </Dato>
               <Dato icono={Phone}>
-                {tarea.contacto} · {tarea.telefono}
+                {actual.contacto || actual.telefono ? (
+                  <div className="flex flex-wrap items-center gap-1">
+                    {actual.contacto && <span>{actual.contacto}</span>}
+                    {actual.contacto && actual.telefono && <span aria-hidden>·</span>}
+                    {actual.telefono &&
+                      (telHref ? (
+                        <a
+                          href={telHref}
+                          className="tabular-nums underline-offset-2 hover:underline"
+                        >
+                          {actual.telefono}
+                        </a>
+                      ) : (
+                        <span className="tabular-nums">{actual.telefono}</span>
+                      ))}
+                  </div>
+                ) : (
+                  <span className="text-muted-foreground">Sin teléfono ni contacto registrado</span>
+                )}
               </Dato>
               <Dato icono={FileText}>
-                <p className="whitespace-pre-line">{tarea.detalle}</p>
-                {(tarea.ordenTrabajo || tarea.pdRto) && (
+                <p className="whitespace-pre-line">
+                  {actual.detalle || (
+                    <span className="text-muted-foreground">Sin detalle de servicio</span>
+                  )}
+                </p>
+                {((actual.ordenTrabajo && !isUuid(actual.ordenTrabajo)) || actual.pdRto) && (
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {tarea.ordenTrabajo && `OT ${tarea.ordenTrabajo}`}
-                    {tarea.ordenTrabajo && tarea.pdRto && " · "}
-                    {tarea.pdRto && `PD/RTO ${tarea.pdRto}`}
+                    {actual.ordenTrabajo && !isUuid(actual.ordenTrabajo) && `OT ${actual.ordenTrabajo}`}
+                    {actual.ordenTrabajo && !isUuid(actual.ordenTrabajo) && actual.pdRto && " · "}
+                    {actual.pdRto && `PD/RTO ${actual.pdRto}`}
                   </p>
                 )}
               </Dato>
-              {tarea.condiciones.length > 0 && (
+              {actual.condiciones.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 pl-7">
-                  {tarea.condiciones.map((c) => (
+                  {actual.condiciones.map((c) => (
                     <Badge key={c} variant="secondary" className="font-normal">
                       {c}
                     </Badge>
                   ))}
                 </div>
               )}
-              {tarea.adjuntos.length > 0 && (
+              {actual.adjuntos.length > 0 && (
                 <Dato icono={Paperclip}>
-                  {tarea.adjuntos.map((a) => (
+                  {actual.adjuntos.map((a) => (
                     <div key={a.id} className="truncate">
                       {a.nombre}
                     </div>
@@ -202,7 +248,7 @@ export function TareaSheet({
             </div>
             <SheetFooter>
               <Button asChild>
-                <Link href={`/admin/tareas/${tarea.id}`}>
+                <Link href={`/admin/tareas/${actual.id}`}>
                   <Pencil />
                   Ver solicitud y visita
                 </Link>

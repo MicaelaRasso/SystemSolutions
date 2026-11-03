@@ -5,6 +5,7 @@ import Link, { useLinkStatus } from "next/link"
 import { usePathname } from "next/navigation"
 
 import { Logo } from "@/components/brand/logo"
+import { InstalarAppButton } from "@/components/common/instalar-app-button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import {
   DropdownMenu,
@@ -170,6 +171,7 @@ export function AppShell({ rol, children }: { rol: Rol; children: React.ReactNod
               Gestión de calibración de válvulas de seguridad
             </span>
           </span>
+          <InstalarAppButton />
         </header>
         <div className="flex min-w-0 flex-1 flex-col gap-6 p-4 md:p-6">{children}</div>
       </SidebarInset>

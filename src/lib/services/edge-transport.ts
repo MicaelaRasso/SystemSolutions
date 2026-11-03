@@ -112,6 +112,7 @@ export class EdgeTransport {
   private readonly fetcher: EdgeFetch
   private readonly auth: (() => BrowserSupabaseClient) | undefined
   private readonly correlationId: () => string
+  private inflightToken?: Promise<string | undefined>
 
   constructor({
     functionUrls,
@@ -131,9 +132,23 @@ export class EdgeTransport {
 
   private async token() {
     if (!this.auth) return undefined
-    const { data, error } = await this.auth().auth.getSession()
-    if (error) throw new ServiceError("No se pudo obtener la sesión de Supabase", "unauthorized")
-    return data.session?.access_token
+    if (this.inflightToken) return this.inflightToken
+    const promise = (async () => {
+      const { data, error } = await this.auth!().auth.getSession()
+      if (error) throw new ServiceError("No se pudo obtener la sesión de Supabase", "unauthorized")
+      return data.session?.access_token
+  
+  
+    })()
+    this.inflightToken = promise
+    try {
+      return await promise
+    } finally {
+      if (this.inflightToken === promise) this.inflightToken = undefined
+    }
+
+
+
   }
 
   async response(functionName: EdgeFunctionName, path: string, init: RequestInit = {}) {
@@ -164,10 +179,8 @@ export class EdgeTransport {
 
     if (!response.ok) {
       const data = await responseData(response)
-      throw new ServiceError(
-        responseMessage(data) ?? "La Edge Function rechazó la solicitud",
-        errorCode(response.status),
-      )
+      const message = responseMessage(data) ?? "La Edge Function rechazó la solicitud"
+      throw new ServiceError(message, errorCode(response.status))
     }
     return response
   }

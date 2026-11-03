@@ -26,25 +26,30 @@ const render = (requiereFirma: boolean) =>
   renderToStaticMarkup(createElement(CertificadoDocumento, { vista, requiereFirma }))
 
 describe("documento del certificado SYS", () => {
-  it("respeta las secciones y el pie legal del modelo", () => {
+  it("respeta las secciones 1.0 a 1.5, ubica las fotos al final bajo ANEXO y mantiene el pie legal", () => {
     const html = render(false)
-    for (const titulo of [
+    const encabezadosEnOrden = [
       "MANTENIMIENTO Y CALIBRACIÓN",
       "1.0 UBICACIÓN",
       "1.1 VÁLVULA DE SEGURIDAD",
-      "1.2 FOTO VÁLVULA DESARMADA",
-      "1.3 MANTENIMIENTO",
-      "1.4 FOTO VÁLVULA ARMADA PARA ENSAYOS",
-      "1.5 ENSAYOS",
-      "1.6 FOTO VÁLVULA ARMADA CON CHAPA Y PRECINTO",
-      "1.7 OBSERVACIONES",
-      "1.8 APROBACIÓN",
+      "1.2 MANTENIMIENTO",
+      "1.3 ENSAYOS",
+      "1.4 OBSERVACIONES",
+      "1.5 APROBACIÓN",
       "POR SYSTEM SOLUTIONS",
       "POR CLIENTE",
+      "ANEXO — REGISTRO FOTOGRÁFICO",
+      "FOTO VÁLVULA DESARMADA",
+      "FOTO VÁLVULA ARMADA PARA ENSAYOS",
+      "FOTO VÁLVULA ARMADA CON CHAPA Y PRECINTO",
       "NO SE RESPONSABILIZA",
       "RECALIBRACIÓN",
-    ]) {
-      expect(html).toContain(titulo)
+    ]
+    let cursor = -1
+    for (const titulo of encabezadosEnOrden) {
+      const posicion = html.indexOf(titulo)
+      expect(posicion, `Falta o está desordenado: ${titulo}`).toBeGreaterThan(cursor)
+      cursor = posicion
     }
     expect(html).toContain("26-02-0014")
     expect(html).toContain("Yacimiento Demo")
@@ -62,5 +67,26 @@ describe("documento del certificado SYS", () => {
 
   it("muestra la leyenda REQUIERE FIRMA cuando faltan firmas", () => {
     expect(render(true)).toContain("REQUIERE FIRMA")
+  })
+
+  it("incluye el código y la foto del Parte Diario en la cabecera y el Anexo cuando están presentes", () => {
+    const vistaConPd = armarCertificadoVista({
+      certificate: {
+        id: "c-pd",
+        numero: 15,
+        pd: "PD9876",
+        estado: "finalizado",
+        fecha_ejecucion: "2026-02-04",
+        parte_diario_images: [{ url: "https://storage.example.test/pd9876.jpg" }],
+      },
+      snapshot: { valvula: { nombre: "PSV-1" }, yacimiento: { nombre: "Yacimiento Demo" } },
+    })
+    const html = renderToStaticMarkup(
+      createElement(CertificadoDocumento, { vista: vistaConPd, requiereFirma: false }),
+    )
+    expect(vistaConPd.pdRto).toBe("PD9876")
+    expect(html).toContain("PD9876")
+    expect(html).toContain("FOTO PARTE DIARIO (PD9876)")
+    expect(html).toContain("https://storage.example.test/pd9876.jpg")
   })
 })

@@ -5,7 +5,14 @@ import { ChevronLeft, ChevronRight, Plus } from "lucide-react"
 import { useMemo, useState } from "react"
 
 import { Button } from "@/components/ui/button"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { diasGrillaMes, fmt, fmtDiaLargo, iso } from "@/lib/fechas"
 import { cn } from "@/lib/utils"
 
@@ -34,6 +41,8 @@ export interface MonthCalendarProps<T> {
   vistaMovil?: "puntos" | "agenda"
   /** Avisa el día elegido; en escritorio además se resalta en la grilla. */
   onDiaSeleccionado?: (fecha: string) => void
+  /** Si está activo (por defecto cuando no hay panel lateral `onDiaSeleccionado`), al presionar un día se abre una ventana modal con todos los servicios del día. */
+  modalDia?: boolean
 }
 
 const ETIQUETAS_TAREA = { singular: "tarea", plural: "tareas", vacio: "Sin tareas este día" }
@@ -57,6 +66,7 @@ export function MonthCalendar<T>({
   etiquetas = ETIQUETAS_TAREA,
   vistaMovil = "puntos",
   onDiaSeleccionado,
+  modalDia = !onDiaSeleccionado,
 }: MonthCalendarProps<T>) {
   const dias = useMemo(() => diasGrillaMes(mes), [mes])
   const porDia = useMemo(() => {
@@ -68,11 +78,17 @@ export function MonthCalendar<T>({
     return m
   }, [items, fechaDe])
   const [seleccionado, setSeleccionadoInterno] = useState<string>(iso(new Date()))
+  const [diaModal, setDiaModal] = useState<string | null>(null)
   const setSeleccionado = (fecha: string) => {
     setSeleccionadoInterno(fecha)
     onDiaSeleccionado?.(fecha)
   }
+  const abrirDia = (fecha: string) => {
+    setSeleccionado(fecha)
+    if (modalDia) setDiaModal(fecha)
+  }
   const delDia = porDia.get(seleccionado) ?? []
+  const listaModal = diaModal ? (porDia.get(diaModal) ?? []) : []
   const agenda = vistaMovil === "agenda"
   const diasDelMes = useMemo(
     () =>
@@ -135,8 +151,10 @@ export function MonthCalendar<T>({
             return (
               <div
                 key={k}
+                onClick={() => abrirDia(k)}
                 className={cn(
                   "group relative flex min-h-14 flex-col gap-1 border-b p-1 md:min-h-32 md:p-1.5",
+                  modalDia && "cursor-pointer hover:bg-muted/20",
                   i % 7 !== 6 && "border-r",
                   fuera && "bg-muted/30",
                   k === seleccionado && "max-md:bg-accent",
@@ -146,7 +164,10 @@ export function MonthCalendar<T>({
                 <div className="flex items-center justify-between">
                   <button
                     type="button"
-                    onClick={() => setSeleccionado(k)}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      abrirDia(k)
+                    }}
                     aria-label={`${fmtDiaLargo(d)}: ${lista.length} ${lista.length === 1 ? etiquetas.singular : etiquetas.plural}`}
                     aria-pressed={onDiaSeleccionado ? k === seleccionado : undefined}
                     className={cn(
@@ -160,7 +181,10 @@ export function MonthCalendar<T>({
                   {onNuevo && (
                     <button
                       type="button"
-                      onClick={() => onNuevo(k)}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onNuevo(k)
+                      }}
                       aria-label={`Nueva tarea el ${fmtDiaLargo(d)}`}
                       className="hidden size-6 items-center justify-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100 md:flex pointer-coarse:size-8 pointer-coarse:opacity-100"
                     >
@@ -172,7 +196,10 @@ export function MonthCalendar<T>({
                 {/* Celular: puntos */}
                 <button
                   type="button"
-                  onClick={() => setSeleccionado(k)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    abrirDia(k)
+                  }}
                   className="flex flex-wrap gap-0.5 md:hidden"
                   tabIndex={-1}
                   aria-hidden
@@ -186,30 +213,28 @@ export function MonthCalendar<T>({
                   ))}
                 </button>
 
-                {/* Escritorio: tarjetas */}
+                {/* Escritorio: tarjetas (máximo maxPorDia=3 en vista previa) */}
                 <div className="hidden min-w-0 flex-col gap-1 md:flex">
                   {visibles.map((it) => (
-                    <div key={claveDe(it)} className="min-w-0">
+                    <div
+                      key={claveDe(it)}
+                      className="min-w-0"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       {renderItem(it)}
                     </div>
                   ))}
                   {resto > 0 && (
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <button
-                          type="button"
-                          className="rounded px-1 text-left text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground pointer-coarse:py-1.5"
-                        >
-                          +{resto} más
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-72 space-y-1 p-2" align="start">
-                        <p className="px-1 pb-1 text-sm font-medium capitalize">{fmtDiaLargo(d)}</p>
-                        {lista.map((it) => (
-                          <div key={claveDe(it)}>{renderItem(it)}</div>
-                        ))}
-                      </PopoverContent>
-                    </Popover>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setDiaModal(k)
+                      }}
+                      className="rounded px-1 text-left text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground pointer-coarse:py-1.5"
+                    >
+                      +{resto} más
+                    </button>
                   )}
                 </div>
               </div>
@@ -217,6 +242,51 @@ export function MonthCalendar<T>({
           })}
         </div>
       </div>
+
+      {/* Ventana modal con todos los servicios planificados para el día presionado */}
+      <Dialog open={!!diaModal} onOpenChange={(abierto) => !abierto && setDiaModal(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="capitalize">
+              Servicios planificados — {diaModal ? fmtDiaLargo(diaModal) : ""}
+            </DialogTitle>
+            <DialogDescription>
+              {listaModal.length}{" "}
+              {listaModal.length === 1 ? etiquetas.singular : etiquetas.plural} para este día
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[60vh] space-y-2 overflow-y-auto pr-1">
+            {listaModal.length === 0 ? (
+              <p className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+                {etiquetas.vacio}
+              </p>
+            ) : (
+              listaModal.map((it) => (
+                <div key={claveDe(it)} onClick={() => setDiaModal(null)}>
+                  {renderItem(it)}
+                </div>
+              ))
+            )}
+          </div>
+          {onNuevo && diaModal && (
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const f = diaModal
+                  setDiaModal(null)
+                  onNuevo(f)
+                }}
+              >
+                <Plus />
+                Nueva {etiquetas.singular}
+              </Button>
+            </DialogFooter>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Celular, modo agenda: días del mes con elementos */}
       {agenda && (

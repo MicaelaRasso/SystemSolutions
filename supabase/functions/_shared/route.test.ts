@@ -44,6 +44,7 @@ describe("shared route ownership", () => {
     ["POST", ["visits", "v-1", "unassign"], "service-workflow"],
     ["POST", ["visits", "v-1", "reassign"], "service-workflow"],
     ["POST", ["visits", "v-1", "cancel-administrator"], "service-workflow"],
+    ["POST", ["visits", "v-1", "reopen-administrator"], "service-workflow"],
     ["GET", ["certificates", "c-1", "download"], "certificate-field"],
     ["POST", ["visits", "v-1", "sync"], "offline-sync"],
     ["POST", ["visits", "v-1", "claim"], "offline-sync"],

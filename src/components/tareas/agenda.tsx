@@ -34,7 +34,18 @@ export function Agenda() {
   const filtro = { desde: iso(dias[0]), hasta: iso(dias[dias.length - 1]) }
   const operaciones = useOperaciones(filtro)
   const talleres = useTalleres()
-  const tareas = (operaciones.data ?? []).map(convertirOperacionATarea)
+  const colorPorTaller = useMemo(
+    () => new Map((talleres.data ?? []).map((t) => [t.id, t.color])),
+    [talleres.data],
+  )
+  const tareas = useMemo(
+    () =>
+      (operaciones.data ?? []).map((op) => {
+        const t = convertirOperacionATarea(op)
+        return { ...t, tallerColor: t.tallerId ? colorPorTaller.get(t.tallerId) : undefined }
+      }),
+    [operaciones.data, colorPorTaller],
+  )
 
   const visibles = tareas.filter(
     (t) => (verCanceladas || t.estado !== "cancelada") && !ocultos.has(t.tallerId ?? SIN_TALLER),
@@ -120,15 +131,18 @@ export function Agenda() {
   )
 }
 
-/** Tarjeta compacta: horario, cliente, taller móvil asignado y planta a la que se va (RF-11). */
+/** Tarjeta compacta: horario, cliente, taller móvil asignado, planta, contacto/teléfono y detalle (RF-11). */
 export function TareaPill({ tarea, onClick }: { tarea: TareaResumen; onClick: () => void }) {
   const color = tarea.tallerColor ?? COLOR_SIN_TALLER
-  const { taller, planta } = infoAgenda(tarea)
+  const { taller, planta, contacto, telefono, detalle } = infoAgenda(tarea)
   const etiquetaTaller = tarea.tallerNombre?.trim() ? `Taller Móvil: ${taller}` : taller
+  const lineaContacto = [contacto, telefono].filter(Boolean).join(" · ")
   const titulo = [
     `${tarea.horario ?? ""} ${tarea.empresaNombre}`.trim(),
     etiquetaTaller,
     planta && `Planta: ${planta}`,
+    lineaContacto,
+    detalle,
   ]
     .filter(Boolean)
     .join(" · ")
@@ -151,6 +165,14 @@ export function TareaPill({ tarea, onClick }: { tarea: TareaResumen; onClick: ()
       <span className="block truncate text-[11px] text-muted-foreground">{etiquetaTaller}</span>
       {planta && (
         <span className="block truncate text-[11px] text-muted-foreground">Planta: {planta}</span>
+      )}
+      {lineaContacto && (
+        <span className="block truncate text-[11px] text-muted-foreground tabular-nums">
+          {lineaContacto}
+        </span>
+      )}
+      {detalle && (
+        <span className="block truncate text-[11px] text-muted-foreground">{detalle}</span>
       )}
     </button>
   )

@@ -187,6 +187,10 @@ describe("service-workflow operations read routes", () => {
       ...operation,
       contacto: "Ana",
       telefono: "299 555-1234",
+      detalle: "Calibración anual",
+      tipo: "Certificación",
+      pd_rto: null,
+      orden_trabajo: "OT-2026-084",
       plantas: [{ id: "00000000-0000-0000-0000-000000000011", nombre: "Planta" }],
     }
     const envelope = { ...listEnvelope, items: [extended] }
@@ -522,6 +526,14 @@ describe("service-workflow mutation routes", () => {
       body: { reason: "El Cliente modificó su agenda" },
       rpcName: "api_admin_cancel_visit",
       rpcArgs: { visit_id: operationId, action_reason: "El Cliente modificó su agenda" },
+    },
+    {
+      name: "reopens a visit as an administrator",
+      method: "POST",
+      route: ["visits", operationId, "reopen-administrator"],
+      body: {},
+      rpcName: "api_admin_reopen_visit",
+      rpcArgs: { visit_id: operationId },
     },
     {
       name: "accepts a visit",

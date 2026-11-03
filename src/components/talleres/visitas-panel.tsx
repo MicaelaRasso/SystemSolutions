@@ -87,15 +87,96 @@ function visitDate(visit: VisitaOffline) {
   return typeof value === "string" ? new Date(value).toLocaleString("es-AR") : "Fecha no informada"
 }
 
-function workOrderName(order: WorkOrderDetailDto, context: StoredVisitContext) {
-  const entry = context as unknown as { work_orders?: { valvula?: { nombre?: string } }[] }
-  const valve = entry.work_orders?.find((item) => item === order)?.valvula
-  return String(valve?.nombre ?? order.valvula_id ?? order.id)
+function findEquipo(context: StoredVisitContext, equipoId: string | undefined) {
+  if (!equipoId) return undefined
+  const tree = context.context as { equipos?: Record<string, unknown>[] } | undefined
+  return tree?.equipos?.find((equipo) => equipo.id === equipoId)
 }
 
-function findValve(context: StoredVisitContext, valveId: string | undefined) {
+export function findValve(
+  context: StoredVisitContext,
+  valveId: string | undefined,
+  order?: WorkOrderDetailDto,
+  certificate?: Record<string, unknown>,
+) {
   const tree = context.context as { valvulas?: Record<string, unknown>[] } | undefined
-  return tree?.valvulas?.find((valve) => valve.id === valveId)
+  const fromTree = valveId ? tree?.valvulas?.find((valve) => valve.id === valveId) : undefined
+  const rawOrder = (order ?? {}) as Record<string, unknown>
+  const fromOrder =
+    rawOrder.valvula && typeof rawOrder.valvula === "object" && !Array.isArray(rawOrder.valvula)
+      ? (rawOrder.valvula as Record<string, unknown>)
+      : undefined
+  const certContext =
+    certificate?.contexto_captura &&
+    typeof certificate.contexto_captura === "object" &&
+    !Array.isArray(certificate.contexto_captura)
+      ? (certificate.contexto_captura as Record<string, unknown>)
+      : undefined
+  const fromCert =
+    certContext?.valvula &&
+    typeof certContext.valvula === "object" &&
+    !Array.isArray(certContext.valvula)
+      ? (certContext.valvula as Record<string, unknown>)
+      : undefined
+
+  const merged: Record<string, unknown> = {}
+  for (const source of [fromCert, fromTree, fromOrder]) {
+    if (!source) continue
+    for (const [key, value] of Object.entries(source)) {
+      if (value !== null && value !== undefined && String(value).trim() !== "") {
+        merged[key] = value
+      } else if (!(key in merged)) {
+        merged[key] = value
+      }
+    }
+  }
+  if (
+    typeof rawOrder.valvula_nombre === "string" &&
+    rawOrder.valvula_nombre.trim() !== "" &&
+    !merged.nombre &&
+    !merged.tag
+  ) {
+    merged.nombre = rawOrder.valvula_nombre.trim()
+  }
+  return Object.keys(merged).length > 0 ? merged : undefined
+}
+
+export function workOrderName(
+  order: WorkOrderDetailDto,
+  context: StoredVisitContext,
+  certificate?: Record<string, unknown>,
+) {
+  const valve = findValve(context, order.valvula_id, order, certificate)
+  const rawOrder = order as Record<string, unknown>
+  const valveName =
+    (typeof rawOrder.valvula_nombre === "string" && rawOrder.valvula_nombre.trim()) ||
+    (typeof valve?.nombre === "string" && valve.nombre.trim()) ||
+    (typeof valve?.tag === "string" && valve.tag.trim()) ||
+    ""
+  const equipoId = typeof valve?.equipo_id === "string" ? valve.equipo_id : undefined
+  const equipo = findEquipo(context, equipoId)
+  const certContext =
+    certificate?.contexto_captura &&
+    typeof certificate.contexto_captura === "object" &&
+    !Array.isArray(certificate.contexto_captura)
+      ? (certificate.contexto_captura as Record<string, unknown>)
+      : undefined
+  const certEquipo =
+    certContext?.equipo &&
+    typeof certContext.equipo === "object" &&
+    !Array.isArray(certContext.equipo)
+      ? (certContext.equipo as Record<string, unknown>)
+      : undefined
+  const equipoName =
+    (typeof rawOrder.equipo_nombre === "string" && rawOrder.equipo_nombre.trim()) ||
+    (typeof equipo?.nombre === "string" && equipo.nombre.trim()) ||
+    (typeof certEquipo?.nombre === "string" && certEquipo.nombre.trim()) ||
+    ""
+
+  if (valveName && equipoName) return `Válvula ${valveName} · Equipo ${equipoName}`
+  if (valveName) return `Válvula ${valveName}`
+  if (equipoName) return `Equipo ${equipoName}`
+  return "Válvula asignada"
 }
 
 function createCoordinator(store: IndexedDbOfflineStore) {
@@ -553,10 +634,22 @@ function VisitEditor({
   const [clientSignatureOperationId, setClientSignatureOperationId] = useState<string>()
   const [savingClientSignature, setSavingClientSignature] = useState(false)
   const [technician, setTechnician] = useState("")
+  const [customTechnician, setCustomTechnician] = useState(false)
   const [technicianSignature, setTechnicianSignature] = useState<string>()
+  const [incompleteReason, setIncompleteReason] = useState(
+    "Falta de tiempo en jornada — reprogramar válvulas pendientes",
+  )
+  const [savingIncomplete, setSavingIncomplete] = useState(false)
+  const [pdCode, setPdCode] = useState("")
+  const [savedPdCode, setSavedPdCode] = useState<string | null>(null)
+  const [pdImagesCount, setPdImagesCount] = useState(0)
+  const [savingPd, setSavingPd] = useState(false)
   const context = contextOf(visit)
   const visitRow = context.visit as
-    | { signatures?: { parte?: string; nombre_firmante?: string }[] }
+    | {
+        signatures?: { parte?: string; nombre_firmante?: string }[]
+        parte_diario?: { codigo?: string | null; images?: unknown[] }
+      }
     | undefined
   const existingClientSignature = visitRow?.signatures?.find((signature) => signature.parte === "cliente")
   const coordinator = useMemo(() => createCoordinator(store), [store])
@@ -597,6 +690,196 @@ function VisitEditor({
       }
     })
   }, [existingClientSignature, store, visit.id])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadParteDiario = async () => {
+      const pendingOps = await store.listOperations(visit.id)
+      const latestCodeOp = pendingOps
+        .filter(
+          (op) =>
+            op.kind === "set_part_diario" &&
+            op.estado !== "conflicto" &&
+            op.estado !== "fallida" &&
+            typeof op.payload.codigo === "string",
+        )
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.operationId.localeCompare(b.operationId))
+        .at(-1)
+      const queuedImageOps = pendingOps.filter(
+        (op) =>
+          op.kind === "attach_part_diario_image" &&
+          op.estado !== "sincronizada" &&
+          op.estado !== "conflicto" &&
+          op.estado !== "fallida",
+      )
+      const cachedCode =
+        typeof latestCodeOp?.payload.codigo === "string"
+          ? latestCodeOp.payload.codigo
+          : typeof visitRow?.parte_diario?.codigo === "string"
+            ? visitRow.parte_diario.codigo
+            : ""
+      const cachedImages = Array.isArray(visitRow?.parte_diario?.images)
+        ? visitRow.parte_diario.images.length
+        : 0
+
+      if (!cancelled && cachedCode) {
+        setPdCode((prev) => prev || cachedCode)
+        setSavedPdCode(cachedCode)
+      }
+      if (!cancelled) {
+        setPdImagesCount(cachedImages + queuedImageOps.length)
+      }
+
+      if (typeof navigator !== "undefined" && navigator.onLine) {
+        try {
+          const remotePd = await edgeApi.serviceWorkflow.visitParteDiario(visit.id)
+          if (!cancelled) {
+            const effectiveCode =
+              (typeof latestCodeOp?.payload.codigo === "string" && latestCodeOp.payload.codigo) ||
+              remotePd.codigo ||
+              ""
+            if (effectiveCode) {
+              setPdCode((prev) => prev || effectiveCode)
+              setSavedPdCode(effectiveCode)
+            }
+            setPdImagesCount(remotePd.images.length + queuedImageOps.length)
+          }
+        } catch {
+          // Best-effort online fetch; local state remains authoritative when offline.
+        }
+      }
+    }
+    void loadParteDiario()
+    return () => {
+      cancelled = true
+    }
+  }, [store, visit.id, visitRow?.parte_diario])
+
+  const saveParteDiarioCode = async (rawCode = pdCode): Promise<string | null> => {
+    const normalized = rawCode.trim().replace(/[^A-Za-z0-9]/g, "").toUpperCase()
+    if (!normalized) {
+      setMessage("Ingresá un número o código alfanumérico de Parte Diario.")
+      return null
+    }
+    setSavingPd(true)
+    try {
+      if (navigator.onLine) {
+        await edgeApi.serviceWorkflow.setVisitParteDiario(visit.id, normalized)
+      } else {
+        const dependencies = await pendingStartOperationIds(store, visit.id)
+        await coordinator.queue(
+          visit.id,
+          deviceId(),
+          "set_part_diario",
+          { codigo: normalized },
+          dependencies,
+        )
+      }
+      setPdCode(normalized)
+      setSavedPdCode(normalized)
+      setMessage(
+        navigator.onLine
+          ? `Parte Diario ${normalized} registrado en la visita.`
+          : `Parte Diario ${normalized} guardado en el dispositivo para sincronizar.`,
+      )
+      await onChanged()
+      return normalized
+    } catch (caught) {
+      setMessage(
+        caught instanceof Error ? caught.message : "No se pudo guardar el Parte Diario",
+      )
+      return null
+    } finally {
+      setSavingPd(false)
+    }
+  }
+
+  const captureParteDiarioPhoto = async (file: File | undefined) => {
+    if (!file || closed || !started) return
+    const normalized = (pdCode || savedPdCode || "")
+      .trim()
+      .replace(/[^A-Za-z0-9]/g, "")
+      .toUpperCase()
+    if (!normalized) {
+      setMessage("Ingresá primero el número de Parte Diario antes de adjuntar su foto.")
+      return
+    }
+    setSavingPd(true)
+    try {
+      const imageId = window.crypto.randomUUID()
+      if (navigator.onLine) {
+        await edgeApi.serviceWorkflow.setVisitParteDiario(visit.id, normalized)
+        await edgeApi.serviceWorkflow.uploadVisitParteDiarioImage(visit.id, {
+          codigo: normalized,
+          imageId,
+          file,
+        })
+      } else {
+        await store.saveMedia?.({
+          id: imageId,
+          mediaId: imageId,
+          visitId: visit.id,
+          operationId: imageId,
+          kind: "photo",
+          section: "parte_diario",
+          blob: file,
+          file,
+          contentType: file.type,
+          fileName: file.name || `parte-diario-${imageId}.jpg`,
+          createdAt: new Date().toISOString(),
+        })
+        const existingOps = await store.listOperations(visit.id)
+        const startDeps = await pendingStartOperationIds(store, visit.id)
+        const existingSetOp = existingOps
+          .filter(
+            (op) =>
+              op.kind === "set_part_diario" &&
+              op.payload.codigo === normalized &&
+              op.estado !== "conflicto" &&
+              op.estado !== "fallida",
+          )
+          .at(-1)
+        const setOp =
+          existingSetOp ??
+          (await coordinator.queue(
+            visit.id,
+            deviceId(),
+            "set_part_diario",
+            { codigo: normalized },
+            startDeps,
+          ))
+        await coordinator.queue(
+          visit.id,
+          deviceId(),
+          "attach_part_diario_image",
+          {
+            codigo: normalized,
+            media_id: imageId,
+            image_id: imageId,
+            category: "parte_diario",
+            content_type: file.type,
+          },
+          [...new Set([...startDeps, setOp.operationId])],
+          { mediaIds: [imageId] },
+        )
+      }
+      setPdCode(normalized)
+      setSavedPdCode(normalized)
+      setPdImagesCount((count) => count + 1)
+      setMessage(
+        navigator.onLine
+          ? `Foto del Parte Diario ${normalized} adjuntada a la visita.`
+          : `Foto del Parte Diario ${normalized} guardada localmente y lista para sincronizar.`,
+      )
+      await onChanged()
+    } catch (caught) {
+      setMessage(
+        caught instanceof Error ? caught.message : "No se pudo adjuntar la foto del Parte Diario",
+      )
+    } finally {
+      setSavingPd(false)
+    }
+  }
 
   const start = async () => {
     try {
@@ -768,6 +1051,75 @@ function VisitEditor({
     }
   }
 
+  const completeIncompleteVisit = async () => {
+    const reasonText = incompleteReason.trim()
+    if (!reasonText) {
+      setMessage("Indicá el motivo por el cual la visita quedó sin terminar.")
+      return
+    }
+    if (!clientSignatureStepDone) {
+      setMessage("Registrá la firma del Cliente o indicá que no hay un representante presente.")
+      return
+    }
+    if (!technician.trim() || !technicianSignature) {
+      setMessage("Seleccioná el Técnico ejecutor y registrá su firma antes de cerrar la visita.")
+      return
+    }
+    setSavingIncomplete(true)
+    try {
+      const pendingOps = await store.listOperations(visit.id)
+      const latestOutcomeByOrder = new Map<string, string>()
+      for (const op of pendingOps) {
+        if (
+          op.kind === "work_order_outcome" &&
+          op.estado !== "conflicto" &&
+          op.estado !== "fallida" &&
+          typeof op.payload.work_order_id === "string" &&
+          typeof op.payload.outcome === "string"
+        ) {
+          latestOutcomeByOrder.set(op.payload.work_order_id, op.payload.outcome)
+        }
+      }
+      const remainingOrders = (context.work_orders ?? []).filter((order) => {
+        const effectiveOutcome = latestOutcomeByOrder.get(order.id) ?? order.estado ?? "pendiente"
+        return effectiveOutcome === "pendiente"
+      })
+      const startDeps = await pendingStartOperationIds(store, visit.id)
+      for (const order of remainingOrders) {
+        if (navigator.onLine) {
+          await edgeApi.workOrders.updateWorkOrder(order.id, {
+            outcome: "no_evaluada",
+            notEvaluatedReason: reasonText,
+          })
+        } else {
+          await coordinator.queue(
+            visit.id,
+            deviceId(),
+            "work_order_outcome",
+            {
+              work_order_id: order.id,
+              outcome: "no_evaluada",
+              not_evaluated_reason: reasonText,
+            },
+            startDeps,
+          )
+        }
+      }
+      await complete()
+      setMessage(
+        navigator.onLine
+          ? "Visita cerrada como no terminada. Las válvulas pendientes quedaron listas para reprogramar por el Administrador."
+          : "Visita cerrada localmente como no terminada; al sincronizar se notificará al Administrador para reprogramar las válvulas pendientes.",
+      )
+    } catch (caught) {
+      setMessage(
+        caught instanceof Error ? caught.message : "No se pudo cerrar la visita no terminada",
+      )
+    } finally {
+      setSavingIncomplete(false)
+    }
+  }
+
   return (
     <div className="space-y-5 border-t pt-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -804,6 +1156,66 @@ function VisitEditor({
             </p>
           ) : null}
         </div>
+      ) : null}
+      {started ? (
+        <Card size="sm">
+          <CardHeader>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle className="text-sm">Parte Diario (Facturación)</CardTitle>
+              {savedPdCode ? (
+                <Badge variant="outline">
+                  PD {savedPdCode}
+                  {pdImagesCount > 0 ? ` · ${pdImagesCount} foto(s)` : ""}
+                </Badge>
+              ) : null}
+            </div>
+            <CardDescription>
+              El Parte Diario cubre todas las válvulas revisadas en esta visita y queda vinculado a
+              sus certificados.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+              <div className="space-y-1">
+                <Label htmlFor={`parte-diario-code-${visit.id}`}>Número de Parte Diario (PD)</Label>
+                <Input
+                  id={`parte-diario-code-${visit.id}`}
+                  value={pdCode}
+                  onChange={(event) => setPdCode(event.target.value)}
+                  placeholder="Ej. PD1234 o 4078"
+                  disabled={closed || savingPd}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="max-sm:w-full"
+                onClick={() => void saveParteDiarioCode()}
+                disabled={closed || savingPd || !pdCode.trim()}
+              >
+                {savingPd ? "Guardando…" : "Guardar número PD"}
+              </Button>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor={`parte-diario-photo-${visit.id}`}>
+                Sacar foto o adjuntar imagen del Parte Diario
+              </Label>
+              <Input
+                id={`parte-diario-photo-${visit.id}`}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                disabled={closed || savingPd}
+                className="h-auto py-2 pointer-coarse:h-auto"
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  void captureParteDiarioPhoto(file)
+                  event.currentTarget.value = ""
+                }}
+              />
+            </div>
+          </CardContent>
+        </Card>
       ) : null}
       <div className="space-y-3">
         {(context.work_orders ?? []).map((order) => (
@@ -881,22 +1293,43 @@ function VisitEditor({
               <h3 className="font-medium">Paso 2 · Firma del Técnico</h3>
               <Label htmlFor={`technician-${visit.id}`}>Técnico ejecutor</Label>
               {technicians.length ? (
-                <SelectNativo
-                  id={`technician-${visit.id}`}
-                  value={technician}
-                  onChange={(event) => setTechnician(event.target.value)}
-                  disabled={closed || !started}
-                >
-                  <option value="">Seleccionar Técnico</option>
-                  {technicians.map((person) => (
-                    <option
-                      key={person.id ?? person.name ?? person.nombre}
-                      value={person.name ?? person.nombre ?? ""}
-                    >
-                      {person.name ?? person.nombre}
-                    </option>
-                  ))}
-                </SelectNativo>
+                <div className="space-y-2">
+                  <SelectNativo
+                    id={`technician-${visit.id}`}
+                    value={customTechnician ? "__otro__" : technician}
+                    onChange={(event) => {
+                      const val = event.target.value
+                      if (val === "__otro__") {
+                        setCustomTechnician(true)
+                        setTechnician("")
+                        return
+                      }
+                      setCustomTechnician(false)
+                      setTechnician(val)
+                    }}
+                    disabled={closed || !started}
+                  >
+                    <option value="">Seleccionar Técnico</option>
+                    {technicians.map((person) => (
+                      <option
+                        key={person.id ?? person.name ?? person.nombre}
+                        value={person.name ?? person.nombre ?? ""}
+                      >
+                        {person.name ?? person.nombre}
+                      </option>
+                    ))}
+                    <option value="__otro__">Otro técnico / Reemplazo…</option>
+                  </SelectNativo>
+                  {customTechnician ? (
+                    <Input
+                      id={`technician-custom-${visit.id}`}
+                      value={technician}
+                      onChange={(event) => setTechnician(event.target.value)}
+                      placeholder="Nombre y apellido del técnico reemplazante"
+                      disabled={closed || !started}
+                    />
+                  ) : null}
+                </div>
               ) : (
                 <Input
                   id={`technician-${visit.id}`}
@@ -907,9 +1340,41 @@ function VisitEditor({
                 />
               )}
               <SignaturePad title="Firma del Técnico" onChange={setTechnicianSignature} />
-              <Button className="max-sm:w-full" onClick={() => void complete()} disabled={closed || !started}>
+              <Button
+                className="max-sm:w-full"
+                onClick={() => void complete()}
+                disabled={closed || !started || savingIncomplete}
+              >
                 {closed ? "Visita cerrada" : "Completar visita"}
               </Button>
+              <div className="space-y-2 rounded-md border border-dashed bg-muted/20 p-3">
+                <p className="text-xs font-medium">
+                  ¿No llegaron a revisar todas las válvulas en el día?
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Al marcar «Visita no terminada», las válvulas que sigan pendientes se registran
+                  como no evaluadas con este motivo para que el Administrador reprograme otro día
+                  bajo la misma solicitud.
+                </p>
+                <Input
+                  id={`incomplete-reason-${visit.id}`}
+                  value={incompleteReason}
+                  onChange={(event) => setIncompleteReason(event.target.value)}
+                  placeholder="Motivo para reprogramar las válvulas faltantes"
+                  disabled={closed || !started || savingIncomplete}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="max-sm:w-full"
+                  onClick={() => void completeIncompleteVisit()}
+                  disabled={closed || !started || savingIncomplete}
+                >
+                  {savingIncomplete
+                    ? "Cerrando visita…"
+                    : "Visita no terminada (reprogramar faltantes)"}
+                </Button>
+              </div>
             </section>
           ) : null}
           {closed ? (
@@ -1076,11 +1541,13 @@ function WorkOrderEditor({
         setLocalCertificate(result.certificate)
       } else {
         const localId = window.crypto.randomUUID()
+        const resolvedValve = findValve(contextOf(visit), order.valvula_id, order)
         setCertificateId(localId)
         setLocalCertificate({
           id: localId,
           estado: "borrador",
           estado_captura: "abierto",
+          ...(resolvedValve ? { contexto_captura: { valvula: resolvedValve } } : {}),
           plantilla_version: catalogs?.template.version,
           plantilla_snapshot: catalogs
             ? {
@@ -1144,6 +1611,7 @@ function WorkOrderEditor({
       onMessage("Borrador guardado.")
       await onChanged()
     } catch (caught) {
+      console.error("[saveDraft error]", caught)
       onMessage(caught instanceof Error ? caught.message : "No se pudo guardar el borrador")
     }
   }
@@ -1184,7 +1652,9 @@ function WorkOrderEditor({
   return (
     <Card size="sm" className="overflow-visible bg-muted/20">
       <CardHeader>
-        <CardTitle className="text-sm">{workOrderName(order, contextOf(visit))}</CardTitle>
+        <CardTitle className="text-sm">
+          {workOrderName(order, contextOf(visit), currentCertificate)}
+        </CardTitle>
         <CardDescription>Estado: {outcome}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -1230,7 +1700,7 @@ function WorkOrderEditor({
                 catalogs={catalogs}
                 technicians={technicians}
                 certificate={currentCertificate}
-                valve={findValve(contextOf(visit), order.valvula_id)}
+                valve={findValve(contextOf(visit), order.valvula_id, order, currentCertificate)}
                 evidence={evidence}
                 disabled={disabled}
                 onCapturePhoto={(section, file) => void capturePhoto(section, file)}

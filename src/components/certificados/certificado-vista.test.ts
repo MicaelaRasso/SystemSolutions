@@ -97,6 +97,24 @@ describe("armarCertificadoVista", () => {
     expect(vista.ordenTrabajo).toBe("—")
   })
 
+  it("resuelve ordenTrabajo comercial y descarta UUIDs de base de datos", () => {
+    const conOt = armarCertificadoVista({
+      certificate: {
+        ...certificado,
+        orden_trabajo: "OT-9912",
+      },
+    })
+    expect(conOt.ordenTrabajo).toBe("OT-9912")
+
+    const conUuid = armarCertificadoVista({
+      certificate: {
+        ...certificado,
+        orden_trabajo: "12345678-1234-1234-1234-123456789abc",
+      },
+    })
+    expect(conUuid.ordenTrabajo).toBe("—")
+  })
+
   it("muestra la marca de dato no disponible cuando la válvula la declara", () => {
     const sinDatos = armarCertificadoVista({
       certificate: {

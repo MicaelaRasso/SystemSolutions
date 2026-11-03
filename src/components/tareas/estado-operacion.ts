@@ -15,3 +15,6 @@ export const puedeCancelarVisitaAdministrativa = (estado: OperationStatus) =>
   estado === "programada" || estado === "aceptada"
 
 export const puedeEditarProgramacion = (estado: OperationStatus) => estado === "programada"
+
+export const puedeEvaluarOrden = (estado: OperationStatus | string | undefined | null) =>
+  Boolean(estado && estado !== "cancelada")

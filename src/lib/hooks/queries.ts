@@ -59,13 +59,19 @@ function toValvulaView(dto: Awaited<ReturnType<typeof edgeApi.valves.valve>>): V
     id: dto.valve.id,
     equipoId: dto.valve.equipo_id,
     tag: dto.valve.nombre,
+    precinto: dto.valve.precinto ?? undefined,
+    servicio: dto.valve.servicio ?? undefined,
     marca: dto.valve.marca ?? undefined,
     nroSerie: dto.valve.numero_serie ?? undefined,
     modelo: dto.valve.modelo ?? undefined,
     tipo: dto.valve.tipo ?? undefined,
+    pv: dto.valve.pv ?? undefined,
     diamEntrada: dto.valve.diametro_entrada ?? undefined,
     diamSalida: dto.valve.diametro_salida ?? undefined,
     rosca: dto.valve.rosca ?? undefined,
+    presionOperacion: dto.valve.presion_operacion ?? undefined,
+    temperaturaOperacion: dto.valve.temperatura_operacion ?? undefined,
+    notas: dto.valve.notas ?? undefined,
   }
 }
 
@@ -85,18 +91,30 @@ function toValveUpdateInput(
     clase_salida: current.clase_salida,
     rosca: data.rosca ?? current.rosca,
     razon_disponibilidad: current.razon_disponibilidad,
+    precinto: data.precinto ?? current.precinto ?? null,
+    servicio: data.servicio ?? current.servicio ?? null,
+    pv: data.pv ?? current.pv ?? null,
+    presion_operacion: data.presionOperacion ?? current.presion_operacion ?? null,
+    temperatura_operacion: data.temperaturaOperacion ?? current.temperatura_operacion ?? null,
+    notas: data.notas ?? current.notas ?? null,
   }
 }
 
 function hasSupportedValveData(data: Partial<Omit<Valvula, "id">>) {
   return [
+    data.precinto,
+    data.servicio,
     data.marca,
     data.nroSerie,
     data.modelo,
     data.tipo,
+    data.pv,
     data.diamEntrada,
     data.diamSalida,
     data.rosca,
+    data.presionOperacion,
+    data.temperaturaOperacion,
+    data.notas,
   ].some((value) => value !== undefined)
 }
 
@@ -325,6 +343,11 @@ export async function cancelarVisita(id: ID, reason: string) {
   return edgeApi.operations.get(id)
 }
 
+export async function reabrirVisita(id: ID) {
+  await edgeApi.serviceWorkflow.reopenVisitAsAdministrator(id)
+  return edgeApi.operations.get(id)
+}
+
 export async function cambiarEstadoTarea(
   id: ID,
   estado: "cancelada" | "pendiente",
@@ -334,8 +357,7 @@ export async function cambiarEstadoTarea(
     const saved = await services.tareas.update(id, { estado })
     return services.tareas.get(saved.id)
   }
-  if (estado === "pendiente")
-    throw new Error("La reapertura de una visita no está disponible en esta API")
+  if (estado === "pendiente") return reabrirVisita(id)
   return cancelarVisita(id, reason ?? "")
 }
 

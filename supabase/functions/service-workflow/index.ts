@@ -62,7 +62,15 @@ type OperationDetailEnvelope = {
 // `contacto`, `telefono` and `plantas` come from the operation_summary_location_contact
 // migration. They stay optional so this function keeps working before and after it is applied.
 const OPERATION_REQUIRED_KEYS = 10
-const OPERATION_OPTIONAL_KEYS = ["contacto", "telefono", "plantas"] as const
+const OPERATION_OPTIONAL_KEYS = [
+  "contacto",
+  "telefono",
+  "detalle",
+  "tipo",
+  "pd_rto",
+  "orden_trabajo",
+  "plantas",
+] as const
 
 const hasCanonicalSummaryKeys = (value: Record<string, unknown>) => {
   const keys = Object.keys(value)
@@ -586,6 +594,13 @@ export const serviceWorkflowHandler: RouteHandler = async ({
       action_reason: body.reason,
       visit_starts_at: body.starts_at,
       visit_ends_at: body.ends_at,
+    })
+  if (
+    segments[0] === "visits" && request.method === "POST" &&
+    segments[1] && segments[2] === "reopen-administrator"
+  )
+    return db.rpc("api_admin_reopen_visit", {
+      visit_id: segments[1],
     })
   if (
     segments[0] === "visits" && request.method === "POST" &&

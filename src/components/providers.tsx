@@ -5,6 +5,7 @@ import { useState } from "react"
 
 import { Toaster } from "@/components/ui/sonner"
 import { AuthProvider } from "@/lib/auth/auth-provider"
+import { PwaRuntime } from "@/lib/pwa/pwa-runtime"
 import { TooltipProvider } from "@/components/ui/tooltip"
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -20,6 +21,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <PwaRuntime />
         <TooltipProvider>
           {children}
           <Toaster richColors position="top-right" />

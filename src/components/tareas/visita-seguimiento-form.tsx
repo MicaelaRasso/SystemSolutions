@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
@@ -15,7 +15,9 @@ export function VisitaSeguimientoForm({ operation }: { operation: OperationRead 
   const talleres = useTalleres()
   const createVisit = useCreateEdgeFollowupVisit()
   const [valveIds, setValveIds] = useState<string[]>([])
-  const [tallerMovilId, setTallerMovilId] = useState("")
+  const [tallerMovilId, setTallerMovilId] = useState(
+    () => operation.operation.taller_movil?.id ?? "",
+  )
   const [date, setDate] = useState("")
   const [time, setTime] = useState("09:00")
   const requestId = String(operation.visit.visit.solicitud_id ?? "")
@@ -31,10 +33,21 @@ export function VisitaSeguimientoForm({ operation }: { operation: OperationRead 
       )
       .flatMap(({ work_orders }) => work_orders.map((order) => order.valvula_id).filter(Boolean)),
   )
-  const pendingOrders = operation.work_orders.filter(({ work_order }) => work_order.estado === "no_evaluada")
+  const pendingOrders = operation.work_orders.filter(
+    ({ work_order }) => work_order.estado === "no_evaluada",
+  )
   const candidates = pendingOrders.filter(
     ({ work_order }) => !alreadyAssigned.has(work_order.valvula_id ?? ""),
   )
+
+  useEffect(() => {
+    setValveIds((current) => {
+      if (current.length > 0) return current
+      return candidates
+        .map(({ work_order }) => work_order.valvula_id)
+        .filter((id): id is string => Boolean(id))
+    })
+  }, [candidates])
 
   if (!requestId || !sourceVisitId || pendingOrders.length === 0) return null
 
@@ -69,18 +82,21 @@ export function VisitaSeguimientoForm({ operation }: { operation: OperationRead 
   }
 
   return (
-    <section className="max-w-4xl space-y-4 rounded-xl border p-4">
+    <section className="max-w-4xl space-y-4 rounded-xl border border-amber-300/60 bg-amber-50/40 p-4 dark:bg-amber-950/20">
       <div>
-        <h2 className="font-semibold">Programar visita para válvulas pendientes</h2>
+        <h2 className="font-semibold text-amber-950 dark:text-amber-200">
+          Visita no terminada · Programar visita para válvulas pendientes ({pendingOrders.length})
+        </h2>
         <p className="text-sm text-muted-foreground">
-          La nueva visita queda dentro de la Solicitud actual y conserva el historial de esta visita.
+          La nueva visita queda dentro de la Solicitud actual para que el Cliente vea todos sus
+          certificados juntos bajo el mismo servicio.
         </p>
       </div>
       <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
         <fieldset className="space-y-2 sm:col-span-2">
           <legend className="text-sm font-medium">Válvulas no evaluadas</legend>
-          {candidates.map(({ work_order, valve }) => (
-            <label key={work_order.valvula_id} className="flex items-center gap-2 text-sm">
+          {candidates.map(({ work_order, valve, context }) => (
+            <label key={work_order.valvula_id} className="flex flex-wrap items-center gap-2 text-sm">
               <input
                 type="checkbox"
                 checked={valveIds.includes(work_order.valvula_id ?? "")}
@@ -92,12 +108,24 @@ export function VisitaSeguimientoForm({ operation }: { operation: OperationRead 
                   )
                 }
               />
-              {valve.nombre}
+              <span className="font-medium">
+                Válvula {valve.nombre}
+                {context?.equipo?.nombre ? ` · Equipo ${context.equipo.nombre}` : ""}
+              </span>
+              {work_order.no_evaluada_razon ? (
+                <span className="text-xs text-muted-foreground">
+                  ({work_order.no_evaluada_razon})
+                </span>
+              ) : null}
             </label>
           ))}
-          {visits.isPending && <p className="text-xs text-muted-foreground">Comprobando visitas activas…</p>}
+          {visits.isPending && (
+            <p className="text-xs text-muted-foreground">Comprobando visitas activas…</p>
+          )}
           {candidates.length === 0 && (
-            <p className="text-sm text-muted-foreground">Todas las válvulas pendientes ya están asignadas a otra visita activa.</p>
+            <p className="text-sm text-muted-foreground">
+              Todas las válvulas pendientes ya están asignadas a otra visita activa.
+            </p>
           )}
         </fieldset>
         <label className="grid gap-1 text-sm">
@@ -109,24 +137,46 @@ export function VisitaSeguimientoForm({ operation }: { operation: OperationRead 
             className="h-9 rounded-md border bg-background px-3"
           >
             <option value="">Seleccionar taller</option>
-            {(talleres.data ?? []).filter((item) => item.activo).map((item) => (
-              <option key={item.id} value={item.id}>{item.nombre}</option>
-            ))}
+            {(talleres.data ?? [])
+              .filter((item) => item.activo)
+              .map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.nombre}
+                </option>
+              ))}
           </select>
         </label>
         <div className="grid grid-cols-2 gap-2">
           <label className="grid gap-1 text-sm">
             Fecha
-            <input required type="date" value={date} onChange={(event) => setDate(event.target.value)} className="h-9 rounded-md border bg-background px-3" />
+            <input
+              required
+              type="date"
+              value={date}
+              onChange={(event) => setDate(event.target.value)}
+              className="h-9 rounded-md border bg-background px-3"
+            />
           </label>
           <label className="grid gap-1 text-sm">
             Inicio
-            <input required type="time" value={time} onChange={(event) => setTime(event.target.value)} className="h-9 rounded-md border bg-background px-3" />
+            <input
+              required
+              type="time"
+              value={time}
+              onChange={(event) => setTime(event.target.value)}
+              className="h-9 rounded-md border bg-background px-3"
+            />
           </label>
         </div>
-        <p className="text-xs text-muted-foreground sm:col-span-2">Se reserva una ventana inicial de una hora; luego puede ajustarse desde la administración de visitas.</p>
+        <p className="text-xs text-muted-foreground sm:col-span-2">
+          Se reserva una ventana inicial de una hora; luego puede ajustarse desde la administración
+          de visitas.
+        </p>
         <div className="sm:col-span-2">
-          <Button type="submit" disabled={createVisit.isPending || valveIds.length === 0 || candidates.length === 0}>
+          <Button
+            type="submit"
+            disabled={createVisit.isPending || valveIds.length === 0 || candidates.length === 0}
+          >
             {createVisit.isPending ? "Programando…" : "Crear visita de seguimiento"}
           </Button>
         </div>

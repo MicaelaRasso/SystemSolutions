@@ -169,7 +169,7 @@ serveFunction("asset-access", async ({ request, route, body, actor, db, correlat
     const logo = current.data && typeof current.data === "object" ? (current.data as Record<string, unknown>).logo_url : null
     if (logo && typeof logo === "object" && typeof (logo as Record<string, unknown>).bucket === "string" && typeof (logo as Record<string, unknown>).path === "string")
       await removeStorageObject((logo as Record<string, string>).bucket, (logo as Record<string, string>).path)
-    return db.rpc("api_set_client_logo", { target: segments[1], bucket_name: null, object_path: null })
+    return db.rpc("api_set_client_logo", { target: clientId, bucket_name: null, object_path: null })
   }
 
   if (segments[0] === "yacimientos" && request.method === "GET" && !segments[1])
@@ -236,6 +236,16 @@ serveFunction("asset-access", async ({ request, route, body, actor, db, correlat
       asset_clase_salida: body.clase_salida,
       asset_rosca: body.rosca,
       asset_razon_disponibilidad: body.razon_disponibilidad,
+      ...(body.precinto !== undefined ? { asset_precinto: body.precinto } : {}),
+      ...(body.servicio !== undefined ? { asset_servicio: body.servicio } : {}),
+      ...(body.pv !== undefined ? { asset_pv: body.pv } : {}),
+      ...(body.presion_operacion !== undefined
+        ? { asset_presion_operacion: body.presion_operacion }
+        : {}),
+      ...(body.temperatura_operacion !== undefined
+        ? { asset_temperatura_operacion: body.temperatura_operacion }
+        : {}),
+      ...(body.notas !== undefined ? { asset_notas: body.notas } : {}),
     })
   }
 

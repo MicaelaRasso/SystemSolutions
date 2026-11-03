@@ -82,6 +82,7 @@ export class EdgeAccessClient {
   private readonly transport: EdgeTransport
   private readonly auth: (() => BrowserSupabaseClient) | undefined
   private currentUser?: Usuario
+  private inflightContext?: Promise<EdgeContext>
 
   constructor({
     baseUrl,
@@ -246,6 +247,17 @@ export class EdgeAccessClient {
   }
 
   async context(): Promise<EdgeContext> {
+    if (this.inflightContext) return this.inflightContext
+    const promise = this.fetchContext()
+    this.inflightContext = promise
+    try {
+      return await promise
+    } finally {
+      if (this.inflightContext === promise) this.inflightContext = undefined
+    }
+  }
+
+  private async fetchContext(): Promise<EdgeContext> {
     const response = await this.call<EdgeContext | EdgeContext[]>("context")
     const context = Array.isArray(response) ? response[0] : response
     if (!isEdgeContext(context))

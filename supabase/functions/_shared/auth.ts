@@ -8,6 +8,13 @@ export type AuthenticatedActor = {
 
 export type GetUser = (accessToken: string, env: RuntimeEnv) => Promise<{ id: string } | null>
 
+let supabaseJsPromise: Promise<typeof import("https://esm.sh/@supabase/supabase-js@2.117.2")> | undefined
+
+const loadSupabaseJs = () => {
+  supabaseJsPromise ??= import("https://esm.sh/@supabase/supabase-js@2.117.2")
+  return supabaseJsPromise
+}
+
 export const bearerAuthorization = (authorization: string | null) => {
   if (!authorization || !/^Bearer\s+\S+$/i.test(authorization)) return null
   return authorization
@@ -15,7 +22,7 @@ export const bearerAuthorization = (authorization: string | null) => {
 
 const defaultGetUser: GetUser = async (accessToken, env) => {
   try {
-    const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.117.2")
+    const { createClient } = await loadSupabaseJs()
     const client = createClient(env.SUPABASE_URL!, env.SUPABASE_PUBLISHABLE_KEY!, {
       auth: { autoRefreshToken: false, persistSession: false },
     })

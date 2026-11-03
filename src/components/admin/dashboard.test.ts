@@ -31,6 +31,13 @@ describe("dashboard month selection", () => {
 })
 
 describe("AdminDashboard metric states", () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-10-15T12:00:00.000Z"))
+    return () => {
+      vi.useRealTimers()
+    }
+  })
   beforeEach(() => vi.clearAllMocks())
 
   it("shows loading placeholders and Argentina period inputs while metrics load", () => {

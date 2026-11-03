@@ -16,6 +16,20 @@ import type { AdminCertificateFilters } from "@/lib/api/observability"
 const PAGE_SIZE = 50
 const initialFilters: AdminCertificateFilters = { limit: PAGE_SIZE, offset: 0 }
 
+function resolveCertificatePd(certificate: Record<string, unknown>): string {
+  const direct = certificate.pd ?? certificate.parte_diario ?? certificate.parte_diario_codigo
+  if (typeof direct === "string" && direct.trim()) return direct.trim()
+  const custom =
+    certificate.campos_personalizados &&
+    typeof certificate.campos_personalizados === "object" &&
+    !Array.isArray(certificate.campos_personalizados)
+      ? (certificate.campos_personalizados as Record<string, unknown>)
+      : {}
+  const fromCustom = custom.pd_rto ?? custom.pd ?? custom.parte_diario
+  if (typeof fromCustom === "string" && fromCustom.trim()) return fromCustom.trim()
+  return "—"
+}
+
 export function CertificateHistory() {
   const [draft, setDraft] = useState<AdminCertificateFilters>({})
   const [filters, setFilters] = useState<AdminCertificateFilters>(initialFilters)
@@ -47,6 +61,13 @@ export function CertificateHistory() {
       )
     }
   }
+
+  const pdTerm = filters.pd_code?.trim().toLowerCase()
+  const visibleItems = (query.data?.items ?? []).filter((item) => {
+    if (!pdTerm) return true
+    const pdValue = resolveCertificatePd(item as Record<string, unknown>).toLowerCase()
+    return pdValue !== "—" && pdValue.includes(pdTerm)
+  })
 
   return (
     <div className="space-y-6">
@@ -92,6 +113,14 @@ export function CertificateHistory() {
               value={draft.valve_id ?? ""}
               onChange={(event) => set("valve_id", event.target.value.trim())}
               placeholder="UUID"
+            />
+          </CampoFiltro>
+          <CampoFiltro etiqueta="Parte Diario (PD)" htmlFor="cert-pd">
+            <Input
+              id="cert-pd"
+              value={draft.pd_code ?? ""}
+              onChange={(event) => set("pd_code", event.target.value.trim())}
+              placeholder="Ej. PD1234"
             />
           </CampoFiltro>
           <CampoFiltro etiqueta="Estado del Certificado" htmlFor="cert-estado">
@@ -167,16 +196,16 @@ export function CertificateHistory() {
           {downloadError}
         </p>
       )}
-      {query.data?.items.length === 0 && (
+      {query.data && visibleItems.length === 0 && (
         <EmptyState
           titulo="No hay certificados"
           descripcion="No se encontraron registros con los filtros actuales."
         />
       )}
-      {query.data && query.data.items.length > 0 && (
+      {query.data && visibleItems.length > 0 && (
         <>
           <TablaResponsive
-            filas={query.data.items}
+            filas={visibleItems}
             clave={(certificate) => certificate.id}
             desde="lg"
             descripcion="Historial de certificados"
@@ -185,6 +214,15 @@ export function CertificateHistory() {
                 id: "estado",
                 encabezado: "Estado",
                 celda: (certificate) => String(certificate.estado ?? "—"),
+              },
+              {
+                id: "pd",
+                encabezado: "Parte Diario",
+                celda: (certificate) => (
+                  <span className="font-mono text-xs">
+                    {resolveCertificatePd(certificate as Record<string, unknown>)}
+                  </span>
+                ),
               },
               {
                 id: "firmas",
@@ -200,25 +238,25 @@ export function CertificateHistory() {
                 id: "cliente",
                 encabezado: "Cliente",
                 celda: (certificate) =>
-                  String(certificate.cliente_email ?? certificate.cliente_cuenta_id ?? "—"),
+                  String(certificate.cliente_email ?? "—"),
               },
               {
                 id: "valvula",
                 encabezado: "Válvula",
                 celda: (certificate) =>
-                  String(certificate.valvula_nombre ?? certificate.valvula_id ?? "—"),
+                  String(certificate.valvula_nombre ?? "—"),
               },
               {
                 id: "yacimiento",
                 encabezado: "Yacimiento",
                 celda: (certificate) =>
-                  String(certificate.yacimiento_nombre ?? certificate.yacimiento_id ?? "—"),
+                  String(certificate.yacimiento_nombre ?? "—"),
               },
               {
                 id: "planta",
                 encabezado: "Planta/locación",
                 celda: (certificate) =>
-                  String(certificate.planta_nombre ?? certificate.planta_id ?? "—"),
+                  String(certificate.planta_nombre ?? "—"),
               },
               {
                 id: "creado",
@@ -248,13 +286,17 @@ export function CertificateHistory() {
           />
           <div className="flex flex-wrap items-center justify-between gap-4">
             <p className="text-sm text-muted-foreground">
-              {query.data.total} certificados · {query.data.offset + 1}–
-              {query.data.offset + query.data.items.length}
+              Mostrando {(filters.offset ?? 0) + 1}–
+              {Math.min(
+                (filters.offset ?? 0) + visibleItems.length,
+                query.data.total,
+              )}{" "}
+              de {query.data.total}
             </p>
             <div className="flex gap-2">
               <Button
                 variant="outline"
-                disabled={query.data.offset === 0}
+                disabled={(filters.offset ?? 0) === 0}
                 onClick={() =>
                   setFilters((current) => ({
                     ...current,
@@ -266,7 +308,7 @@ export function CertificateHistory() {
               </Button>
               <Button
                 variant="outline"
-                disabled={query.data.offset + query.data.items.length >= query.data.total}
+                disabled={(filters.offset ?? 0) + PAGE_SIZE >= query.data.total}
                 onClick={() =>
                   setFilters((current) => ({
                     ...current,

@@ -1,37 +1,54 @@
 "use client"
 
-import { useMemo, useState } from "react"
 
+import { useEffect, useMemo, useState } from "react"
+
+import { Combobox } from "@/components/common/combobox"
 import { SelectNativo } from "@/components/common/select-nativo"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Field, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import type {
   CertificateCaptureCatalogsDto,
   CertificateOption,
   CertificateOptionValue,
-  CertificateTemplateFieldType,
   CertificateTemplateDto,
+  CertificateTemplateFieldType,
   UpdateCertificateDraftInput,
 } from "@/lib/api/contracts"
 import { CERTIFICATE_EVIDENCE_SECTIONS } from "@/lib/api/certificates"
+import { CATALOGO_SEMILLA } from "@/lib/domain/catalogos"
 
 type EvidenceKey = (typeof CERTIFICATE_EVIDENCE_SECTIONS)[number]["key"]
 
-type TechnicalData = {
+export type TechnicalData = {
+  tag: string
+  precinto: string
+  servicio: string
   marca: string
   numero_serie: string
   modelo: string
   tipo: string
+  pv: string
+  rosca: string
   diametro_entrada: string
   clase_entrada: string
   diametro_salida: string
   clase_salida: string
-  rosca: string
+  presion_operacion: string
+  temperatura_operacion: string
   razon_disponibilidad: "" | "not_applicable" | "not_found"
 }
 
@@ -56,16 +73,21 @@ type FormState = {
 
 type ValveLike = Record<string, unknown>
 
+type CaptureCatalogs = Pick<
+  CertificateCaptureCatalogsDto,
+  | "maintenance"
+  | "replacement_catalog_version"
+  | "replacement_parts"
+  | "units"
+  | "standards"
+> &
+  Partial<
+    Pick<CertificateCaptureCatalogsDto, "diam_entrada" | "diam_salida" | "rosca" | "tipo">
+  >
+
 type CertificateCaptureFormProps = {
   template: CertificateTemplateDto
-  catalogs: Pick<
-    CertificateCaptureCatalogsDto,
-    | "maintenance"
-    | "replacement_catalog_version"
-    | "replacement_parts"
-    | "units"
-    | "standards"
-  >
+  catalogs: CaptureCatalogs
   technicians: { id?: string; name?: string; nombre?: string; apellido?: string }[]
   certificate?: Record<string, unknown>
   valve?: ValveLike
@@ -76,17 +98,41 @@ type CertificateCaptureFormProps = {
 }
 
 const emptyTechnical = (): TechnicalData => ({
+  tag: "",
+  precinto: "",
+  servicio: "",
   marca: "",
   numero_serie: "",
   modelo: "",
   tipo: "",
+  pv: "",
+  rosca: "",
   diametro_entrada: "",
   clase_entrada: "",
   diametro_salida: "",
   clase_salida: "",
-  rosca: "",
+  presion_operacion: "",
+  temperatura_operacion: "",
   razon_disponibilidad: "",
 })
+
+const FIELD_ALIASES: Record<Exclude<keyof TechnicalData, "razon_disponibilidad">, string[]> = {
+  tag: ["tag", "nombre", "name"],
+  precinto: ["precinto"],
+  servicio: ["servicio"],
+  marca: ["marca"],
+  numero_serie: ["numero_serie", "nroSerie", "nro_serie", "serie"],
+  modelo: ["modelo"],
+  tipo: ["tipo"],
+  pv: ["pv", "variable_proceso", "variableProceso"],
+  rosca: ["rosca"],
+  diametro_entrada: ["diametro_entrada", "diamEntrada"],
+  clase_entrada: ["clase_entrada", "claseEntrada"],
+  diametro_salida: ["diametro_salida", "diamSalida"],
+  clase_salida: ["clase_salida", "claseSalida"],
+  presion_operacion: ["presion_operacion", "presionOperacion", "p_operacion"],
+  temperatura_operacion: ["temperatura_operacion", "temperaturaOperacion", "t_operacion"],
+}
 
 function objectValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -96,6 +142,97 @@ function objectValue(value: unknown): Record<string, unknown> {
 
 function textValue(value: unknown) {
   return value === null || value === undefined ? "" : String(value)
+}
+
+function catalogLabels(options: CertificateOption[] | undefined, fallback: string[]): string[] {
+  const labels = (options ?? []).map((item) => item.label.trim()).filter(Boolean)
+  return labels.length > 0 ? labels : fallback
+}
+
+function optionsWithCurrent(options: string[], currentValue: string): string[] {
+  const trimmed = currentValue.trim()
+  if (!trimmed || options.includes(trimmed)) return options
+  return [trimmed, ...options]
+}
+
+function combineDiameterAndClass(diam: string, clase: string, catalogOptions: string[]): string {
+  const d = diam.trim()
+  const c = clase.trim()
+  if (!d) return ""
+  if (!c || d.includes("#")) return d
+  const cleanClass = c.replace(/^#/, "")
+  const candidate1 = `${d}#${cleanClass}`
+  const candidate2 = `${d}"#${cleanClass}`
+  if (catalogOptions.includes(candidate1)) return candidate1
+  if (catalogOptions.includes(candidate2)) return candidate2
+  return candidate1
+}
+
+export function resolveTechnicalData(
+  certificate: Record<string, unknown> | undefined,
+  valve: ValveLike | undefined,
+  catalogs?: CaptureCatalogs,
+): TechnicalData {
+  const certificateTechnical = objectValue(certificate?.datos_tecnicos)
+  const savedTechnical = objectValue(
+    certificateTechnical.valvula ?? certificateTechnical.valve ?? certificateTechnical,
+  )
+  const savedCustom = objectValue(certificate?.campos_personalizados)
+  const contextoCaptura = objectValue(certificate?.contexto_captura)
+  const instantanea = objectValue(certificate?.instantanea)
+  const snapshotValve = {
+    ...objectValue(instantanea.valvula ?? instantanea.valve),
+    ...objectValue(contextoCaptura.valvula ?? contextoCaptura.valve),
+  }
+  const valveProp = objectValue(valve)
+
+  // Priority order for prefilling: explicit draft technical data -> custom fields -> live valve -> snapshot valve.
+  // Empty strings in an uncompleted draft never mask known valve attributes.
+  const sources = [savedTechnical, savedCustom, valveProp, snapshotValve]
+  const pickNonEmpty = (aliases: string[]) => {
+    for (const source of sources) {
+      for (const alias of aliases) {
+        const candidate = textValue(source[alias]).trim()
+        if (candidate !== "") return candidate
+      }
+    }
+    return ""
+  }
+
+  const technical = emptyTechnical()
+  for (const key of Object.keys(FIELD_ALIASES) as (keyof typeof FIELD_ALIASES)[]) {
+    technical[key] = pickNonEmpty(FIELD_ALIASES[key])
+  }
+
+  const diamEntradaCatalog = catalogLabels(catalogs?.diam_entrada, CATALOGO_SEMILLA.diamEntrada)
+  const diamSalidaCatalog = catalogLabels(catalogs?.diam_salida, CATALOGO_SEMILLA.diamSalida)
+
+  if (technical.diametro_entrada && technical.clase_entrada) {
+    technical.diametro_entrada = combineDiameterAndClass(
+      technical.diametro_entrada,
+      technical.clase_entrada,
+      diamEntradaCatalog,
+    )
+    technical.clase_entrada = ""
+  }
+  if (technical.diametro_salida && technical.clase_salida) {
+    technical.diametro_salida = combineDiameterAndClass(
+      technical.diametro_salida,
+      technical.clase_salida,
+      diamSalidaCatalog,
+    )
+    technical.clase_salida = ""
+  }
+
+  for (const source of sources) {
+    const reason = source.razon_disponibilidad ?? source.razonDisponibilidad
+    if (reason === "not_applicable" || reason === "not_found") {
+      technical.razon_disponibilidad = reason
+      break
+    }
+  }
+
+  return technical
 }
 
 function optionValue(
@@ -125,24 +262,14 @@ function normalizeOptions(value: unknown, options: CertificateOption[]) {
 function initialState(
   certificate: Record<string, unknown> | undefined,
   valve: ValveLike | undefined,
-  catalogs: CertificateCaptureFormProps["catalogs"],
+  catalogs: CaptureCatalogs,
 ): FormState {
   const certificateTechnical = objectValue(certificate?.datos_tecnicos)
-  const savedTechnical = objectValue(
-    certificateTechnical.valvula ?? certificateTechnical.valve ?? certificateTechnical,
-  )
   const savedTests = objectValue(certificateTechnical.ensayos ?? certificateTechnical.tests)
   const savedParts = objectValue(certificate?.repuestos)
   const savedCustom = objectValue(certificate?.campos_personalizados)
-  const source = { ...valve, ...savedTechnical }
-  const technical = emptyTechnical()
-  for (const key of Object.keys(technical) as (keyof TechnicalData)[]) {
-    const value = source[key]
-    technical[key] =
-      key === "razon_disponibilidad" && (value === "not_applicable" || value === "not_found")
-        ? value
-        : (textValue(value) as never)
-  }
+  const technical = resolveTechnicalData(certificate, valve, catalogs)
+
   const test = (key: keyof Omit<TestData, "patron">) => {
     const raw = objectValue(savedTests[key])
     return { valor: textValue(raw.valor), unidad: textValue(raw.unidad) }
@@ -176,18 +303,6 @@ function toggleOption(option: CertificateOption, values: CertificateOptionValue[
     ? values.filter((value) => (typeof value === "string" ? value : value.id) !== option.id)
     : [...values, option]
 }
-
-const technicalFields: { key: keyof TechnicalData; label: string }[] = [
-  { key: "marca", label: "Marca" },
-  { key: "numero_serie", label: "Número de serie" },
-  { key: "modelo", label: "Modelo" },
-  { key: "tipo", label: "Tipo" },
-  { key: "diametro_entrada", label: "Diámetro entrada" },
-  { key: "clase_entrada", label: "Clase entrada" },
-  { key: "diametro_salida", label: "Diámetro salida" },
-  { key: "clase_salida", label: "Clase salida" },
-  { key: "rosca", label: "Rosca" },
-]
 
 function fieldValueIsPresent(value: unknown) {
   return (
@@ -307,12 +422,78 @@ export function CertificateCaptureForm({
   onSave,
 }: CertificateCaptureFormProps) {
   const [form, setForm] = useState(() => initialState(certificate, valve, catalogs))
+  const technicianNames = useMemo(
+    () =>
+      technicians
+        .map((person) => [person.name ?? person.nombre, person.apellido].filter(Boolean).join(" "))
+        .filter(Boolean),
+    [technicians],
+  )
+  const [customTechnician, setCustomTechnician] = useState(
+    () =>
+      Boolean(form.tecnico_ejecutor) &&
+      technicians.length > 0 &&
+      !technicians.some(
+        (person) =>
+          [person.name ?? person.nombre, person.apellido].filter(Boolean).join(" ") ===
+          form.tecnico_ejecutor,
+      ),
+  )
   const [replacementCatalogVersion] = useState(() => {
     const savedParts = objectValue(certificate?.repuestos)
     const savedVersion = textValue(savedParts.catalog_version).trim()
     return savedVersion || catalogs.replacement_catalog_version
   })
   const [errors, setErrors] = useState<string[]>([])
+
+  // Auto-complete any technical field that is still empty if pre-existing valve or draft data arrives.
+  useEffect(() => {
+    const resolved = resolveTechnicalData(certificate, valve, catalogs)
+    setForm((current) => {
+      let changed = false
+      const nextTechnical = { ...current.technical }
+      for (const key of Object.keys(nextTechnical) as (keyof TechnicalData)[]) {
+        if (!nextTechnical[key] && resolved[key]) {
+          nextTechnical[key] = resolved[key] as never
+          changed = true
+        }
+      }
+      return changed ? { ...current, technical: nextTechnical } : current
+    })
+  }, [catalogs, certificate, valve])
+
+  const opcionesTipo = useMemo(
+    () =>
+      optionsWithCurrent(
+        catalogLabels(catalogs.tipo, CATALOGO_SEMILLA.tipo),
+        form.technical.tipo,
+      ),
+    [catalogs.tipo, form.technical.tipo],
+  )
+  const opcionesRosca = useMemo(
+    () =>
+      optionsWithCurrent(
+        catalogLabels(catalogs.rosca, CATALOGO_SEMILLA.rosca),
+        form.technical.rosca,
+      ),
+    [catalogs.rosca, form.technical.rosca],
+  )
+  const opcionesDiamEntrada = useMemo(
+    () =>
+      optionsWithCurrent(
+        catalogLabels(catalogs.diam_entrada, CATALOGO_SEMILLA.diamEntrada),
+        form.technical.diametro_entrada,
+      ),
+    [catalogs.diam_entrada, form.technical.diametro_entrada],
+  )
+  const opcionesDiamSalida = useMemo(
+    () =>
+      optionsWithCurrent(
+        catalogLabels(catalogs.diam_salida, CATALOGO_SEMILLA.diamSalida),
+        form.technical.diametro_salida,
+      ),
+    [catalogs.diam_salida, form.technical.diametro_salida],
+  )
 
   const customFields = useMemo(
     () =>
@@ -354,11 +535,36 @@ export function CertificateCaptureForm({
 
   function save() {
     if (!validate()) return
+
+    const allowedCustomKeys = new Set(template.campos.map((c) => c.clave))
+    const cleanCustomFields: Record<string, unknown> = {}
+    for (const [key, val] of Object.entries(form.customFields)) {
+      if (allowedCustomKeys.has(key)) {
+        cleanCustomFields[key] = val
+      }
+    }
+
+    const cleanMaintenance = form.maintenance.map((item) =>
+      typeof item === "string" ? item : { id: item.id, label: item.label },
+    )
+
+    const cleanReplacements = form.replacements.map((item) =>
+      typeof item === "string" ? item : { id: item.id, label: item.label },
+    )
+
+    const cleanPatron = form.tests.patron
+      ? { id: form.tests.patron.id, label: form.tests.patron.label }
+      : null
+
     onSave({
       fecha_ejecucion: form.fecha_ejecucion,
       tecnico_ejecutor: form.tecnico_ejecutor,
       datos_tecnicos: {
-        valvula: form.technical,
+        valvula: {
+          ...form.technical,
+          tag: form.technical.tag.trim().toUpperCase(),
+          razon_disponibilidad: form.technical.razon_disponibilidad || null,
+        },
         ensayos: {
           sp_inicial: {
             valor: Number(form.tests.sp_inicial.valor),
@@ -372,14 +578,14 @@ export function CertificateCaptureForm({
             valor: Number(form.tests.presion_cierre.valor),
             unidad: form.tests.presion_cierre.unidad,
           },
-          patron: form.tests.patron,
+          patron: cleanPatron,
         },
       },
-      campos_personalizados: form.customFields,
-      alcance_mantenimiento: form.maintenance,
+      campos_personalizados: cleanCustomFields,
+      alcance_mantenimiento: cleanMaintenance,
       repuestos: {
         catalog_version: replacementCatalogVersion,
-        items: form.replacements,
+        items: cleanReplacements,
         otros: form.otherParts.trim() || null,
       },
       evidencia_fotografica: {
@@ -440,26 +646,50 @@ export function CertificateCaptureForm({
           <div className="space-y-1">
             <Label htmlFor="certificate-technician">Técnico ejecutor *</Label>
             {technicians.length ? (
-              <SelectNativo
-                id="certificate-technician"
-                value={form.tecnico_ejecutor}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, tecnico_ejecutor: event.target.value }))
-                }
-                disabled={disabled}
-              >
-                <option value="">Seleccionar Técnico</option>
-                {technicians.map((person) => {
-                  const name = [person.name ?? person.nombre, person.apellido]
-                    .filter(Boolean)
-                    .join(" ")
-                  return (
-                    <option key={person.id ?? name} value={name}>
+              <div className="space-y-2">
+                <SelectNativo
+                  id="certificate-technician"
+                  value={
+                    customTechnician
+                      ? "__otro__"
+                      : technicianNames.includes(form.tecnico_ejecutor)
+                        ? form.tecnico_ejecutor
+                        : ""
+                  }
+                  onChange={(event) => {
+                    const value = event.target.value
+                    if (value === "__otro__") {
+                      setCustomTechnician(true)
+                      if (technicianNames.includes(form.tecnico_ejecutor)) {
+                        setForm((current) => ({ ...current, tecnico_ejecutor: "" }))
+                      }
+                      return
+                    }
+                    setCustomTechnician(false)
+                    setForm((current) => ({ ...current, tecnico_ejecutor: value }))
+                  }}
+                  disabled={disabled}
+                >
+                  <option value="">Seleccionar Técnico</option>
+                  {technicianNames.map((name) => (
+                    <option key={name} value={name}>
                       {name}
                     </option>
-                  )
-                })}
-              </SelectNativo>
+                  ))}
+                  <option value="__otro__">Otro técnico / Reemplazo…</option>
+                </SelectNativo>
+                {customTechnician ? (
+                  <Input
+                    id="certificate-technician-custom"
+                    value={form.tecnico_ejecutor}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, tecnico_ejecutor: event.target.value }))
+                    }
+                    placeholder="Nombre y apellido del técnico reemplazante"
+                    disabled={disabled}
+                  />
+                ) : null}
+              </div>
             ) : (
               <Input
                 id="certificate-technician"
@@ -483,24 +713,190 @@ export function CertificateCaptureForm({
       <Card size="sm">
         <CardHeader>
           <CardTitle className="text-sm">Datos técnicos de la Válvula</CardTitle>
-          <CardDescription>
-            Se precargan los datos conocidos; podés indicar si un dato no está disponible o no
-            aplica.
-          </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2">
-          {technicalFields.map(({ key, label }) => (
-            <div key={key} className="space-y-1">
-              <Label htmlFor={`certificate-technical-${key}`}>{label}</Label>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field>
+              <FieldLabel htmlFor="certificate-technical-tag">TAG</FieldLabel>
               <Input
-                id={`certificate-technical-${key}`}
-                value={form.technical[key]}
-                onChange={(event) => updateTechnical(key, event.target.value)}
+                id="certificate-technical-tag"
+                value={form.technical.tag}
+                placeholder="PSV-2752"
+                onChange={(event) => updateTechnical("tag", event.target.value)}
                 disabled={disabled}
               />
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="certificate-technical-precinto">Precinto</FieldLabel>
+              <Input
+                id="certificate-technical-precinto"
+                value={form.technical.precinto}
+                onChange={(event) => updateTechnical("precinto", event.target.value)}
+                disabled={disabled}
+              />
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="certificate-technical-servicio">Servicio</FieldLabel>
+              <Input
+                id="certificate-technical-servicio"
+                value={form.technical.servicio}
+                placeholder="GAS COMBUSTIBLE"
+                onChange={(event) => updateTechnical("servicio", event.target.value)}
+                disabled={disabled}
+              />
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="certificate-technical-marca">Marca</FieldLabel>
+              <Input
+                id="certificate-technical-marca"
+                value={form.technical.marca}
+                onChange={(event) => updateTechnical("marca", event.target.value)}
+                disabled={disabled}
+              />
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="certificate-technical-numero_serie">N° de serie</FieldLabel>
+              <Input
+                id="certificate-technical-numero_serie"
+                value={form.technical.numero_serie}
+                onChange={(event) => updateTechnical("numero_serie", event.target.value)}
+                disabled={disabled}
+              />
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="certificate-technical-modelo">Modelo</FieldLabel>
+              <Input
+                id="certificate-technical-modelo"
+                value={form.technical.modelo}
+                onChange={(event) => updateTechnical("modelo", event.target.value)}
+                disabled={disabled}
+              />
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="certificate-technical-tipo">Tipo de funcionamiento</FieldLabel>
+              <Select
+                value={form.technical.tipo}
+                onValueChange={(value) => updateTechnical("tipo", value)}
+                disabled={disabled}
+              >
+                <SelectTrigger id="certificate-technical-tipo" className="w-full">
+                  <SelectValue placeholder="Seleccionar">
+                    {form.technical.tipo || undefined}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {opcionesTipo.map((opcion) => (
+                    <SelectItem key={opcion} value={opcion}>
+                      {opcion}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="certificate-technical-pv">PV (variable de proceso)</FieldLabel>
+              <Input
+                id="certificate-technical-pv"
+                value={form.technical.pv}
+                placeholder="GAS"
+                onChange={(event) => updateTechnical("pv", event.target.value)}
+                disabled={disabled}
+              />
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="certificate-technical-rosca">Rosca</FieldLabel>
+              <Select
+                value={form.technical.rosca}
+                onValueChange={(value) => updateTechnical("rosca", value)}
+                disabled={disabled}
+              >
+                <SelectTrigger id="certificate-technical-rosca" className="w-full">
+                  <SelectValue placeholder="Seleccionar">
+                    {form.technical.rosca || undefined}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {opcionesRosca.map((opcion) => (
+                    <SelectItem key={opcion} value={opcion}>
+                      {opcion}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="certificate-technical-diametro_entrada">
+                Ø Entrada / #
+              </FieldLabel>
+              <Combobox
+                id="certificate-technical-diametro_entrada"
+                value={form.technical.diametro_entrada}
+                onChange={(value) => updateTechnical("diametro_entrada", value)}
+                opciones={opcionesDiamEntrada}
+                placeholder="Seleccionar medida"
+                buscar="Buscar medida…"
+                disabled={disabled}
+              />
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="certificate-technical-diametro_salida">
+                Ø Salida / #
+              </FieldLabel>
+              <Combobox
+                id="certificate-technical-diametro_salida"
+                value={form.technical.diametro_salida}
+                onChange={(value) => updateTechnical("diametro_salida", value)}
+                opciones={opcionesDiamSalida}
+                placeholder="Seleccionar medida"
+                buscar="Buscar medida…"
+                disabled={disabled}
+              />
+            </Field>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Field>
+                <FieldLabel htmlFor="certificate-technical-presion_operacion">
+                  P. operación
+                </FieldLabel>
+                <Input
+                  id="certificate-technical-presion_operacion"
+                  inputMode="decimal"
+                  placeholder="kg/cm²"
+                  value={form.technical.presion_operacion}
+                  onChange={(event) => updateTechnical("presion_operacion", event.target.value)}
+                  disabled={disabled}
+                />
+              </Field>
+
+              <Field>
+                <FieldLabel htmlFor="certificate-technical-temperatura_operacion">
+                  T° operación
+                </FieldLabel>
+                <Input
+                  id="certificate-technical-temperatura_operacion"
+                  inputMode="decimal"
+                  placeholder="°C"
+                  value={form.technical.temperatura_operacion}
+                  onChange={(event) =>
+                    updateTechnical("temperatura_operacion", event.target.value)
+                  }
+                  disabled={disabled}
+                />
+              </Field>
             </div>
-          ))}
-          <div className="space-y-1 sm:col-span-2">
+          </div>
+
+          <div className="space-y-1">
             <Label htmlFor="certificate-technical-availability">
               Disponibilidad de datos técnicos
             </Label>
@@ -587,7 +983,7 @@ export function CertificateCaptureForm({
         <CardHeader>
           <CardTitle className="text-sm">Mantenimiento y repuestos</CardTitle>
           <CardDescription>
-            Elegí opciones activas; los certificados guardan el ID y el texto mostrado.
+
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

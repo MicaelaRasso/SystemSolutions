@@ -11,7 +11,7 @@ import {
 } from "./certificado-vista"
 
 /**
- * Certificado SYS en formato A4, fiel al modelo (secciones 1.0 a 1.8 y pie legal).
+ * Certificado SYS en formato A4, fiel al modelo (secciones 1.0 a 1.5, Anexo fotográfico y pie legal).
  * Presentacional: recibe el modelo de vista ya armado y no consulta datos.
  */
 export function CertificadoDocumento({
@@ -150,11 +150,7 @@ export function CertificadoDocumento({
         </div>
       </Seccion>
 
-      <Seccion numero="1.2" titulo="FOTO VÁLVULA DESARMADA">
-        <Fotos fotos={fotos.desarmada} descripcion="Válvula desarmada" pares />
-      </Seccion>
-
-      <Seccion numero="1.3" titulo="MANTENIMIENTO">
+      <Seccion numero="1.2" titulo="MANTENIMIENTO">
         <div className="grid grid-cols-2 gap-x-[8mm]">
           <Casillas titulo="ALCANCE" items={mantenimiento.alcance} />
           <Casillas
@@ -165,11 +161,7 @@ export function CertificadoDocumento({
         </div>
       </Seccion>
 
-      <Seccion numero="1.4" titulo="FOTO VÁLVULA ARMADA PARA ENSAYOS">
-        <Fotos fotos={fotos.ensamblada_prueba} descripcion="Válvula armada para ensayos" />
-      </Seccion>
-
-      <Seccion numero="1.5" titulo="ENSAYOS">
+      <Seccion numero="1.3" titulo="ENSAYOS">
         <div className="grid grid-cols-[1fr_auto] gap-x-[6mm]">
           <table className="border-separate border-spacing-y-[0.8mm]">
             <thead>
@@ -216,11 +208,7 @@ export function CertificadoDocumento({
         </dl>
       </Seccion>
 
-      <Seccion numero="1.6" titulo="FOTO VÁLVULA ARMADA CON CHAPA Y PRECINTO">
-        <Fotos fotos={fotos.placa_precinto} descripcion="Válvula armada con chapa y precinto" />
-      </Seccion>
-
-      <Seccion numero="1.7" titulo="OBSERVACIONES">
+      <Seccion numero="1.4" titulo="OBSERVACIONES">
         <p className="mx-[10mm] min-h-[20mm] bg-[linear-gradient(to_bottom,transparent_calc(5mm-1px),var(--color-zinc-300)_calc(5mm-1px))] bg-[length:100%_5mm] text-[8pt] leading-[5mm] whitespace-pre-line">
           {vista.observaciones === SIN_DATO ? "" : vista.observaciones}
         </p>
@@ -239,7 +227,7 @@ export function CertificadoDocumento({
         )}
       </Seccion>
 
-      <Seccion numero="1.8" titulo="APROBACIÓN">
+      <Seccion numero="1.5" titulo="APROBACIÓN">
         <div className="grid grid-cols-2 gap-x-[12mm] px-[6mm]">
           <Firma titulo="POR SYSTEM SOLUTIONS" firma={firmas.tecnico} />
           <Firma titulo="POR CLIENTE" firma={firmas.cliente} />
@@ -253,6 +241,39 @@ export function CertificadoDocumento({
           />
         </dl>
       </Seccion>
+
+      <section aria-label="Anexo fotográfico" className="mt-[2mm] border-t-2 border-cert-linea pt-[3mm]">
+        <div data-certificado-seccion className="pb-[4mm]">
+          <h3 className="mb-[2.5mm] border-b border-cert-linea pb-[0.8mm] text-[8pt] font-bold tracking-wide uppercase">
+            ANEXO — REGISTRO FOTOGRÁFICO
+          </h3>
+          <h4 className="mb-[2mm] text-[7.5pt] font-bold">FOTO VÁLVULA DESARMADA</h4>
+          <Fotos fotos={fotos.desarmada} descripcion="Válvula desarmada" pares />
+        </div>
+
+        <div data-certificado-seccion className="pb-[4mm]">
+          <h4 className="mb-[2mm] border-b border-cert-linea pb-[0.8mm] text-[7.5pt] font-bold">
+            FOTO VÁLVULA ARMADA PARA ENSAYOS
+          </h4>
+          <Fotos fotos={fotos.ensamblada_prueba} descripcion="Válvula armada para ensayos" />
+        </div>
+
+        <div data-certificado-seccion className="pb-[4mm]">
+          <h4 className="mb-[2mm] border-b border-cert-linea pb-[0.8mm] text-[7.5pt] font-bold">
+            FOTO VÁLVULA ARMADA CON CHAPA Y PRECINTO
+          </h4>
+          <Fotos fotos={fotos.placa_precinto} descripcion="Válvula armada con chapa y precinto" />
+        </div>
+
+        {vista.fotosParteDiario && vista.fotosParteDiario.length > 0 && (
+          <div data-certificado-seccion className="pb-[4mm]">
+            <h4 className="mb-[2mm] border-b border-cert-linea pb-[0.8mm] text-[7.5pt] font-bold">
+              FOTO PARTE DIARIO {vista.pdRto !== SIN_DATO ? `(${vista.pdRto})` : ""}
+            </h4>
+            <Fotos fotos={vista.fotosParteDiario} descripcion="Parte diario" />
+          </div>
+        )}
+      </section>
 
       <footer
         data-certificado-seccion

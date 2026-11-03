@@ -80,6 +80,7 @@ export interface CertificadoVista {
     ejecuto: string
   }
   fotos: Record<ClaveFoto, FotoVista[]>
+  fotosParteDiario?: FotoVista[]
   observaciones: string
   /** Personal del taller en la visita (RF-27, RF-38), si el backend lo informa. */
   nomina: string
@@ -168,7 +169,7 @@ const ALIAS: Record<string, string[]> = {
   pv: ["pv", "variableproceso", "variabledeproceso"],
   presionOperacion: ["presionoperacion", "presiondeoperacion", "poperacion"],
   temperaturaOperacion: ["temperaturaoperacion", "temperaturadeoperacion", "toperacion"],
-  pdRto: ["pdrto"],
+  pdRto: ["pdrto", "pd", "partediario", "partediariocodigo", "codigopartediario"],
   ordenTrabajo: ["ordentrabajo", "ordendetrabajo", "nroordentrabajo", "ot"],
 }
 
@@ -272,7 +273,10 @@ export function armarCertificadoVista(fuente: CertificadoFuente): CertificadoVis
   const valvula: CertificadoVista["valvula"] = {
     precinto: buscar("precinto"),
     servicio: buscar("servicio"),
-    tag: textoDe(valvulaContexto.nombre ?? valvulaContexto.tag) ?? SIN_DATO,
+    tag:
+      textoDe(capturada.tag ?? capturada.nombre) ??
+      textoDe(valvulaContexto.nombre ?? valvulaContexto.tag) ??
+      SIN_DATO,
     marca: tecnicoVisible("marca"),
     serie: tecnicoVisible("numero_serie"),
     modelo: tecnicoVisible("modelo"),
@@ -284,8 +288,27 @@ export function armarCertificadoVista(fuente: CertificadoFuente): CertificadoVis
     presionOperacion: buscar("presionOperacion"),
     temperaturaOperacion: buscar("temperaturaOperacion"),
   }
-  const pdRto = buscar("pdRto")
-  const ordenTrabajo = buscar("ordenTrabajo")
+  const pdRto =
+    textoDe(
+      cert.pd ??
+        cert.parte_diario ??
+        cert.parte_diario_codigo ??
+        contexto.pd ??
+        contexto.parte_diario,
+    ) ?? buscar("pdRto")
+  const rawOt =
+    textoDe(
+      cert.orden_trabajo ??
+        cert.ordenTrabajo ??
+        cert.ot ??
+        contexto.orden_trabajo ??
+        contexto.ordenTrabajo ??
+        contexto.ot,
+    ) ?? buscar("ordenTrabajo")
+  const esUuidOt = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    rawOt.trim(),
+  )
+  const ordenTrabajo = esUuidOt ? SIN_DATO : rawOt
 
   const adicionales = Object.entries(personalizados)
     .filter(([clave]) => !usados.has(clave) && !CLAVES_PROPIAS.has(normalizarClave(clave)))
@@ -302,6 +325,10 @@ export function armarCertificadoVista(fuente: CertificadoFuente): CertificadoVis
       ? propias
       : imagenes.filter((img) => registro(img).categoria === clave).flatMap(fotosDe)
   }
+  const propiasPd = fotosDe(evidencia.parte_diario ?? cert.parte_diario_images)
+  const fotosParteDiario = propiasPd.length
+    ? propiasPd
+    : imagenes.filter((img) => registro(img).categoria === "parte_diario").flatMap(fotosDe)
 
   const repuestos = registro(cert.repuestos)
   const patron = registro(pruebas.patron)
@@ -354,6 +381,7 @@ export function armarCertificadoVista(fuente: CertificadoFuente): CertificadoVis
       ejecuto: texto(cert.tecnico_ejecutor),
     },
     fotos,
+    fotosParteDiario,
     observaciones: texto(cert.observaciones),
     nomina: texto(cert.nomina ?? contexto.nomina ?? cert.personal_taller),
     adicionales,

@@ -21,9 +21,15 @@ export function infoCronograma(t: TareaResumen) {
   }
 }
 
-/** Datos extra de la tarjeta de la agenda: taller móvil asignado y planta a la que se va. */
+/** Datos extra de la tarjeta de la agenda: taller móvil asignado, planta, contacto y teléfono. */
 export function infoAgenda(t: TareaResumen) {
-  return { taller: limpio(t.tallerNombre) || "Sin asignar", planta: locacion(t) }
+  return {
+    taller: limpio(t.tallerNombre) || "Sin asignar",
+    planta: locacion(t),
+    contacto: limpio(t.contacto),
+    telefono: limpio(t.telefono),
+    detalle: limpio(t.detalle),
+  }
 }
 
 /** Enlace `tel:` para llamar desde el celular; `undefined` si el texto no tiene dígitos. */

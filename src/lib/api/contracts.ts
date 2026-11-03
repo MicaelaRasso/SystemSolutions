@@ -75,6 +75,12 @@ export const valveTechnicalFieldsSchema = z.object({
   clase_salida: z.string().nullable(),
   rosca: z.string().nullable(),
   razon_disponibilidad: valveAvailabilityReasonSchema.nullable(),
+  precinto: z.string().nullable().optional(),
+  servicio: z.string().nullable().optional(),
+  pv: z.string().nullable().optional(),
+  presion_operacion: z.number().nullable().optional(),
+  temperatura_operacion: z.number().nullable().optional(),
+  notas: z.string().nullable().optional(),
 })
 export const valveDetailDtoSchema = z
   .object({
@@ -208,6 +214,10 @@ export const certificateCaptureCatalogsSchema = z.object({
   replacement_parts: z.array(certificateOptionSchema),
   units: z.array(certificateOptionSchema),
   standards: z.array(certificateStandardOptionSchema),
+  diam_entrada: z.array(certificateOptionSchema).optional(),
+  diam_salida: z.array(certificateOptionSchema).optional(),
+  rosca: z.array(certificateOptionSchema).optional(),
+  tipo: z.array(certificateOptionSchema).optional(),
 })
 export type CertificateCaptureCatalogsDto = z.infer<typeof certificateCaptureCatalogsSchema>
 
@@ -467,6 +477,32 @@ export const visitSignatureDtoSchema = z.object({
   finalized_certificates: z.array(certificateRowSchema),
 })
 
+export const visitParteDiarioImageDtoSchema = z
+  .object({
+    id: edgeIdSchema,
+    bucket: z.string(),
+    object_path: z.string(),
+    categoria: z.string().optional(),
+    download_path: z.string().optional(),
+  })
+  .passthrough()
+
+export const visitParteDiarioDtoSchema = z
+  .object({
+    visit_id: edgeIdSchema,
+    codigo: z.string().nullable(),
+    images: z.array(visitParteDiarioImageDtoSchema),
+  })
+  .passthrough()
+export type VisitParteDiarioDto = z.infer<typeof visitParteDiarioDtoSchema>
+
+export const visitParteDiarioImageRegisterDtoSchema = z
+  .object({
+    image_id: edgeIdSchema,
+    pd_code: z.string(),
+  })
+  .passthrough()
+
 export const offlineOperationInputSchema = z.object({
   operationId: edgeIdSchema,
   kind: z.enum([
@@ -481,6 +517,8 @@ export const offlineOperationInputSchema = z.object({
     "start_visit",
     "claim_visit",
     "complete_visit",
+    "set_part_diario",
+    "attach_part_diario_image",
   ]),
   payload: z.record(z.string(), z.unknown()),
   idempotencyKey: edgeIdSchema.optional(),
@@ -685,6 +723,10 @@ export const operationSummarySchema = z
     // el front siga funcionando contra un backend que todavía no la aplicó.
     contacto: z.string().optional(),
     telefono: z.string().optional(),
+    detalle: z.string().optional(),
+    tipo: z.string().optional(),
+    pd_rto: z.string().nullable().optional(),
+    orden_trabajo: z.string().nullable().optional(),
     plantas: z
       .object({
         id: edgeIdSchema,

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest"
 
-import { ESTADO_OPERACION_A_TAREA, puedeCancelarVisitaAdministrativa, puedeEditarProgramacion } from "./estado-operacion"
+import {
+  ESTADO_OPERACION_A_TAREA,
+  puedeCancelarVisitaAdministrativa,
+  puedeEditarProgramacion,
+  puedeEvaluarOrden,
+} from "./estado-operacion"
 
 describe("canonical Visita state in Tarea presentation", () => {
   it("keeps scheduled and accepted visits distinct", () => {
@@ -18,5 +23,11 @@ describe("canonical Visita state in Tarea presentation", () => {
     expect(puedeCancelarVisitaAdministrativa("en_curso")).toBe(false)
     expect(puedeEditarProgramacion("programada")).toBe(true)
     expect(puedeEditarProgramacion("aceptada")).toBe(false)
+  })
+
+  it("restricts work order evaluation when visit is cancelled", () => {
+    expect(puedeEvaluarOrden("cancelada")).toBe(false)
+    expect(puedeEvaluarOrden("programada")).toBe(true)
+    expect(puedeEvaluarOrden("en_curso")).toBe(true)
   })
 })

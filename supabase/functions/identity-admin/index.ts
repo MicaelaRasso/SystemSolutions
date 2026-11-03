@@ -103,11 +103,11 @@ export const completeAdminPasswordRecovery = async (
   return { data: { sent: true }, error: null }
 }
 
-export const identityAdminHandler: RouteHandler = async ({ request, route, body, actor, db, correlationId }) => {
-  if (route.length === 0 || route[0] === "context") return db.rpc("api_context")
+export const identityAdminHandler: RouteHandler = async ({ request, route, body, actor, db, correlationId, accountContext }) => {
+  if (route.length === 0 || route[0] === "context") return accountContext ?? db.rpc("api_context")
 
   if (route[0] === "account-security" && route[1] === "email-change" && request.method === "PUT" && route.length === 2) {
-    const contextResult = await accountRpc(db, "api_context")
+    const contextResult = accountContext ? normalizeRpcResult(accountContext) : await accountRpc(db, "api_context")
     if (contextResult.error) return contextResult
     const contextRows = Array.isArray(contextResult.data)
       ? contextResult.data

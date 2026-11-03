@@ -264,6 +264,8 @@ const editableAfterCompletion = new Set([
   "capture_evidence",
   "upload_evidence",
   "upload_photo",
+  "set_part_diario",
+  "attach_part_diario_image",
 ])
 
 const retryDelayMs = (attempts: number) =>
@@ -277,6 +279,7 @@ const mediaOperationKinds = new Set([
   "upload_evidence",
   "upload_photo",
   "submit_signature",
+  "attach_part_diario_image",
 ])
 
 const hasUploadedReference = (payload: Record<string, unknown>) =>

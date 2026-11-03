@@ -35,7 +35,11 @@ import type { OperationRead } from "@/lib/hooks/queries"
 import { EstadoTareaBadge, TallerChip } from "./badges"
 import { TareaForm } from "./tarea-form"
 import { convertirOperacionATarea } from "./tarea-sheet"
-import { puedeCancelarVisitaAdministrativa, puedeEditarProgramacion } from "./estado-operacion"
+import {
+  puedeCancelarVisitaAdministrativa,
+  puedeEditarProgramacion,
+  puedeEvaluarOrden,
+} from "./estado-operacion"
 import { VisitaSeguimientoForm } from "./visita-seguimiento-form"
 
 export function TareaDetalle({ id }: { id: string }) {
@@ -138,14 +142,14 @@ export function TareaDetalle({ id }: { id: string }) {
             <span>Solicitada el {fmtFecha(tarea.fechaSolicitud)}</span>
           </p>
         </div>
-        {tarea.estado === "cancelada" && !supabase ? (
+        {tarea.estado === "cancelada" ? (
           <Button
             variant="outline"
             disabled={cambiarEstado.isPending}
             onClick={() => cambiarEstado.mutate({ estado: "pendiente" })}
           >
             <RotateCcw />
-            Reabrir tarea
+            Reactivar tarea
           </Button>
         ) : (
           cancelable &&
@@ -200,6 +204,15 @@ export function TareaDetalle({ id }: { id: string }) {
 }
 
 function OrdenesTrabajo({ operation }: { operation: OperationRead }) {
+  const metadata = (operation.request?.request?.metadata ?? {}) as Record<string, unknown>
+  const rawOt = typeof metadata.orden_trabajo === "string" ? metadata.orden_trabajo.trim() : ""
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawOt)
+  const otGeneral = !isUuid && rawOt ? rawOt : undefined
+
+  const puedeEvaluar =
+    puedeEvaluarOrden(operation.operation.estado) &&
+    puedeEvaluarOrden(operation.visit.visit.estado)
+
   const add = useAddEdgeWorkOrder()
   const update = useUpdateEdgeWorkOrder()
   const visits = useEdgeVisits()
@@ -257,14 +270,19 @@ function OrdenesTrabajo({ operation }: { operation: OperationRead }) {
                   <p className="text-sm font-medium">{valve.name}</p>
                   {entry && (
                     <p className="text-xs text-muted-foreground">
-                      OT {entry.work_order.id} · {entry.work_order.estado ?? "pendiente"}
+                      {otGeneral ? `OT ${otGeneral} · ` : ""}
+                      <span className="capitalize">
+                        {entry.work_order.estado === "no_evaluada"
+                          ? "No evaluada"
+                          : entry.work_order.estado ?? "pendiente"}
+                      </span>
                     </p>
                   )}
                 </div>
                 {entry ? (
                   <div className="space-y-2">
                     <div className="flex flex-wrap gap-2">
-                      {entry.work_order.estado !== "evaluada" && (
+                      {entry.work_order.estado !== "evaluada" && puedeEvaluar && (
                         <Button
                           size="sm"
                           variant="outline"
@@ -280,7 +298,7 @@ function OrdenesTrabajo({ operation }: { operation: OperationRead }) {
                           Marcar evaluada
                         </Button>
                       )}
-                      {entry.work_order.estado !== "no_evaluada" && (
+                      {entry.work_order.estado !== "no_evaluada" && puedeEvaluar && (
                         <NoEvaluadaButton
                           disabled={update.isPending}
                           onSubmit={(reason) =>
@@ -292,9 +310,11 @@ function OrdenesTrabajo({ operation }: { operation: OperationRead }) {
                         />
                       )}
                     </div>
-                    <CertificateDraft workOrderId={entry.work_order.id} />
+                    {puedeEvaluar && (
+                      <CertificateDraft workOrderId={entry.work_order.id} valve={entry.valve} />
+                    )}
                   </div>
-                ) : (
+                ) : puedeEvaluar ? (
                   <Button
                     size="sm"
                     variant="outline"
@@ -304,7 +324,7 @@ function OrdenesTrabajo({ operation }: { operation: OperationRead }) {
                   >
                     Agregar orden
                   </Button>
-                )}
+                ) : null}
               </li>
             )
           })}
@@ -324,7 +344,13 @@ function OrdenesTrabajo({ operation }: { operation: OperationRead }) {
   )
 }
 
-function CertificateDraft({ workOrderId }: { workOrderId: string }) {
+function CertificateDraft({
+  workOrderId,
+  valve,
+}: {
+  workOrderId: string
+  valve?: Record<string, unknown>
+}) {
   const [certificateId, setCertificateId] = useState<string>()
   const start = useStartEdgeCertificateDraft()
   const draft = useEdgeCertificateDraft(certificateId)
@@ -369,6 +395,7 @@ function CertificateDraft({ workOrderId }: { workOrderId: string }) {
               catalogs={catalogs.data}
               technicians={[]}
               certificate={draft.data.certificate}
+              valve={valve}
               disabled={
                 String((draft.data.certificate as Record<string, unknown>).estado_captura) ===
                 "cerrado"

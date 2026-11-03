@@ -12,6 +12,8 @@ import {
   visitAdministrationInputSchema,
   visitAssignmentInputSchema,
   visitDtoSchema,
+  visitParteDiarioDtoSchema,
+  visitParteDiarioImageRegisterDtoSchema,
   visitTransitionDtoSchema,
   workOrderDtoSchema,
   certificateDraftDtoSchema,
@@ -30,6 +32,7 @@ export const serviceWorkflowQueryKeys = {
   request: (requestId: string) => [...serviceWorkflowQueryKeys.requests(), requestId] as const,
   visits: () => [...serviceWorkflowQueryKeys.all, "visits"] as const,
   visit: (visitId: string) => [...serviceWorkflowQueryKeys.visits(), visitId] as const,
+  parteDiario: (visitId: string) => [...serviceWorkflowQueryKeys.visit(visitId), "parte-diario"] as const,
 }
 
 export const serviceWorkflowInvalidations = [serviceWorkflowQueryKeys.all] as const
@@ -60,6 +63,57 @@ export function createServiceWorkflowApi(edge: EdgeAccessClient) {
       return edge.request(
         `visits/${encodeURIComponent(visitId)}/attachments`,
         attachmentDtoSchema.array(),
+      )
+    },
+
+    async visitParteDiario(visitId: string) {
+      return edge.request(
+        `visits/${encodeURIComponent(visitId)}/parte-diario`,
+        visitParteDiarioDtoSchema,
+      )
+    },
+
+    async setVisitParteDiario(visitId: string, codigo: string) {
+      const clean = codigo.trim()
+      if (!/^[A-Za-z0-9]+$/.test(clean)) {
+        throw new Error("El número de Parte Diario debe ser alfanumérico (sin espacios ni símbolos)")
+      }
+      return edge.request(
+        `visits/${encodeURIComponent(visitId)}/parte-diario`,
+        visitParteDiarioDtoSchema,
+        {
+          method: "PUT",
+          body: json({ codigo: clean }),
+        },
+      )
+    },
+
+    async uploadVisitParteDiarioImage(
+      visitId: string,
+      input: { codigo: string; imageId?: string; file: File },
+    ) {
+      const clean = input.codigo.trim()
+      if (!/^[A-Za-z0-9]+$/.test(clean)) {
+        throw new Error("El número de Parte Diario debe ser alfanumérico (sin espacios ni símbolos)")
+      }
+      const imageId = input.imageId ?? crypto.randomUUID()
+      const form = new FormData()
+      form.set("codigo", clean)
+      form.set("image_id", imageId)
+      form.set("file", input.file, input.file.name || `parte-diario-${imageId}.jpg`)
+      return edge.request(
+        `visits/${encodeURIComponent(visitId)}/parte-diario/images`,
+        visitParteDiarioImageRegisterDtoSchema,
+        {
+          method: "POST",
+          body: form,
+        },
+      )
+    },
+
+    downloadVisitParteDiarioImage(visitId: string, imageId: string) {
+      return edge.download(
+        `visits/${encodeURIComponent(visitId)}/parte-diario/images/${encodeURIComponent(imageId)}`,
       )
     },
 
@@ -186,6 +240,13 @@ export function createServiceWorkflowApi(edge: EdgeAccessClient) {
       return edge.request(`visits/${visitId}/cancel-administrator`, visitTransitionDtoSchema, {
         method: "POST",
         body: json({ reason: data.reason }),
+      })
+    },
+
+    async reopenVisitAsAdministrator(visitId: string) {
+      return edge.request(`visits/${visitId}/reopen-administrator`, visitTransitionDtoSchema, {
+        method: "POST",
+        body: "{}",
       })
     },
 

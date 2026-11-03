@@ -190,13 +190,12 @@ export function UbicacionCascade({
             onOpenChange={(abierto) => !abierto && setDialogo(null)}
             onSaved={(id) => creado("plantaId", id)}
           />
-          {/* Equipo / unidad: solo se abre el formulario. El equipo creado todavía no queda
-              elegido en la tarea (sin `onSaved`): esa lógica se agrega aparte. */}
           <EquipoDialog
             empresaId={value.empresaId}
             plantaId={value.plantaId}
             open={dialogo === "equipoId"}
             onOpenChange={(abierto) => !abierto && setDialogo(null)}
+            onSaved={(id) => creado("equipoId", id)}
           />
         </div>
       )}

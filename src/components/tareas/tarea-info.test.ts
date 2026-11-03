@@ -43,13 +43,32 @@ describe("infoCronograma", () => {
 
 describe("infoAgenda", () => {
   it("muestra Sin asignar cuando la visita no tiene taller", () => {
-    expect(infoAgenda(base)).toEqual({ taller: "Sin asignar", planta: "" })
+    expect(infoAgenda(base)).toEqual({
+      taller: "Sin asignar",
+      planta: "",
+      contacto: "",
+      telefono: "",
+      detalle: "",
+    })
   })
 
-  it("muestra taller y planta", () => {
+  it("muestra taller, planta, contacto, teléfono y detalle", () => {
     expect(
-      infoAgenda({ ...base, tallerNombre: "Taller Móvil 3", plantasNombres: ["Planta Norte"] }),
-    ).toEqual({ taller: "Taller Móvil 3", planta: "Planta Norte" })
+      infoAgenda({
+        ...base,
+        tallerNombre: "Taller Móvil 3",
+        plantasNombres: ["Planta Norte"],
+        contacto: " Ana ",
+        telefono: " 299 555-1234 ",
+        detalle: " Calibración de 3 PSV ",
+      }),
+    ).toEqual({
+      taller: "Taller Móvil 3",
+      planta: "Planta Norte",
+      contacto: "Ana",
+      telefono: "299 555-1234",
+      detalle: "Calibración de 3 PSV",
+    })
   })
 })
 

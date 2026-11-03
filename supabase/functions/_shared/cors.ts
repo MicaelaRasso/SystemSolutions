@@ -31,6 +31,7 @@ export const corsHeaders = (
     "access-control-allow-origin": origin!,
     "access-control-allow-headers": DEFAULT_ALLOWED_HEADERS,
     "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+    "access-control-max-age": "86400",
     vary: "Origin",
   }
 }

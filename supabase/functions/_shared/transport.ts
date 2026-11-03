@@ -15,6 +15,7 @@ export type TransportContext = {
   db: ServiceRoleClient
   correlationId: string
   metadata: RequestMetadata
+  accountContext?: RpcResult
 }
 
 export type RouteHandler = (context: TransportContext) => Promise<Response | RpcResult>
@@ -167,6 +168,7 @@ export const handleRequest = async (
       db,
       correlationId: id,
       metadata,
+      accountContext,
     })
 
     if (outcome instanceof Response) return outcome

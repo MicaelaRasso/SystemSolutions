@@ -49,7 +49,37 @@ export function toEquipoView(dto: Awaited<ReturnType<typeof equipoDtoSchema.pars
 }
 
 export function toValvulaView(dto: Awaited<ReturnType<typeof valvulaDtoSchema.parse>>): Valvula {
-  return { id: dto.id, equipoId: dto.equipo_id, tag: dto.nombre }
+  const raw = dto as Record<string, unknown>
+  const str = (key: string) =>
+    typeof raw[key] === "string" && raw[key].trim() !== "" ? raw[key] : undefined
+  const num = (key: string) =>
+    typeof raw[key] === "number" && Number.isFinite(raw[key])
+      ? raw[key]
+      : typeof raw[key] === "string" && raw[key].trim() !== "" && Number.isFinite(Number(raw[key]))
+        ? Number(raw[key])
+        : undefined
+  return {
+    id: dto.id,
+    equipoId: dto.equipo_id,
+    tag: dto.nombre,
+    ...(str("precinto") !== undefined ? { precinto: str("precinto") } : {}),
+    ...(str("servicio") !== undefined ? { servicio: str("servicio") } : {}),
+    ...(str("marca") !== undefined ? { marca: str("marca") } : {}),
+    ...(str("numero_serie") !== undefined ? { nroSerie: str("numero_serie") } : {}),
+    ...(str("modelo") !== undefined ? { modelo: str("modelo") } : {}),
+    ...(str("tipo") !== undefined ? { tipo: str("tipo") } : {}),
+    ...(str("pv") !== undefined ? { pv: str("pv") } : {}),
+    ...(str("diametro_entrada") !== undefined ? { diamEntrada: str("diametro_entrada") } : {}),
+    ...(str("diametro_salida") !== undefined ? { diamSalida: str("diametro_salida") } : {}),
+    ...(str("rosca") !== undefined ? { rosca: str("rosca") } : {}),
+    ...(num("presion_operacion") !== undefined
+      ? { presionOperacion: num("presion_operacion") }
+      : {}),
+    ...(num("temperatura_operacion") !== undefined
+      ? { temperaturaOperacion: num("temperatura_operacion") }
+      : {}),
+    ...(str("notas") !== undefined ? { notas: str("notas") } : {}),
+  }
 }
 
 /** Maps the supported tree response; no Cliente→Yacimiento substitution occurs. */

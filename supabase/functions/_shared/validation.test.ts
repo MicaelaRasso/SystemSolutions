@@ -9,6 +9,10 @@ describe("shared JSON request validation", () => {
     ).resolves.toEqual({ ok: true })
 
     await expect(
+      parseJsonObject(new Request("https://example.test", { method: "POST" })),
+    ).resolves.toEqual({})
+
+    await expect(
       parseJsonObject(new Request("https://example.test", { method: "POST", body: "[]" })),
     ).rejects.toMatchObject({ status: 400 })
 
@@ -50,7 +54,7 @@ describe("valve update payload", () => {
   })
 
   it("rejects invalid availability reasons and field types", () => {
-    expect(isValveUpdatePayload({ ...validPayload, razon_disponibilidad: "unknown" })).toBe(false)
+    expect(isValveUpdatePayload({ ...validPayload, razon_disponibilidad: "invalid" })).toBe(false)
     expect(isValveUpdatePayload({ ...validPayload, marca: 123 })).toBe(false)
   })
 })
