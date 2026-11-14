@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
@@ -9,12 +9,28 @@ import { useCreateEdgeFollowupVisit, useEdgeVisits } from "@/lib/api/hooks"
 import { mensajeError, useTalleres } from "@/lib/hooks/queries"
 import type { OperationRead } from "@/lib/hooks/queries"
 
+const DURACION_VISITA_MS = 60 * 60 * 1000
+
+/** Ventana de una hora interpretada en hora argentina (-03:00), como el resto de la app. */
+export function ventanaSeguimiento(date: string, time: string) {
+  const starts = new Date(`${date}T${time}:00-03:00`)
+  if (Number.isNaN(starts.getTime())) return undefined
+  return {
+    startsAt: starts.toISOString(),
+    endsAt: new Date(starts.getTime() + DURACION_VISITA_MS).toISOString(),
+  }
+}
+
+/** Se evalúa solo al enviar, fuera del render. */
+const esFutura = (iso: string) => new Date(iso).getTime() > Date.now()
+
 export function VisitaSeguimientoForm({ operation }: { operation: OperationRead }) {
   const router = useRouter()
   const visits = useEdgeVisits()
   const talleres = useTalleres()
   const createVisit = useCreateEdgeFollowupVisit()
-  const [valveIds, setValveIds] = useState<string[]>([])
+  /** null = selección por defecto: todas las válvulas candidatas. */
+  const [seleccion, setSeleccion] = useState<string[] | null>(null)
   const [tallerMovilId, setTallerMovilId] = useState(
     () => operation.operation.taller_movil?.id ?? "",
   )
@@ -36,18 +52,17 @@ export function VisitaSeguimientoForm({ operation }: { operation: OperationRead 
   const pendingOrders = operation.work_orders.filter(
     ({ work_order }) => work_order.estado === "no_evaluada",
   )
-  const candidates = pendingOrders.filter(
-    ({ work_order }) => !alreadyAssigned.has(work_order.valvula_id ?? ""),
-  )
-
-  useEffect(() => {
-    setValveIds((current) => {
-      if (current.length > 0) return current
-      return candidates
-        .map(({ work_order }) => work_order.valvula_id)
-        .filter((id): id is string => Boolean(id))
-    })
-  }, [candidates])
+  // Mientras no se conocen las visitas activas no se ofrece ninguna válvula: podría estar ya
+  // incluida en otra visita de seguimiento.
+  const candidates = visits.isPending
+    ? []
+    : pendingOrders.filter(({ work_order }) => !alreadyAssigned.has(work_order.valvula_id ?? ""))
+  const candidateIds = candidates
+    .map(({ work_order }) => work_order.valvula_id)
+    .filter((id): id is string => Boolean(id))
+  // Derivada en el render (sin efecto): por defecto todas las candidatas, y nunca una válvula que
+  // dejó de serlo.
+  const valveIds = (seleccion ?? candidateIds).filter((id) => candidateIds.includes(id))
 
   if (!requestId || !sourceVisitId || pendingOrders.length === 0) return null
 
@@ -57,9 +72,8 @@ export function VisitaSeguimientoForm({ operation }: { operation: OperationRead 
       toast.error("Selecciona las válvulas, el Taller Móvil y la fecha de la visita")
       return
     }
-    const starts = new Date(`${date}T${time}`)
-    const ends = new Date(starts.getTime() + 60 * 60 * 1000)
-    if (Number.isNaN(starts.getTime()) || starts.getTime() <= Date.now()) {
+    const ventana = ventanaSeguimiento(date, time)
+    if (!ventana || !esFutura(ventana.startsAt)) {
       toast.error("La visita debe programarse para una fecha futura")
       return
     }
@@ -70,8 +84,7 @@ export function VisitaSeguimientoForm({ operation }: { operation: OperationRead 
           sourceVisitId,
           valveIds,
           tallerMovilId,
-          startsAt: starts.toISOString(),
-          endsAt: ends.toISOString(),
+          ...ventana,
         },
       })
       toast.success("Visita de seguimiento creada para la misma solicitud")
@@ -101,10 +114,10 @@ export function VisitaSeguimientoForm({ operation }: { operation: OperationRead 
                 type="checkbox"
                 checked={valveIds.includes(work_order.valvula_id ?? "")}
                 onChange={(event) =>
-                  setValveIds((current) =>
+                  setSeleccion(
                     event.target.checked
-                      ? [...current, work_order.valvula_id!]
-                      : current.filter((id) => id !== work_order.valvula_id),
+                      ? [...valveIds, work_order.valvula_id!]
+                      : valveIds.filter((id) => id !== work_order.valvula_id),
                   )
                 }
               />
@@ -122,7 +135,7 @@ export function VisitaSeguimientoForm({ operation }: { operation: OperationRead 
           {visits.isPending && (
             <p className="text-xs text-muted-foreground">Comprobando visitas activas…</p>
           )}
-          {candidates.length === 0 && (
+          {!visits.isPending && candidates.length === 0 && (
             <p className="text-sm text-muted-foreground">
               Todas las válvulas pendientes ya están asignadas a otra visita activa.
             </p>

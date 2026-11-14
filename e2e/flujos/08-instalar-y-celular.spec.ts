@@ -73,8 +73,6 @@ test.describe("Ancho de celular (390 px)", () => {
           contenido: document.documentElement.scrollWidth,
         }))
         expect(contenido).toBeLessThanOrEqual(ancho)
-        // D13: `GET clients/` da 403 en /portal/empresa y deja errores en la consola.
-        test.fail(ruta === "/portal/empresa", "D13: GET clients/ da 403 en /portal/empresa")
         expect(problemas.consola).toEqual([])
       })
     }

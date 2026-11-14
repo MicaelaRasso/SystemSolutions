@@ -73,8 +73,9 @@ select lives_ok(
   'an Administrador corrects a descendant name'
 );
 
+-- El Administrador ve todos los Yacimientos de la base: se busca el del fixture.
 select is(
-  (select count(*) from public.api_yacimientos()),
+  (select count(*) from public.api_yacimientos() y where y.id = current_setting('app.test_admin_yacimiento_id')::uuid),
   1::bigint,
   'an Administrador can read the Cliente Yacimiento'
 );
@@ -88,7 +89,7 @@ select public.test_set_admin_hierarchy_gateway_actor('00000000-0000-0000-0000-00
 select throws_ok(
   $$select public.api_update_descendant_for_actor('equipo', current_setting('app.test_admin_equipo_id')::uuid, 'Cambio no autorizado')$$,
   '42501',
-  'Not authorized',
+  'Only an Administrador can change hierarchy', -- 20260930170000 unificó el mensaje de rechazo de toda edición de jerarquía.
   'a Taller Móvil cannot edit the administrative hierarchy'
 );
 
@@ -145,7 +146,7 @@ select throws_ok(
 
 select is(
   (select count(*) from public.historial_relaciones where yacimiento_id = current_setting('app.test_admin_yacimiento_id')::uuid and tipo = 'jerarquia'),
-  6::bigint,
+  5::bigint, -- 4 altas + 1 corrección: desde 20260930170000 el Cliente ya no corrige el Yacimiento (era el sexto registro).
   'hierarchy creation and corrections preserve relationship history'
 );
 

@@ -1,6 +1,8 @@
+import type { RpcResult, ServiceRoleClient } from "../_shared/db.ts"
 import { HttpError } from "../_shared/errors.ts"
 import { json, routeNotFound } from "../_shared/http.ts"
 import {
+  createSignedStorageUrl,
   removeStorageObject,
   uploadStorageObject,
   validateStorageObject,
@@ -9,6 +11,50 @@ import { isUuid } from "../_shared/route.ts"
 import { serveFunction, type RouteHandler } from "../_shared/transport.ts"
 
 const SIGNATURE_BUCKET = "certificate-signatures"
+
+/** Buckets de imágenes que muestra el certificado; los adjuntos privados nunca se firman acá. */
+const CERTIFICATE_IMAGE_BUCKETS = new Set(["certificate-evidence", SIGNATURE_BUCKET, "client-logos"])
+
+const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+/**
+ * D7: las lecturas del certificado devuelven referencias de Storage (`bucket`, `object_path`) sin
+ * dirección, y la vista no podía mostrar firmas ni fotos. Se agrega una `url` firmada (1 h) a cada
+ * referencia de imagen del certificado. Si Storage falla, la referencia queda sin `url` y la vista
+ * muestra «Foto registrada» en lugar de cortar la lectura.
+ */
+const withSignedImageUrls = async (
+  value: unknown,
+  cache = new Map<string, Promise<string | null>>(),
+): Promise<unknown> => {
+  if (Array.isArray(value)) return Promise.all(value.map((item) => withSignedImageUrls(item, cache)))
+  if (!isPlainRecord(value)) return value
+  const entries = await Promise.all(
+    Object.entries(value).map(async ([key, item]) => [key, await withSignedImageUrls(item, cache)] as const),
+  )
+  const result: Record<string, unknown> = Object.fromEntries(entries)
+  const { bucket, object_path: objectPath } = value
+  if (
+    typeof bucket === "string" &&
+    CERTIFICATE_IMAGE_BUCKETS.has(bucket) &&
+    typeof objectPath === "string" &&
+    objectPath !== "" &&
+    result.url === undefined
+  ) {
+    const key = `${bucket}/${objectPath}`
+    if (!cache.has(key)) cache.set(key, createSignedStorageUrl(bucket, objectPath).catch(() => null))
+    const url = await cache.get(key)
+    if (url) result.url = url
+  }
+  return result
+}
+
+const withSignedCertificateImages = async (read: PromiseLike<RpcResult>): Promise<RpcResult> => {
+  const result = await read
+  if (result.error) return result
+  return { data: await withSignedImageUrls(result.data), error: null }
+}
 
 const signatureCaptureMethod = (party: unknown, requested: unknown): string => {
   if (party === "tecnico") {
@@ -27,6 +73,50 @@ const signatureExtension = (contentType: string) =>
   (({ "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" }) as Record<string, string>)[
     contentType
   ] ?? "png"
+
+/** Tope de Válvulas por pedido del historial en lote. */
+const MAX_VALVE_HISTORIES = 200
+/** Consultas simultáneas a la base por pedido. */
+const VALVE_HISTORY_CONCURRENCY = 8
+
+/**
+ * Historial de varias Válvulas en un solo pedido: el portal del Cliente pedía uno por Válvula.
+ * Cada historial pasa por el mismo RPC (y la misma autorización) que `GET valves/:id/certificates`;
+ * las Válvulas cuya consulta falla se informan en `failed_valve_ids` y no cortan el resto.
+ */
+const valveHistories = async (
+  db: ServiceRoleClient,
+  requested: unknown,
+): Promise<RpcResult> => {
+  if (
+    !Array.isArray(requested) ||
+    requested.length === 0 ||
+    requested.length > MAX_VALVE_HISTORIES ||
+    !requested.every((id) => typeof id === "string" && isUuid(id))
+  )
+    throw new HttpError(400, `valve_ids must be 1 to ${MAX_VALVE_HISTORIES} valve UUIDs`)
+  const ids = [...new Set(requested as string[])]
+  const results: (RpcResult | null)[] = new Array(ids.length).fill(null)
+  let next = 0
+  const worker = async () => {
+    while (next < ids.length) {
+      const index = next++
+      results[index] = await db.rpc("api_valvula_certificates_by_pd", {
+        target_valvula: ids[index],
+        pd_code: null,
+      })
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(VALVE_HISTORY_CONCURRENCY, ids.length) }, worker))
+  const histories: Record<string, unknown>[] = []
+  const failed: string[] = []
+  ids.forEach((id, index) => {
+    const result = results[index]
+    if (result && !result.error && isPlainRecord(result.data)) histories.push({ valve_id: id, ...result.data })
+    else failed.push(id)
+  })
+  return { data: { histories, failed_valve_ids: failed }, error: null }
+}
 
 export const certificateFieldHandler: RouteHandler = async ({
   request,
@@ -133,18 +223,30 @@ export const certificateFieldHandler: RouteHandler = async ({
     segments[1] &&
     segments[2] === "finalized"
   )
-    return db.rpc("api_finalized_certificate", {
-      certificate_id: segments[1],
-    })
+    return withSignedCertificateImages(
+      db.rpc("api_finalized_certificate", {
+        certificate_id: segments[1],
+      }),
+    )
   if (
     segments[0] === "certificates" &&
     request.method === "GET" &&
     segments[1] &&
     segments[2] === "download"
   )
-    return db.rpc("api_cliente_certificate_export", {
-      certificate_id: segments[1],
-    })
+    return withSignedCertificateImages(
+      db.rpc("api_cliente_certificate_export", {
+        certificate_id: segments[1],
+      }),
+    )
+  if (
+    segments[0] === "certificates" &&
+    segments[1] === "valve-histories" &&
+    segments.length === 2 &&
+    request.method === "POST"
+  ) {
+    return valveHistories(db, body.valve_ids)
+  }
   if (
     segments[0] === "valves" &&
     request.method === "GET" &&
@@ -194,7 +296,14 @@ export const certificateFieldHandler: RouteHandler = async ({
       asset_path: validation.metadata.objectName,
       capture_method: captureMethod,
     })
-    if (result.error) {
+    // Si la firma de esa parte ya estaba registrada, el RPC devuelve la registrada y la imagen
+    // recién subida queda sin usar: se borra igual que cuando el registro falla (P1).
+    const alreadyRegistered =
+      !result.error &&
+      typeof result.data === "object" &&
+      result.data !== null &&
+      (result.data as Record<string, unknown>).already_registered === true
+    if (result.error || alreadyRegistered) {
       try {
         await removeStorageObject(SIGNATURE_BUCKET, validation.metadata.objectName)
       } catch (cleanupError) {

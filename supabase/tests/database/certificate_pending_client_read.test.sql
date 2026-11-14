@@ -1,6 +1,7 @@
+-- pgTAP no tiene like() con descripción: la comparación por patrón es alike().
 begin;
 
-select plan(8);
+select plan(7); -- el archivo tiene 7 aserciones; plan(8) era un error de conteo.
 
 select has_function(
   'public',
@@ -18,12 +19,12 @@ select is(
   false,
   'the browser cannot execute the pending-certificate RPC directly'
 );
-select like(
+select alike(
   pg_get_functiondef('public.api_cliente_pending_certificates()'::regprocedure),
   '%cliente_cuenta_id%',
   'the RPC scopes visits to the owning Cliente Yacimiento'
 );
-select like(
+select alike(
   pg_get_functiondef('public.api_cliente_pending_certificates()'::regprocedure),
   '%parte = ''cliente''%',
   'the RPC excludes visits that already have a Cliente signature'

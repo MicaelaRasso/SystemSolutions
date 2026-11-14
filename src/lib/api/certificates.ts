@@ -11,12 +11,15 @@ import {
   pendingClientSignatureVisitsDtoSchema,
   updateCertificateDraftInputSchema,
   valveCertificateHistoryDtoSchema,
+  valveHistoriesDtoSchema,
   visitSignatureDtoSchema,
   type CertificateOptionValue,
   type CertificateTemplateInput,
   type UpdateCertificateDraftInput,
+  type ValveHistoriesDto,
   type VisitSignatureUploadInput,
 } from "./contracts"
+import { ServiceError } from "../services/contracts"
 import { createServiceWorkflowApi } from "./service-workflow"
 
 export const CERTIFICATE_EVIDENCE_SECTIONS = [
@@ -64,6 +67,8 @@ export const certificateQueryKeys = {
     [...certificateQueryKeys.all, "client-export", certificateId] as const,
   valveHistory: (valvulaId: string) =>
     [...certificateQueryKeys.all, "valve-history", valvulaId] as const,
+  valveHistories: (valvulaIds: readonly string[]) =>
+    [...certificateQueryKeys.all, "valve-histories", ...valvulaIds] as const,
   pendingClientSignatureVisits: () =>
     [...certificateQueryKeys.all, "pending-client-signature-visits"] as const,
 }
@@ -91,8 +96,38 @@ const certificateCorrectionDtoSchema = z.object({
   reason: z.string(),
 })
 
+/** Válvulas por pedido de `valveHistories` (el servidor acepta hasta 200). */
+export const VALVULAS_POR_LOTE = 100
+
 export function createCertificatesApi(edge: EdgeAccessClient) {
   const serviceWorkflow = createServiceWorkflowApi(edge)
+  const valveHistory = (valvulaId: string) =>
+    edge.request(`valves/${valvulaId}/certificates`, valveCertificateHistoryDtoSchema)
+
+  /** Respaldo mientras el servidor no tenga la ruta en lote: un pedido por Válvula. */
+  async function historialesUnoPorUno(ids: string[]): Promise<ValveHistoriesDto> {
+    const resultados = await Promise.allSettled(ids.map(valveHistory))
+    const histories: ValveHistoriesDto["histories"] = []
+    const failed: string[] = []
+    resultados.forEach((resultado, i) => {
+      if (resultado.status === "fulfilled") histories.push({ valve_id: ids[i], ...resultado.value })
+      else failed.push(ids[i])
+    })
+    return { histories, failed_valve_ids: failed }
+  }
+
+  async function lote(ids: string[]): Promise<ValveHistoriesDto> {
+    try {
+      return await edge.request("certificates/valve-histories", valveHistoriesDtoSchema, {
+        method: "POST",
+        body: JSON.stringify({ valve_ids: ids }),
+      })
+    } catch (error) {
+      if (error instanceof ServiceError && error.code === "not_found")
+        return historialesUnoPorUno(ids)
+      throw error
+    }
+  }
 
   return {
     activeTemplate: () => edge.request("certificate-templates/active", certificateTemplateSchema),
@@ -124,8 +159,19 @@ export function createCertificatesApi(edge: EdgeAccessClient) {
       edge.request(`certificates/${certificateId}/finalized`, finalizedCertificateDtoSchema),
     download: (certificateId: string) =>
       edge.request(`certificates/${certificateId}/download`, finalizedCertificateDtoSchema),
-    valveHistory: (valvulaId: string) =>
-      edge.request(`valves/${valvulaId}/certificates`, valveCertificateHistoryDtoSchema),
+    valveHistory,
+    /** Historiales de varias Válvulas en pedidos de a {@link VALVULAS_POR_LOTE}. */
+    async valveHistories(valvulaIds: readonly string[]): Promise<ValveHistoriesDto> {
+      const ids = [...new Set(valvulaIds)]
+      const lotes: string[][] = []
+      for (let i = 0; i < ids.length; i += VALVULAS_POR_LOTE)
+        lotes.push(ids.slice(i, i + VALVULAS_POR_LOTE))
+      const respuestas = await Promise.all(lotes.map(lote))
+      return {
+        histories: respuestas.flatMap((r) => r.histories),
+        failed_valve_ids: respuestas.flatMap((r) => r.failed_valve_ids),
+      }
+    },
     pendingClientSignatureVisits: () =>
       edge.request("clients/me/pending-certificates", pendingClientSignatureVisitsDtoSchema),
     authorizeCorrection: (

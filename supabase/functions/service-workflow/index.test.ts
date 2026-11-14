@@ -528,6 +528,19 @@ describe("service-workflow mutation routes", () => {
       rpcArgs: { visit_id: operationId, action_reason: "El Cliente modificó su agenda" },
     },
     {
+      name: "reschedules a visit without changing its Taller Móvil",
+      method: "POST",
+      route: ["visits", operationId, "reschedule"],
+      body: { starts_at: "2099-01-02T09:00:00Z", ends_at: "2099-01-02T10:00:00Z", reason: "Cambio de fecha" },
+      rpcName: "api_admin_reschedule_visit",
+      rpcArgs: {
+        visit_id: operationId,
+        visit_starts_at: "2099-01-02T09:00:00Z",
+        visit_ends_at: "2099-01-02T10:00:00Z",
+        action_reason: "Cambio de fecha",
+      },
+    },
+    {
       name: "reopens a visit as an administrator",
       method: "POST",
       route: ["visits", operationId, "reopen-administrator"],
@@ -649,6 +662,68 @@ describe("service-workflow mutation routes", () => {
       target_client: clientId,
       target_yacimiento: operationId,
       selections: [{ kind: "equipo", id: operationId }],
+    })
+  })
+
+  it("creates the request, its metadata, and its visit through one atomic RPC", async () => {
+    const rpc = vi
+      .fn()
+      .mockResolvedValueOnce({ data: true, error: null })
+      .mockResolvedValueOnce({
+        data: { request: { id: "request-1" }, selected_valves: [], scheduled_visit: null },
+        error: null,
+      })
+    const route = ["admin", "requests"]
+    const request = new Request("https://example.test/functions/v1/service-workflow/admin/requests", {
+      method: "POST",
+    })
+
+    await expect(handler(context(request, route, rpc, {
+      cliente_cuenta_id: clientId,
+      yacimiento_id: operationId,
+      selections: [{ kind: "equipo", id: operationId }],
+      metadata: { contacto: "Ana" },
+      taller_movil_id: deviceId,
+      starts_at: "2099-01-02T09:00:00Z",
+      ends_at: "2099-01-02T10:00:00Z",
+    }))).resolves.toMatchObject({ error: null })
+    expect(rpc).toHaveBeenNthCalledWith(1, "api_actor_is_admin", {})
+    expect(rpc).toHaveBeenNthCalledWith(2, "api_admin_create_service_request_with_visit", {
+      target_client: clientId,
+      target_yacimiento: operationId,
+      selections: [{ kind: "equipo", id: operationId }],
+      request_metadata: { contacto: "Ana" },
+      provider_id: deviceId,
+      visit_starts_at: "2099-01-02T09:00:00Z",
+      visit_ends_at: "2099-01-02T10:00:00Z",
+    })
+    expect(rpc).toHaveBeenCalledTimes(2)
+  })
+
+  it("sends null visit fields to the atomic RPC when only metadata is provided", async () => {
+    const rpc = vi
+      .fn()
+      .mockResolvedValueOnce({ data: true, error: null })
+      .mockResolvedValueOnce({ data: { ok: true }, error: null })
+    const route = ["admin", "requests"]
+    const request = new Request("https://example.test/functions/v1/service-workflow/admin/requests", {
+      method: "POST",
+    })
+
+    await handler(context(request, route, rpc, {
+      cliente_cuenta_id: clientId,
+      yacimiento_id: operationId,
+      selections: [{ kind: "equipo", id: operationId }],
+      metadata: {},
+    }))
+    expect(rpc).toHaveBeenNthCalledWith(2, "api_admin_create_service_request_with_visit", {
+      target_client: clientId,
+      target_yacimiento: operationId,
+      selections: [{ kind: "equipo", id: operationId }],
+      request_metadata: {},
+      provider_id: null,
+      visit_starts_at: null,
+      visit_ends_at: null,
     })
   })
 

@@ -182,6 +182,10 @@ export const routeOwner = (method: string, route: string[]): FunctionName | null
       route[0] === "requests" &&
       route.length === 3 &&
       route[2] === "schedule") ||
+    (method === "POST" &&
+      route[0] === "requests" &&
+      route.length === 3 &&
+      route[2] === "follow-up-visits") ||
     (method === "GET" && route[0] === "requests" && (route.length === 1 || route.length === 2)) ||
     (method === "POST" && is(route, "requests")) ||
     (method === "PATCH" && route[0] === "requests" && route.length === 2) ||
@@ -203,6 +207,7 @@ export const routeOwner = (method: string, route: string[]): FunctionName | null
         "assign",
         "unassign",
         "reassign",
+        "reschedule",
         "start",
         "complete",
         "work-orders",
@@ -219,6 +224,7 @@ export const routeOwner = (method: string, route: string[]): FunctionName | null
       route[0] === "work-orders" &&
       route.length === 3 &&
       route[2] === "certificate-draft") ||
+    (method === "POST" && is(route, "certificates", "valve-histories")) ||
     (method === "GET" && route[0] === "certificates" && route.length === 2) ||
     (method === "POST" && route[0] === "certificates" && route.length === 3 && route[2] === "corrections") ||
     (method === "PATCH" && route[0] === "certificates" && route.length === 2) ||

@@ -46,3 +46,73 @@ describe("certificate correction API", () => {
     expect(request).not.toHaveBeenCalled()
   })
 })
+
+describe("valve certificate history contract", () => {
+  it("accepts `is_current: null` for a certificate pending the Cliente signature (D6)", async () => {
+    const { valveCertificateHistoryDtoSchema } = await import("./contracts")
+    const parsed = valveCertificateHistoryDtoSchema.safeParse({
+      current_certificate_id: null,
+      certificates: [
+        {
+          certificate: { id: sourceId, estado: "pendiente" },
+          status: "pendiente",
+          is_current: null,
+          validity: null,
+        },
+      ],
+    })
+
+    expect(parsed.success).toBe(true)
+    expect(parsed.data?.certificates[0].is_current).toBe(false)
+  })
+})
+
+describe("historial de varias Válvulas en un pedido", () => {
+  const ids = (n: number) =>
+    Array.from({ length: n }, (_, i) => `33333333-3333-4333-8333-${String(i).padStart(12, "0")}`)
+
+  it("pide los historiales en lotes de 100 y junta las respuestas", async () => {
+    const request = vi.fn(async (_path: string, _schema: unknown, init: { body: string }) => {
+      const { valve_ids } = JSON.parse(init.body) as { valve_ids: string[] }
+      return {
+        histories: valve_ids.map((id) => ({ valve_id: id, current_certificate_id: null, certificates: [] })),
+        failed_valve_ids: [],
+      }
+    })
+    const api = createCertificatesApi({ request } as unknown as EdgeAccessClient)
+
+    const resultado = await api.valveHistories(ids(150))
+
+    expect(request).toHaveBeenCalledTimes(2)
+    expect(request.mock.calls.map((call) => call[0])).toEqual([
+      "certificates/valve-histories",
+      "certificates/valve-histories",
+    ])
+    expect(request.mock.calls.map((call) => JSON.parse(call[2].body).valve_ids.length)).toEqual([100, 50])
+    expect(resultado.histories.map((h) => h.valve_id)).toEqual(ids(150))
+  })
+
+  it("sin la ruta nueva en el servidor (404) vuelve a pedir Válvula por Válvula", async () => {
+    const { ServiceError } = await import("../services/contracts")
+    const [a, b] = ids(2)
+    const request = vi.fn(async (path: string) => {
+      if (path === "certificates/valve-histories") throw new ServiceError("Route not found", "not_found")
+      if (path === `valves/${b}/certificates`) throw new ServiceError("Sin acceso", "unauthorized")
+      return { current_certificate_id: null, certificates: [] }
+    })
+    const api = createCertificatesApi({ request } as unknown as EdgeAccessClient)
+
+    await expect(api.valveHistories([a, b])).resolves.toEqual({
+      histories: [{ valve_id: a, current_certificate_id: null, certificates: [] }],
+      failed_valve_ids: [b],
+    })
+  })
+
+  it("no pide nada si no hay Válvulas", async () => {
+    const request = vi.fn()
+    const api = createCertificatesApi({ request } as unknown as EdgeAccessClient)
+
+    await expect(api.valveHistories([])).resolves.toEqual({ histories: [], failed_valve_ids: [] })
+    expect(request).not.toHaveBeenCalled()
+  })
+})

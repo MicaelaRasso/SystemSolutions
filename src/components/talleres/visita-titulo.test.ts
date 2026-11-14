@@ -4,8 +4,8 @@ import { tituloDeVisita, type ResumenVisita } from "./visita-titulo"
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
 const visitId = "e067c00d-1b2c-4d5e-8f90-a1b2c3d4e5f6"
-// Fecha armada en hora local para que el resultado no dependa de la zona horaria de quien corre las pruebas.
-const startsAt = new Date(2026, 9, 14, 9, 5).toISOString()
+// La fecha se muestra en hora argentina sin importar la zona horaria de quien corre las pruebas.
+const startsAt = "2026-10-14T12:05:00Z"
 
 function resumen(parcial: Partial<ResumenVisita> = {}): ResumenVisita {
   return {
@@ -87,6 +87,12 @@ describe("tituloDeVisita", () => {
     expect(visita.lineas).toEqual([])
   })
 
+  it("P8: una visita de la tarde se muestra en 24 h y en hora argentina (16:00, no «04:00»)", () => {
+    expect(tituloDeVisita({ id: visitId, starts_at: "2026-11-13T19:00:00Z" }).titulo).toBe(
+      "Visita del 13/11/2026 16:00",
+    )
+  })
+
   it("sin operación y con fecha inválida o ausente no inventa nada", () => {
     expect(tituloDeVisita({ id: visitId, starts_at: "no es fecha" }).titulo).toBe("Visita sin fecha informada")
     expect(tituloDeVisita({ id: visitId }).titulo).toBe("Visita sin fecha informada")
@@ -112,5 +118,11 @@ describe("tituloDeVisita", () => {
       expect(`${caso.titulo} ${caso.lineas.join(" ")}`).not.toMatch(UUID)
       expect(caso.titulo).not.toContain(visitId)
     }
+  })
+
+  it("informa el número de solicitud como referencia para el Taller (RF-19)", () => {
+    const { referencia } = tituloDeVisita({ id: visitId, starts_at: startsAt }, resumen({ numeroSolicitud: 42 }))
+    expect(referencia).toBe("Solicitud N° 42")
+    expect(tituloDeVisita({ id: visitId, starts_at: startsAt }, resumen()).referencia).toBeUndefined()
   })
 })

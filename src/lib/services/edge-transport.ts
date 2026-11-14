@@ -1,6 +1,7 @@
 import { createBrowserClient } from "@supabase/ssr"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
+import { traducirMensajeError } from "../domain/errores"
 import { getSupabaseConfig, type EdgeFunctionName } from "../supabase/config"
 import { ServiceError } from "./contracts"
 
@@ -180,7 +181,7 @@ export class EdgeTransport {
     if (!response.ok) {
       const data = await responseData(response)
       const message = responseMessage(data) ?? "La Edge Function rechazó la solicitud"
-      throw new ServiceError(message, errorCode(response.status))
+      throw new ServiceError(traducirMensajeError(message), errorCode(response.status))
     }
     return response
   }

@@ -166,8 +166,6 @@ test.describe("Flujo 1: creación, captura en tablet y firma presencial", () => 
     test("RF-23: la aprobación muestra las firmas dibujadas [D7]", async ({ abrir }) => {
       const { page } = await abrir("admin")
       const flujo = await abrirCertificado(page)
-      // D7: las firmas no llegan al certificado; solo se ve el nombre.
-      test.fail(true, "D7: firmas y fotos no se muestran en el certificado")
       const firmas = vistaCertificado(page).getByRole("img", { name: /^Firma de / })
       await expect(firmas).toHaveCount(2, { timeout: 8_000 })
       await expect(vistaCertificado(page).getByRole("img", { name: `Firma de ${flujo.representante}` })).toBeVisible()
@@ -178,8 +176,6 @@ test.describe("Flujo 1: creación, captura en tablet y firma presencial", () => 
       await abrirCertificado(page)
       const anexo = page.getByRole("region", { name: "Anexo fotográfico" })
       await expect(anexo.getByText("FOTO VÁLVULA DESARMADA")).toBeVisible()
-      // D7: las secciones del anexo salen vacías aunque las fotos se cargaron.
-      test.fail(true, "D7: firmas y fotos no se muestran en el certificado")
       for (const descripcion of [
         "Válvula desarmada, foto 1",
         "Válvula armada para ensayos, foto 1",
@@ -194,7 +190,6 @@ test.describe("Flujo 1: creación, captura en tablet y firma presencial", () => 
       const flujo = await abrirCertificado(page)
       const anexo = page.getByRole("region", { name: "Anexo fotográfico" })
       await expect(anexo.getByText("FOTO VÁLVULA DESARMADA")).toBeVisible()
-      test.fail(true, "D7: firmas y fotos no se muestran en el certificado")
       await expect(anexo.getByText(`FOTO PARTE DIARIO (${flujo.pd})`)).toBeVisible({ timeout: 8_000 })
       await expect(anexo.getByRole("img", { name: /^Parte diario, foto/ })).toBeVisible({ timeout: 8_000 })
     })
@@ -202,17 +197,15 @@ test.describe("Flujo 1: creación, captura en tablet y firma presencial", () => 
     test("RF-13 RF-27: el certificado muestra la orden de trabajo de la tarea [D10]", async ({ abrir }) => {
       const { page } = await abrir("admin")
       const flujo = await abrirCertificado(page)
-      // D10: orden de trabajo vacía en el certificado aunque la tarea la tiene.
       const texto = await vistaCertificado(page).innerText()
       expect(texto).toContain("ORDEN DE TRABAJO:")
-      test.fail(true, "D10: orden de trabajo, vencimiento de patrón y nómina vacíos en el certificado")
-      expect(texto).toMatch(new RegExp(`ORDEN DE TRABAJO:\s*${flujo.ot}`))
+      // `\\s` doble: en un template literal `\s` queda como «s» y la expresión nunca coincidía.
+      expect(texto).toMatch(new RegExp(`ORDEN DE TRABAJO:\\s*${flujo.ot}`))
     })
 
     test("RF-38 RN-15 CA-13: el certificado muestra la nómina de la jornada [D10]", async ({ abrir }) => {
       const { page } = await abrir("admin")
       await abrirCertificado(page)
-      test.fail(true, "D10: orden de trabajo, vencimiento de patrón y nómina vacíos en el certificado")
       const texto = await vistaCertificado(page).innerText()
       expect(texto).toMatch(/Nómina del taller[^\n]*\n?[^\n—]*Tomas/i)
     })
@@ -220,7 +213,6 @@ test.describe("Flujo 1: creación, captura en tablet y firma presencial", () => 
     test("RF-27: el certificado muestra el vencimiento del patrón [D10]", async ({ abrir }) => {
       const { page } = await abrir("admin")
       await abrirCertificado(page)
-      test.fail(true, "D10: orden de trabajo, vencimiento de patrón y nómina vacíos en el certificado")
       const texto = await vistaCertificado(page).innerText()
       expect(texto).toMatch(/VENCIMIENTO[^\n]*\n?\s*\d{2}\/\d{2}\/\d{4}/i)
     })

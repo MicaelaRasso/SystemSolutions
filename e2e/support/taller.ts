@@ -208,8 +208,11 @@ export async function guardarParteDiario(page: Page, tarjeta: Locator, codigo: s
  */
 export async function esperarAgendaEstable(page: Page) {
   await page.waitForLoadState("networkidle")
-  await expect(page.getByText("Conectado", { exact: true })).toBeVisible({ timeout: 30_000 })
-  await page.waitForLoadState("networkidle")
+  // Sin red no hay refresco que esperar y el indicador nunca dice «Conectado» (flujo 3).
+  if (await page.evaluate(() => navigator.onLine)) {
+    await expect(page.getByText("Conectado", { exact: true })).toBeVisible({ timeout: 30_000 })
+    await page.waitForLoadState("networkidle")
+  }
 }
 
 /**

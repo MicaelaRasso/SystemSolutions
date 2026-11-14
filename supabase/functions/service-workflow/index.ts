@@ -390,6 +390,19 @@ export const serviceWorkflowHandler: RouteHandler = async ({
     const authorization = await db.rpc("api_actor_is_admin", {})
     if (authorization.error) return authorization
     if (authorization.data !== true) throw new HttpError(403, "Only an active Administrador can create a service request")
+    // Con metadata o datos de visita, la solicitud, su metadata y la visita se crean en una sola
+    // transacción: si la programación falla no queda una solicitud huérfana.
+    const createsWithVisit = ["metadata", "taller_movil_id", "starts_at", "ends_at"].some((key) => key in body)
+    if (createsWithVisit)
+      return db.rpc("api_admin_create_service_request_with_visit", {
+        target_client: body.cliente_cuenta_id,
+        target_yacimiento: body.yacimiento_id,
+        selections: body.selections,
+        request_metadata: body.metadata ?? null,
+        provider_id: body.taller_movil_id ?? null,
+        visit_starts_at: body.starts_at ?? null,
+        visit_ends_at: body.ends_at ?? null,
+      })
     return db.rpc("api_admin_create_service_request", {
       target_client: body.cliente_cuenta_id,
       target_yacimiento: body.yacimiento_id,
@@ -594,6 +607,16 @@ export const serviceWorkflowHandler: RouteHandler = async ({
       action_reason: body.reason,
       visit_starts_at: body.starts_at,
       visit_ends_at: body.ends_at,
+    })
+  if (
+    segments[0] === "visits" && request.method === "POST" &&
+    segments[1] && segments[2] === "reschedule"
+  )
+    return db.rpc("api_admin_reschedule_visit", {
+      visit_id: segments[1],
+      visit_starts_at: body.starts_at ?? null,
+      visit_ends_at: body.ends_at ?? null,
+      action_reason: body.reason ?? null,
     })
   if (
     segments[0] === "visits" && request.method === "POST" &&

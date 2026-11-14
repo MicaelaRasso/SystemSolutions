@@ -32,7 +32,8 @@ select throws_ok(
 );
 
 reset role;
-update auth.users set email_confirmed_at = now() where id = '00000000-0000-0000-0000-000000000692';
+-- Desde 20261006151926 aceptar la invitación exige email confirmado y contraseña definida.
+update auth.users set email_confirmed_at = now(), encrypted_password = 'lifecycle-password-hash' where id = '00000000-0000-0000-0000-000000000692';
 select is((select estado::text from public.cuentas where id = '00000000-0000-0000-0000-000000000692'), 'activa', 'accepting the invitation activates a pending Cuenta');
 
 set local role service_role;

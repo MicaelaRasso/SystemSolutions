@@ -14,7 +14,14 @@ export function resumenDeOperacion(operacion: OperationSummary): ResumenVisita {
     ...(operacion.plantas ? { plantas: operacion.plantas.map((planta) => ({ nombre: planta.nombre })) } : {}),
     ...(operacion.contacto ? { contacto: operacion.contacto } : {}),
     ...(operacion.telefono ? { telefono: operacion.telefono } : {}),
+    ...(operacion.pd_rto ? { pdRto: operacion.pd_rto } : {}),
+    numeroSolicitud: operacion.numero_solicitud,
   }
+}
+
+/** Número de Parte Diario sugerido a partir del PD/RTO de la tarea, con el formato que acepta el PD. */
+export function codigoPdSugerido(resumen: ResumenVisita | undefined): string {
+  return (resumen?.pdRto ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase()
 }
 
 /**

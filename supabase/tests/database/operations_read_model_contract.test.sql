@@ -116,7 +116,8 @@ select has_index('public', 'visitas_servicio', 'visitas_servicio_estado_starts_a
 select has_index('public', 'visitas_servicio', 'visitas_servicio_taller_starts_at_id_idx', 'visitas_servicio has a taller_movil_id, starts_at index');
 select has_index('public', 'visitas_servicio', 'visitas_servicio_yacimiento_id_starts_at_idx', 'visitas_servicio has a yacimiento_id, starts_at index');
 select has_index('public', 'solicitudes_servicio', 'solicitudes_servicio_cliente_id_idx', 'solicitudes_servicio has a cliente_cuenta_id index');
-select is(has_function('public', 'api_operations', ARRAY['date','date','text','uuid','uuid','text']::text[], 'legacy request-shaped list'), false, 'the legacy non-paginated operation list overload is absent');
+-- has_function() ya es una aserción de pgTAP: la ausencia se comprueba con hasnt_function().
+select hasnt_function('public', 'api_operations', ARRAY['date','date','text','uuid','uuid','text']::text[], 'the legacy non-paginated operation list overload is absent');
 select is(has_function_privilege('anon', 'public.api_operations(date,date,text,uuid,uuid,text,integer,integer)', 'execute'), false, 'anonymous callers cannot execute operation lists');
 select is(has_function_privilege('authenticated', 'public.api_operations(date,date,text,uuid,uuid,text,integer,integer)', 'execute'), false, 'authenticated callers cannot execute operation lists directly');
 select is(has_function_privilege('anon', 'public.api_operation(uuid)', 'execute'), false, 'anonymous callers cannot execute operation details');
@@ -131,14 +132,16 @@ set local role service_role;
 select set_config('request.jwt.claim.role', 'service_role', true);
 select public.test_set_operations_contract_actor('00000000-0000-0000-0000-000000001101');
 
-select is((public.api_operations(null, null, null, null, null, null, 100, 0)->>'total')::bigint, 4::bigint, 'the envelope total contains visits only and excludes the unscheduled request');
+-- El total es el de todas las Visitas de la base (puede haber datos de e2e o demo); la solicitud sin visita no suma.
+select is((public.api_operations(null, null, null, null, null, null, 100, 0)->>'total')::bigint, (select count(*) from public.visitas_servicio), 'the envelope total contains visits only and excludes the unscheduled request');
 select is(jsonb_array_length(public.api_operations(null, null, null, null, null, null, 1, 0)->'items'), 1, 'the envelope contains the requested page size');
 select is(public.api_operations(null, null, null, null, null, null, 1, 0)->'items'->0->>'id', '00000000-0000-0000-0000-000000001191', 'the list is ordered by starts_at then visit id');
 select is(public.api_operations(null, null, null, null, null, null, 1, 0)->'items'->0->>'estado', 'aceptada', 'the summary exposes the canonical Visita status');
 select is(public.api_operations(null, null, null, null, null, null, 1, 0)->'items'->0->>'solicitud_id', '00000000-0000-0000-0000-000000001171', 'the summary exposes the canonical Solicitud id');
 select is((public.api_operations(null, null, null, null, null, null, 1, 0)->'items'->0->>'numero_solicitud')::bigint, 11001::bigint, 'the summary exposes the canonical Solicitud number');
-select is(public.api_operations(null, null, null, null, null, null, 1, 0)->'items'->0->'starts_at', '2026-10-02T00:30:00+00:00'::jsonb, 'the summary exposes the visit start timestamp');
-select is(public.api_operations(null, null, null, null, null, null, 1, 0)->'items'->0->'ends_at', '2026-10-02T03:30:00+00:00'::jsonb, 'the summary exposes the visit end timestamp');
+-- Un string JSON va entre comillas dobles: '2026-...'::jsonb sin ellas no es JSON válido.
+select is(public.api_operations(null, null, null, null, null, null, 1, 0)->'items'->0->'starts_at', '"2026-10-02T00:30:00+00:00"'::jsonb, 'the summary exposes the visit start timestamp');
+select is(public.api_operations(null, null, null, null, null, null, 1, 0)->'items'->0->'ends_at', '"2026-10-02T03:30:00+00:00"'::jsonb, 'the summary exposes the visit end timestamp');
 select is(public.api_operations(null, null, null, null, null, null, 1, 0)->'items'->0->'cliente'->>'nombre', 'Cliente Contract A Servicios', 'the summary nests the Cliente identity');
 select is(public.api_operations(null, null, null, null, null, null, 1, 0)->'items'->0->'yacimiento', '{"id":"00000000-0000-0000-0000-000000001131","nombre":"Yacimiento Contract Alpha"}'::jsonb, 'the summary nests the Yacimiento identity');
 select is(public.api_operations(null, null, null, null, null, null, 1, 0)->'items'->0->'taller_movil'->>'id', '00000000-0000-0000-0000-000000001121', 'the summary nests the Taller Móvil identity');
@@ -152,8 +155,9 @@ select is(public.api_operations(null, null, null, null, null, null, 1, 1)->'item
 select is(jsonb_array_length(public.api_operation('00000000-0000-0000-0000-000000001192')->'operation'->'plantas'), 2, 'the detail operation carries the same Planta list');
 select is(
   array(select key from jsonb_object_keys(public.api_operations(null, null, null, null, null, null, 1, 0)->'items'->0) as key order by key collate "C"),
-  ARRAY['cliente','contacto','ends_at','estado','id','numero_solicitud','ordenes','plantas','solicitud_id','starts_at','taller_movil','telefono','yacimiento']::text[],
-  'the summary keeps the canonical keys and only adds contacto, telefono and plantas'
+  -- detalle y tipo (20261102020000), orden_trabajo y pd_rto (20261103000000) se sumaron después al resumen.
+  ARRAY['cliente','contacto','detalle','ends_at','estado','id','numero_solicitud','orden_trabajo','ordenes','pd_rto','plantas','solicitud_id','starts_at','taller_movil','telefono','tipo','yacimiento']::text[],
+  'the summary keeps the canonical keys and only adds contacto, telefono, plantas, detalle, tipo, orden_trabajo and pd_rto'
 );
 select is(public.api_operations(null, null, null, null, null, null, 100, 0)->>'has_more', 'false', 'the envelope reports whether another page exists');
 select is((public.api_operations(null, null, null, null, null, null, 100, 0)->>'limit')::integer, 100, 'the envelope reports the applied limit');
@@ -163,7 +167,8 @@ select is(jsonb_array_length(public.api_operations('2026-10-02', '2026-10-02', n
 select throws_ok($$select count(*) from public.api_operations('2026-10-03', '2026-10-02', null, null, null, null, 100, 0)$$, '22023', 'from_date must not be after to_date', 'inverted date filters are rejected');
 select throws_ok($$select public.api_operations(null, null, 'asignada', null, null, null, 100, 0)$$, '22023', 'status_filter must contain only canonical Visita statuses', 'Tarea status aliases are rejected');
 select throws_ok($$select public.api_operations(null, null, 'pendiente', null, null, null, 100, 0)$$, '22023', 'status_filter must contain only canonical Visita statuses', 'the pending alias is rejected');
-select is(jsonb_array_length(public.api_operations(null, null, 'programada', null, null, null, 100, 0)->'items'), 1, 'status filtering accepts the canonical visit status');
+-- El fixture tiene dos Visitas programadas (...1192 y ...1194) visibles para el Administrador; se ignoran las de otros datos.
+select is((select count(*)::integer from jsonb_array_elements(public.api_operations(null, null, 'programada', null, null, null, 100, 0)->'items') item where item->>'id' like '00000000-0000-0000-0000-0000000011%'), 2, 'status filtering accepts the canonical visit status');
 select is(jsonb_array_length(public.api_operations(null, null, null, '00000000-0000-0000-0000-000000001121', null, null, 100, 0)->'items'), 3, 'workshop filtering uses the assigned Taller Móvil');
 select is(jsonb_array_length(public.api_operations(null, null, null, null, '00000000-0000-0000-0000-000000001103', null, 100, 0)->'items'), 1, 'client filtering uses the Solicitud Cliente');
 select is(jsonb_array_length(public.api_operations(null, null, null, null, null, '11002', 100, 0)->'items'), 1, 'search matches the request number');
@@ -174,7 +179,7 @@ select is(jsonb_array_length(public.api_operations(null, null, null, null, null,
 select is(jsonb_array_length(public.api_operations(null, null, null, null, null, 'Planta Contract Alpha', 100, 0)->'items'), 0, 'search does not match Planta names');
 select is(jsonb_array_length(public.api_operations(null, null, null, null, null, 'Equipo Contract Alpha', 100, 0)->'items'), 0, 'search does not match Equipo names');
 select is(jsonb_array_length(public.api_operations(null, null, null, null, null, 'Ana Contract', 100, 0)->'items'), 0, 'search does not match Solicitud metadata');
-select is(jsonb_array_length(public.api_operations(null, null, null, null, null, null, 500, 0)->'items'), 4, 'the list caps the page size at 100');
+select is(jsonb_array_length(public.api_operations(null, null, null, null, null, null, 500, 0)->'items'), least((select count(*) from public.visitas_servicio), 100)::integer, 'the list caps the page size at 100');
 select is(public.api_operations(null, null, null, null, null, null, 1, 1)->'items'->0->>'id', '00000000-0000-0000-0000-000000001192', 'offset follows the stable order');
 select is(public.api_operation('00000000-0000-0000-0000-000000001192')->'operation'->>'id', '00000000-0000-0000-0000-000000001192', 'detail operation is keyed by the Visita de servicio id');
 select is(public.api_operation('00000000-0000-0000-0000-000000001192')->'operation'->>'estado', 'programada', 'detail exposes the canonical Visita status');
@@ -192,7 +197,8 @@ select is(public.api_operations(null, null, null, null, null, null, 1, 0)->'item
 
 select public.test_set_operations_contract_actor('00000000-0000-0000-0000-000000001104');
 select is(jsonb_array_length(public.api_operations(null, null, null, null, null, null, 100, 0)->'items'), 3, 'an assigned Taller Móvil sees only its assigned visits');
-select throws_ok($$select public.api_operation('00000000-0000-0000-0000-000000001194')$$, '42501', 'a Taller Móvil cannot read a visit assigned to another Taller Móvil');
+-- Con tres argumentos pgTAP toma el tercero como mensaje de error esperado: se agrega el mensaje real.
+select throws_ok($$select public.api_operation('00000000-0000-0000-0000-000000001194')$$, '42501', 'Not authorized', 'a Taller Móvil cannot read a visit assigned to another Taller Móvil');
 
 select public.test_set_operations_contract_actor('00000000-0000-0000-0000-000000001105');
 select is(jsonb_array_length(public.api_operations(null, null, null, null, null, null, 100, 0)->'items'), 1, 'a second Taller Móvil sees only its assigned visit');

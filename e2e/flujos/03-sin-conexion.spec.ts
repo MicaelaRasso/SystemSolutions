@@ -34,8 +34,6 @@ test.describe("Flujo 3: trabajo sin conexión", () => {
     const numero = sql(
       `select s.numero_solicitud from public.solicitudes_servicio s where s.id = '${visita.solicitudId}'`,
     )
-    // RF-19: el taller no ve el número de solicitud en ninguna parte de su pantalla.
-    test.fail(true, "N2: RF-19 el número de solicitud no se muestra al Taller")
     await expect(tarjeta).toContainText(numero, { timeout: 5_000 })
   })
 
@@ -57,9 +55,11 @@ test.describe("Flujo 3: trabajo sin conexión", () => {
     })
 
     await test.step("los borradores quedan bloqueados y hay cambios pendientes", async () => {
-      await expect(tarjetaOrden(page, valvula.tag).getByRole("button", { name: "Guardar Borrador de certificado" })).toBeDisabled()
+      // Con la visita cerrada, el botón del borrador se rotula «Certificado cerrado» y queda deshabilitado.
+      await expect(tarjetaOrden(page, valvula.tag).getByRole("button", { name: "Certificado cerrado" })).toBeDisabled()
       await expect(tarjeta.getByText(/Los borradores están cerrados/)).toBeVisible()
-      await expect(tarjeta.getByText("Completada localmente")).toBeVisible()
+      // Exacto: el aviso «Visita completada localmente; …» también contiene el texto de la insignia.
+      await expect(tarjeta.getByText("Completada localmente", { exact: true })).toBeVisible()
       // RN-12: mientras no llegue al servidor no hay certificado ni número.
       expect(sql(`select count(*) from public.certificados where visita_id = '${visita.visitaId}'`)).toBe("0")
     })
@@ -104,8 +104,6 @@ test.describe("Flujo 3: trabajo sin conexión", () => {
     await context.setOffline(false)
     await expect(page.getByRole("button", { name: "Actualizar ahora" })).toBeEnabled({ timeout: 45_000 })
     await page.getByRole("button", { name: "Actualizar ahora" }).click()
-    // D8: este panel sincroniza sin `uploadMedia`, así que las operaciones con archivos no suben.
-    test.fail(true, "D8: /taller/sincronizacion no sube archivos")
     await expect(async () => {
       expect(sql(`select estado from public.visitas_servicio where id = '${visita.visitaId}'`)).toBe("completada")
     }).toPass({ timeout: 30_000 })

@@ -291,17 +291,19 @@ select is(
 
 select public.test_set_gateway_actor('00000000-0000-0000-0000-000000000105');
 
+-- «Todos» es la base entera, no solo el fixture: puede haber datos de e2e o de demo.
 select is(
   (select count(*) from public.api_yacimientos()),
-  1::bigint,
+  (select count(*) from public.yacimientos),
   'an Administrador regular can list every Yacimiento'
 );
 
 select public.test_set_gateway_actor('00000000-0000-0000-0000-000000000106');
 
+-- «Todos» es la base entera, no solo el fixture: puede haber datos de e2e o de demo.
 select is(
   (select count(*) from public.api_yacimientos()),
-  1::bigint,
+  (select count(*) from public.yacimientos),
   'a Super administrador can list every Yacimiento'
 );
 

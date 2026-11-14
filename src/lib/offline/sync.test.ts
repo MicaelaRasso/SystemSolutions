@@ -5,9 +5,12 @@ import type { OfflineMedia, OfflineStore, OperacionOffline, VisitaOffline } from
 import {
   OfflineSyncCoordinator,
   certificateCatalogsForVisit,
+  esFirmaYaRegistrada,
   pinVisitCertificateCatalogs,
   queueOfflineSignatureCapture,
+  referenciasDeEvidencia,
   refreshedVisitCatalogs,
+  resolverEvidencia,
   syncPendingVisitStartsBeforeRefresh,
 } from "./sync"
 
@@ -474,6 +477,132 @@ describe("OfflineSyncCoordinator", () => {
     expect(store.media.has("media-1")).toBe(false)
   })
 
+  it("resuelve la evidencia { media_id } de un borrador con la referencia ya subida (P2)", async () => {
+    const store = new MemoryStore()
+    let sent: Array<{ kind: string; payload: Record<string, unknown> }> = []
+    const coordinator = new OfflineSyncCoordinator(
+      store,
+      {
+        uploadMedia: async (input) => ({
+          media_id: input.mediaId,
+          image_id: input.mediaId,
+          bucket: "certificate-evidence",
+          object_path: `visits/${input.visitId}/evidence/${input.mediaId}.jpg`,
+          content_type: "image/jpeg",
+          server_received_at: "2026-11-13T12:00:01.000Z",
+        }),
+        syncVisit: async (_visitId, operations) => {
+          sent = operations as typeof sent
+          return {
+            operations: (operations as Array<{ operation_id: string }>).map((operation) => ({
+              operation_id: operation.operation_id,
+              estado: "sincronizada",
+              result: {},
+            })),
+          }
+        },
+      },
+      { now: () => "2026-11-13T12:00:00.000Z", id: () => "unused" },
+    )
+    await store.saveMedia({
+      id: "foto-1",
+      mediaId: "foto-1",
+      visitId: "visit-p2",
+      operationId: "foto-op",
+      kind: "photo",
+      blob: new Blob(["foto"], { type: "image/jpeg" }),
+      contentType: "image/jpeg",
+      createdAt: "2026-11-13T11:59:00.000Z",
+    })
+    const base = {
+      visitId: "visit-p2",
+      dependencies: [],
+      schemaVersion: 2,
+      deviceId: "device-1",
+      estado: "guardada_local" as const,
+      attempts: 0,
+    }
+    await store.saveOperation({
+      ...base,
+      operationId: "foto-op",
+      kind: "upload_photo",
+      payload: { media_id: "foto-1", certificate_id: "cert-1", category: "desarmada" },
+      createdAt: "2026-11-13T11:59:01.000Z",
+      mediaIds: ["foto-1"],
+    })
+    await store.saveOperation({
+      ...base,
+      operationId: "borrador-op",
+      kind: "update_certificate_draft",
+      payload: {
+        certificate_id: "cert-1",
+        data: { evidencia_fotografica: { desarmada: { media_id: "foto-1" }, placa_precinto: null } },
+      },
+      createdAt: "2026-11-13T11:59:02.000Z",
+    })
+
+    await coordinator.sync("visit-p2", "device-1")
+
+    const borrador = sent.find((operation) => operation.kind === "update_certificate_draft")
+    expect(borrador?.payload).toEqual({
+      certificate_id: "cert-1",
+      data: {
+        evidencia_fotografica: {
+          desarmada: {
+            image_id: "foto-1",
+            bucket: "certificate-evidence",
+            object_path: "visits/visit-p2/evidence/foto-1.jpg",
+          },
+          placa_precinto: null,
+        },
+      },
+    })
+  })
+
+  it("resuelve la evidencia con el recibo de una foto ya sincronizada (P2)", () => {
+    const referencias = referenciasDeEvidencia([
+      {
+        operationId: "foto-op",
+        visitId: "visit-p2",
+        kind: "upload_photo",
+        payload: {},
+        dependencies: [],
+        schemaVersion: 2,
+        createdAt: "2026-11-13T11:59:01.000Z",
+        deviceId: "device-1",
+        estado: "sincronizada",
+        attempts: 1,
+        receipt: {
+          serverStatus: "sincronizada",
+          serverResult: {
+            media_id: "foto-1",
+            certificate: {
+              id: "cert-1",
+              evidencia_fotografica: {
+                desarmada: {
+                  image_id: "foto-1",
+                  bucket: "certificate-evidence",
+                  object_path: "visits/visit-p2/evidence/foto-1.jpg",
+                },
+              },
+            },
+          },
+          acknowledgedAt: "2026-11-13T12:00:00.000Z",
+        },
+      },
+    ])
+    expect(
+      resolverEvidencia({ desarmada: { media_id: "foto-1" }, ensamblada_prueba: { media_id: "otra" } }, referencias),
+    ).toEqual({
+      desarmada: {
+        image_id: "foto-1",
+        bucket: "certificate-evidence",
+        object_path: "visits/visit-p2/evidence/foto-1.jpg",
+      },
+      ensamblada_prueba: { media_id: "otra" },
+    })
+  })
+
   it("copies the acknowledged upload reference into a dependent signature operation", async () => {
     const store = new MemoryStore()
     await store.saveMedia({
@@ -552,5 +681,280 @@ describe("OfflineSyncCoordinator", () => {
         image_id: "media-2",
       },
     })
+  })
+})
+
+describe("firma ya registrada en el servidor", () => {
+  const MENSAJE_ES = "La firma de la visita ya fue registrada y no se puede reemplazar."
+  const MENSAJE_EN = "A visit signature cannot be replaced"
+  const visitId = "visit-firma-registrada"
+
+  const fixedClock = () => {
+    let sequence = 0
+    return { now: () => "2026-11-13T12:00:00.000Z", id: () => `nueva-${sequence++}` }
+  }
+
+  const operacion = (
+    overrides: Partial<OperacionOffline> & Pick<OperacionOffline, "operationId" | "kind">,
+  ): OperacionOffline => ({
+    visitId,
+    payload: {},
+    dependencies: [],
+    schemaVersion: 2,
+    createdAt: "2026-11-13T10:00:00.000Z",
+    deviceId: "device-1",
+    estado: "guardada_local",
+    attempts: 0,
+    ...overrides,
+  })
+
+  const firmaSubida = {
+    party: "tecnico",
+    signer_name: "Ana Pérez",
+    media_id: "media-firma",
+    image_id: "media-firma",
+    bucket: "certificate-signatures",
+    object_path: `visits/${visitId}/tecnico/media-firma.png`,
+  }
+
+  type Enviada = { operation_id: string; kind: string; dependencies: string[] }
+
+  it("reconoce el mensaje del servidor en inglés y su traducción", () => {
+    expect(esFirmaYaRegistrada(MENSAJE_EN)).toBe(true)
+    expect(esFirmaYaRegistrada(MENSAJE_ES)).toBe(true)
+    expect(esFirmaYaRegistrada(new Error(MENSAJE_ES))).toBe(true)
+    expect(esFirmaYaRegistrada("The Técnico is not assigned to this visit Taller Móvil")).toBe(false)
+    expect(esFirmaYaRegistrada(undefined)).toBe(false)
+  })
+
+  it("recupera una firma fallida ya registrada y deja pasar el cierre encolado (estado trabado del dispositivo)", async () => {
+    const store = new MemoryStore()
+    await store.saveVisit({
+      id: visitId,
+      context: {},
+      cachedAt: "2026-11-13T09:00:00.000Z",
+      estadoLocal: "completada_local",
+      synchronizationPending: true,
+    })
+    await store.saveOperation(
+      operacion({ operationId: "upload-firma", kind: "upload_evidence", estado: "sincronizada", attempts: 1 }),
+    )
+    await store.saveOperation(
+      operacion({
+        operationId: "firma-tecnico",
+        kind: "submit_signature",
+        payload: firmaSubida,
+        dependencies: ["upload-firma"],
+        estado: "fallida",
+        attempts: 3,
+        lastError: MENSAJE_ES,
+        nextRetryAt: "2026-11-13T13:00:00.000Z",
+        createdAt: "2026-11-13T10:00:01.000Z",
+      }),
+    )
+    await store.saveOperation(
+      operacion({
+        operationId: "cierre",
+        kind: "complete_visit",
+        payload: { local_completed_at: "2026-11-13T10:00:02.000Z" },
+        dependencies: ["firma-tecnico", "upload-firma"],
+        createdAt: "2026-11-13T10:00:02.000Z",
+      }),
+    )
+    const enviadas: Enviada[] = []
+    const coordinator = new OfflineSyncCoordinator(
+      store,
+      {
+        syncVisit: async (_visitId, operations) => {
+          const lote = operations as Enviada[]
+          enviadas.push(...lote)
+          return {
+            operations: lote.map((operation) =>
+              operation.kind === "submit_signature"
+                ? {
+                    operation_id: operation.operation_id,
+                    estado: "conflicto" as const,
+                    error_message: MENSAJE_EN,
+                  }
+                : { operation_id: operation.operation_id, estado: "sincronizada" as const },
+            ),
+          }
+        },
+      },
+      fixedClock(),
+    )
+
+    const restantes = await coordinator.sync(visitId, "device-1")
+
+    const firma = restantes.find((operation) => operation.operationId === "firma-tecnico")
+    expect(firma?.estado).toBe("sincronizada")
+    expect(firma?.receipt?.serverStatus).toBe("ya_registrada")
+    expect(restantes.find((operation) => operation.operationId === "cierre")?.estado).toBe(
+      "sincronizada",
+    )
+    // El servidor no tiene la firma local como sincronizada: no se la declara como dependencia.
+    const cierreEnviado = enviadas.find((operation) => operation.kind === "complete_visit")
+    expect(cierreEnviado?.dependencies).toEqual(["upload-firma"])
+    expect((await store.getVisit(visitId))?.synchronizationPending).toBe(false)
+  })
+
+  it("marca la firma como ya registrada cuando el servidor responde conflicto por ese motivo", async () => {
+    const store = new MemoryStore()
+    await store.saveOperation(
+      operacion({
+        operationId: "firma-cliente",
+        kind: "submit_signature",
+        payload: { ...firmaSubida, party: "cliente" },
+      }),
+    )
+    await store.saveOperation(
+      operacion({
+        operationId: "cierre",
+        kind: "complete_visit",
+        dependencies: ["firma-cliente"],
+        createdAt: "2026-11-13T10:00:02.000Z",
+      }),
+    )
+    const enviadas: Enviada[] = []
+    const coordinator = new OfflineSyncCoordinator(
+      store,
+      {
+        syncVisit: async (_visitId, operations) => {
+          const lote = operations as Enviada[]
+          enviadas.push(...lote)
+          return {
+            operations: lote.map((operation) =>
+              operation.kind === "submit_signature"
+                ? {
+                    operation_id: operation.operation_id,
+                    estado: "conflicto" as const,
+                    error_message: MENSAJE_EN,
+                  }
+                : { operation_id: operation.operation_id, estado: "sincronizada" as const },
+            ),
+          }
+        },
+      },
+      fixedClock(),
+    )
+
+    const restantes = await coordinator.sync(visitId, "device-1")
+
+    expect(restantes.map(({ operationId, estado }) => [operationId, estado])).toEqual([
+      ["firma-cliente", "sincronizada"],
+      ["cierre", "sincronizada"],
+    ])
+    expect(enviadas.find((operation) => operation.kind === "complete_visit")?.dependencies).toEqual([])
+  })
+
+  it("trata como ya registrada la firma cuya subida de archivo rechaza el servidor por ese motivo", async () => {
+    const store = new MemoryStore()
+    await store.saveMedia({
+      id: "media-firma",
+      mediaId: "media-firma",
+      visitId,
+      kind: "signature",
+      blob: new Blob(["firma"], { type: "image/png" }),
+      createdAt: "2026-11-13T10:00:00.000Z",
+    })
+    await store.saveOperation(
+      operacion({
+        operationId: "firma-tecnico",
+        kind: "submit_signature",
+        payload: { party: "tecnico", signer_name: "Ana Pérez", media_id: "media-firma" },
+        mediaIds: ["media-firma"],
+      }),
+    )
+    let llamadasSync = 0
+    const coordinator = new OfflineSyncCoordinator(
+      store,
+      {
+        uploadMedia: async () => {
+          throw new Error(MENSAJE_ES)
+        },
+        syncVisit: async () => {
+          llamadasSync += 1
+          return { operations: [] }
+        },
+      },
+      fixedClock(),
+    )
+
+    const [firma] = await coordinator.sync(visitId, "device-1")
+
+    expect(firma.estado).toBe("sincronizada")
+    expect(firma.receipt?.serverStatus).toBe("ya_registrada")
+    expect(llamadasSync).toBe(0)
+    expect(store.media.has("media-firma")).toBe(false)
+  })
+
+  it("aísla las operaciones cuando el lote entero se rechaza porque la firma ya existe", async () => {
+    const store = new MemoryStore()
+    await store.saveOperation(
+      operacion({ operationId: "firma-tecnico", kind: "submit_signature", payload: firmaSubida }),
+    )
+    await store.saveOperation(
+      operacion({
+        operationId: "resultado",
+        kind: "work_order_outcome",
+        payload: { work_order_id: "wo-1", outcome: "evaluada" },
+        createdAt: "2026-11-13T10:00:01.000Z",
+      }),
+    )
+    const lotes: string[][] = []
+    const coordinator = new OfflineSyncCoordinator(
+      store,
+      {
+        syncVisit: async (_visitId, operations) => {
+          const lote = operations as Enviada[]
+          lotes.push(lote.map((operation) => operation.kind))
+          if (lote.some((operation) => operation.kind === "submit_signature"))
+            throw new Error(MENSAJE_ES)
+          return {
+            operations: lote.map((operation) => ({
+              operation_id: operation.operation_id,
+              estado: "sincronizada" as const,
+            })),
+          }
+        },
+      },
+      fixedClock(),
+    )
+
+    const restantes = await coordinator.sync(visitId, "device-1")
+
+    expect(restantes.every((operation) => operation.estado === "sincronizada")).toBe(true)
+    expect(
+      restantes.find((operation) => operation.operationId === "firma-tecnico")?.receipt?.serverStatus,
+    ).toBe("ya_registrada")
+    expect(lotes).toEqual([
+      ["submit_signature", "work_order_outcome"],
+      ["submit_signature"],
+      ["work_order_outcome"],
+    ])
+  })
+
+  it("no oculta otros errores de la firma", async () => {
+    const store = new MemoryStore()
+    await store.saveOperation(
+      operacion({ operationId: "firma-tecnico", kind: "submit_signature", payload: firmaSubida }),
+    )
+    const coordinator = new OfflineSyncCoordinator(
+      store,
+      {
+        syncVisit: async (_visitId, operations) => ({
+          operations: (operations as Enviada[]).map((operation) => ({
+            operation_id: operation.operation_id,
+            estado: "conflicto" as const,
+            error_message: "The Técnico is not assigned to this visit Taller Móvil",
+          })),
+        }),
+      },
+      fixedClock(),
+    )
+
+    const [firma] = await coordinator.sync(visitId, "device-1")
+
+    expect(firma.estado).toBe("conflicto")
   })
 })

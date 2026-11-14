@@ -8,6 +8,7 @@
 import { format, isValid, parseISO } from "date-fns"
 
 import { CATALOGO_SEMILLA } from "@/lib/domain/catalogos"
+import { urlPublicaDeStorage } from "@/lib/storage-url"
 import {
   formatNroCertificado,
   limpiarParaArchivo,
@@ -143,9 +144,17 @@ const normalizarEtiqueta = (s: string) =>
     .replace(/\s+/g, " ")
     .trim()
 
-function urlUtilizable(value: unknown): string | null {
-  if (typeof value !== "string") return null
-  return /^https:\/\//.test(value) || /^data:image\//.test(value) ? value : null
+export { urlPublicaDeStorage }
+
+/** https, imágenes embebidas o el Storage local de desarrollo (http solo a 127.0.0.1 o localhost). */
+function urlUtilizable(raw: unknown): string | null {
+  if (typeof raw !== "string") return null
+  const value = urlPublicaDeStorage(raw)
+  return /^https:\/\//.test(value) ||
+    /^data:image\//.test(value) ||
+    /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//.test(value)
+    ? value
+    : null
 }
 
 function fotosDe(value: unknown): FotoVista[] {

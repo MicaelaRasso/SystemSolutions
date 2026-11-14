@@ -29,8 +29,6 @@ test.describe("Flujo 2: firma diferida del Cliente", () => {
     const { page } = await abrir("cliente")
     await page.goto(urlPortal(flujo))
     await expect(page.getByRole("heading").first()).toBeVisible({ timeout: 45_000 })
-    // D6: el historial de la válvula trae `is_current: null` y la vista previa no llega a mostrarse.
-    test.fail(true, "D6: el portal falla con is_current null")
     await expect(vistaCertificado(page)).toBeVisible({ timeout: 10_000 })
   })
 
@@ -80,8 +78,6 @@ test.describe("Flujo 2: firma diferida del Cliente", () => {
     await expect(page.getByRole("heading", { name: "Certificados pendientes de firma" }).or(page.getByText("Certificado pendiente").first())).toBeVisible({
       timeout: 45_000,
     })
-    // D6: `is_current: null` no pasa el contrato de `src/lib/api/contracts.ts:453` y la lista falla.
-    test.fail(true, "D6: el portal falla con is_current null")
     await expect(page.getByText(flujo.valvulas[0].tag).first()).toBeVisible({ timeout: 10_000 })
   })
 

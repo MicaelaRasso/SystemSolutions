@@ -67,7 +67,9 @@ select is(
   'PD2026A',
   'the Taller Móvil stores an alphanumeric code on the visit'
 );
-select set_config('app.pd_work_order_id', (select id::text from public.ordenes_trabajo where visita_id = current_setting('app.pd_visit_id')::uuid limit 1), true);
+-- The first Válvula is chosen explicitly: `limit 1` without an order returned either work order,
+-- so the certificate for Válvula 1 was sometimes never started (flaky tests 12 and 16).
+select set_config('app.pd_work_order_id', (select id::text from public.ordenes_trabajo where visita_id = current_setting('app.pd_visit_id')::uuid and valvula_id = '00000000-0000-0000-0000-000000002910'::uuid), true);
 select public.api_update_work_order(current_setting('app.pd_work_order_id')::uuid, 'evaluada', null);
 select public.api_start_certificate_draft(current_setting('app.pd_work_order_id')::uuid);
 select public.api_update_work_order(
@@ -82,6 +84,14 @@ select is(
   2::bigint,
   'one visit Parte diario code is shared by the certificates for both Válvulas'
 );
+
+-- Image references require the object to exist in Storage first (the Edge Function uploads it,
+-- see require_uploaded_certificate_image in 20260926211000); simulate that upload here.
+reset role;
+insert into storage.objects (bucket_id, name) values
+  ('certificate-evidence', 'visits/' || current_setting('app.pd_visit_id') || '/parte-diario/00000000-0000-0000-0000-000000002913.jpg'),
+  ('certificate-evidence', 'visits/' || current_setting('app.pd_visit_id') || '/parte-diario/00000000-0000-0000-0000-000000002915.webp');
+set local role service_role;
 
 select public.api_sync_visit_part_diario_batch(
   current_setting('app.pd_visit_id')::uuid,

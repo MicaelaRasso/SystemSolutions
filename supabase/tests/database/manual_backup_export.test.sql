@@ -23,10 +23,11 @@ values (
   '2026-09-10 03:00:00+00'
 );
 
-insert into public.historial_relaciones (yacimiento_id, actor_cuenta_id, datos, created_at)
+-- historial_relaciones.tipo es obligatorio: el fixture lo omitía.
+insert into public.historial_relaciones (tipo, yacimiento_id, actor_cuenta_id, datos, created_at)
 values
-  ('00000000-0000-0000-0000-000000003611', '00000000-0000-0000-0000-000000003601', '{"event":"inside"}', '2026-09-11 02:59:59+00'),
-  ('00000000-0000-0000-0000-000000003611', '00000000-0000-0000-0000-000000003601', '{"event":"outside"}', '2026-09-11 03:00:00+00');
+  ('jerarquia', '00000000-0000-0000-0000-000000003611', '00000000-0000-0000-0000-000000003601', '{"event":"inside"}', '2026-09-11 02:59:59+00'),
+  ('jerarquia', '00000000-0000-0000-0000-000000003611', '00000000-0000-0000-0000-000000003601', '{"event":"outside"}', '2026-09-11 03:00:00+00');
 
 insert into public.catalogo_opciones (lista, valor, created_at)
 values ('backup-test', 'unrelated current configuration', '2026-09-10 04:00:00+00');

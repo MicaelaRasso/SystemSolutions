@@ -14,9 +14,10 @@ insert into public.clientes (cuenta_id, nombre) values
   ('00000000-0000-0000-0000-000000000801', 'Valve owner'),
   ('00000000-0000-0000-0000-000000000802', 'Other owner');
 
-insert into public.yacimientos (id, cliente_cuenta_id, nombre) values
-  ('00000000-0000-0000-0000-000000000811', '00000000-0000-0000-0000-000000000801', 'Field A'),
-  ('00000000-0000-0000-0000-000000000812', '00000000-0000-0000-0000-000000000802', 'Field B');
+-- provincia, operadora y contratista son obligatorias en yacimientos: el fixture no las cargaba.
+insert into public.yacimientos (id, cliente_cuenta_id, nombre, provincia, operadora, contratista) values
+  ('00000000-0000-0000-0000-000000000811', '00000000-0000-0000-0000-000000000801', 'Field A', 'Neuquen', 'Operadora', 'Contratista'),
+  ('00000000-0000-0000-0000-000000000812', '00000000-0000-0000-0000-000000000802', 'Field B', 'Neuquen', 'Operadora', 'Contratista');
 
 insert into public.plantas_locaciones (id, yacimiento_id, nombre) values
   ('00000000-0000-0000-0000-000000000821', '00000000-0000-0000-0000-000000000811', 'Plant A'),
@@ -45,10 +46,11 @@ $$;
 grant execute on function public.test_set_valve_gateway_actor(uuid) to service_role;
 
 select has_function('public', 'api_valvula', ARRAY['uuid']::text[], 'the valve detail RPC is exposed');
-select has_function('public', 'api_update_valvula', ARRAY['uuid','text','text','text','text','text','text','text','text','text','text','text']::text[], 'the valve update RPC accepts all technical fields');
-select is(has_function_privilege('anon', 'public.api_update_valvula(uuid,text,text,text,text,text,text,text,text,text,text,text)', 'execute'), false, 'anonymous callers cannot update valve data');
-select is(has_function_privilege('authenticated', 'public.api_update_valvula(uuid,text,text,text,text,text,text,text,text,text,text,text)', 'execute'), false, 'authenticated callers cannot bypass the Edge gateway');
-select is(has_function_privilege('service_role', 'public.api_update_valvula(uuid,text,text,text,text,text,text,text,text,text,text,text)', 'execute'), true, 'service role can execute the valve update RPC');
+-- 20261102000000 sumó precinto, servicio, pv, presión, temperatura y notas a api_update_valvula.
+select has_function('public', 'api_update_valvula', ARRAY['uuid','text','text','text','text','text','text','text','text','text','text','text','text','text','text','numeric','numeric','text']::text[], 'the valve update RPC accepts all technical fields');
+select is(has_function_privilege('anon', 'public.api_update_valvula(uuid,text,text,text,text,text,text,text,text,text,text,text,text,text,text,numeric,numeric,text)', 'execute'), false, 'anonymous callers cannot update valve data');
+select is(has_function_privilege('authenticated', 'public.api_update_valvula(uuid,text,text,text,text,text,text,text,text,text,text,text,text,text,text,numeric,numeric,text)', 'execute'), false, 'authenticated callers cannot bypass the Edge gateway');
+select is(has_function_privilege('service_role', 'public.api_update_valvula(uuid,text,text,text,text,text,text,text,text,text,text,text,text,text,text,numeric,numeric,text)', 'execute'), true, 'service role can execute the valve update RPC');
 
 set local role service_role;
 select set_config('request.jwt.claim.role', 'service_role', true);
@@ -88,9 +90,10 @@ select lives_ok(
   'a subsequent update may set an allowed availability reason'
 );
 
+-- En una sola transacción las dos revisiones comparten created_at y el desempate por id es al azar: se busca el snapshot sin depender del orden.
 select is(
-  (public.api_valvula('00000000-0000-0000-0000-000000000841')->'revisions'->1->'datos'->>'marca'),
-  'Acme',
+  (select count(*) from jsonb_array_elements(public.api_valvula('00000000-0000-0000-0000-000000000841')->'revisions') r where r->'datos'->>'marca' = 'Acme'),
+  1::bigint,
   'a later update preserves the earlier revision contents'
 );
 

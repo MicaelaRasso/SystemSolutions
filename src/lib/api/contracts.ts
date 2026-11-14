@@ -332,6 +332,22 @@ export type CreateAdministrativeServiceRequestInput = z.infer<
   typeof createAdministrativeServiceRequestInputSchema
 >
 
+/** Alta administrativa atómica: solicitud, metadata y (con taller) su visita en una transacción. */
+export const createAdministrativeRequestWithVisitInputSchema =
+  createAdministrativeServiceRequestInputSchema.extend({
+    metadata: z.record(z.string(), z.unknown()),
+    visit: z
+      .object({
+        tallerMovilId: edgeIdSchema,
+        startsAt: edgeTimestampSchema,
+        endsAt: edgeTimestampSchema,
+      })
+      .optional(),
+  })
+export type CreateAdministrativeRequestWithVisitInput = z.infer<
+  typeof createAdministrativeRequestWithVisitInputSchema
+>
+
 export const updateServiceRequestInputSchema = z.object({
   selections: z.array(serviceSelectionInputSchema).min(1),
 })
@@ -348,6 +364,11 @@ export const visitDtoSchema = z.object({
   work_orders: z.array(workOrderDetailDtoSchema),
 })
 export type VisitDto = z.infer<typeof visitDtoSchema>
+
+export const serviceRequestWithVisitDtoSchema = serviceRequestDtoSchema.extend({
+  scheduled_visit: visitDtoSchema.nullable(),
+})
+export type ServiceRequestWithVisitDto = z.infer<typeof serviceRequestWithVisitDtoSchema>
 
 export const pendingClientSignatureVisitDtoSchema = z.object({
   visit: visitRowSchema,
@@ -393,6 +414,13 @@ export const visitAssignmentInputSchema = visitAdministrationInputSchema.extend(
   startsAt: edgeTimestampSchema.nullable().optional(),
   endsAt: edgeTimestampSchema.nullable().optional(),
 })
+/** Reprogramación a nivel visita (sin cambiar el taller); el motivo es opcional. */
+export const visitRescheduleInputSchema = z.object({
+  reason: z.string().trim().min(1).optional(),
+  startsAt: edgeTimestampSchema,
+  endsAt: edgeTimestampSchema,
+})
+export type VisitRescheduleInput = z.infer<typeof visitRescheduleInputSchema>
 export type VisitAdministrationInput = z.infer<typeof visitAdministrationInputSchema>
 export type VisitAssignmentInput = z.infer<typeof visitAssignmentInputSchema>
 
@@ -450,7 +478,11 @@ export const valveCertificateHistoryDtoSchema = z.object({
       .object({
         certificate: certificateRowSchema,
         status: z.enum(["pendiente", "vigente", "historico"]).optional(),
-        is_current: z.boolean().optional(),
+        // Un certificado pendiente de la firma del Cliente llega con `is_current: null` (D6).
+        is_current: z
+          .boolean()
+          .nullish()
+          .transform((value) => value ?? false),
         validity: z
           .object({
             execution_date: z.string().nullable().optional(),
@@ -465,6 +497,13 @@ export const valveCertificateHistoryDtoSchema = z.object({
   ),
 })
 export type ValveCertificateHistoryDto = z.infer<typeof valveCertificateHistoryDtoSchema>
+
+/** Historiales de varias Válvulas (`POST certificates/valve-histories`). */
+export const valveHistoriesDtoSchema = z.object({
+  histories: z.array(valveCertificateHistoryDtoSchema.extend({ valve_id: edgeIdSchema })),
+  failed_valve_ids: z.array(edgeIdSchema).default([]),
+})
+export type ValveHistoriesDto = z.infer<typeof valveHistoriesDtoSchema>
 
 export interface VisitSignatureUploadInput {
   party: "tecnico" | "cliente"

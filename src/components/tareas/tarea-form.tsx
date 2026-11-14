@@ -274,7 +274,8 @@ export function TareaForm({
                   <FieldLabel htmlFor="tallerId">Taller móvil</FieldLabel>
                   <Select
                     value={field.value || SIN_TALLER}
-                    onValueChange={(v) => field.onChange(v === SIN_TALLER ? "" : v)}
+                    // Radix emite "" cuando el valor se fija por código: no debe desasignar el taller.
+                    onValueChange={(v) => v && field.onChange(v === SIN_TALLER ? "" : v)}
                   >
                     <SelectTrigger id="tallerId" className="w-full">
                       <SelectValue />
@@ -320,7 +321,7 @@ export function TareaForm({
               render={({ field, fieldState }) => (
                 <Field data-invalid={fieldState.invalid}>
                   <FieldLabel htmlFor="tipo">Tipo de tarea</FieldLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
+                  <Select value={field.value} onValueChange={(v) => v && field.onChange(v)}>
                     <SelectTrigger id="tipo" className="w-full">
                       <SelectValue placeholder="Seleccionar" />
                     </SelectTrigger>
@@ -449,7 +450,7 @@ export function TareaForm({
             render={({ field }) => (
               <Field className="max-w-xs">
                 <FieldLabel htmlFor="estado">Estado</FieldLabel>
-                <Select value={field.value} onValueChange={field.onChange}>
+                <Select value={field.value} onValueChange={(v) => v && field.onChange(v)}>
                   <SelectTrigger id="estado" className="w-full">
                     <SelectValue />
                   </SelectTrigger>

@@ -115,9 +115,10 @@ function verificarHostsRemotos(abiertas: Sesion[], info: TestInfo) {
 export const test = base.extend<{
   abrir: (rol: Rol, opciones?: OpcionesSesion) => Promise<Sesion>
 }>({
-  abrir: async ({ browser }, use, info) => {
+  // El segundo parámetro de Playwright no se llama `use` para que react-hooks no lo tome por un hook.
+  abrir: async ({ browser }, usar, info) => {
     const abiertas: Sesion[] = []
-    await use((rol, opciones = {}) => crearSesion(browser, rol, opciones, abiertas))
+    await usar((rol, opciones = {}) => crearSesion(browser, rol, opciones, abiertas))
     await Promise.all(abiertas.map((sesion) => sesion.context.close().catch(() => undefined)))
     verificarHostsRemotos(abiertas, info)
   },

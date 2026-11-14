@@ -13,12 +13,13 @@ import { useEdgeAuditEvents } from "@/lib/api/hooks"
 import { edgeApi } from "@/lib/api"
 import { useAuth } from "@/lib/auth/auth-provider"
 import { cn } from "@/lib/utils"
+import { fmtFechaHoraArgentina } from "@/lib/format"
 
 const PAGE_SIZE = 50
 
 const fieldClassName = "w-full"
 
-const fechaHora = (iso: string) => new Date(iso).toLocaleString("es-AR")
+const fechaHora = (iso: string) => fmtFechaHoraArgentina(iso, { segundos: true }) ?? iso
 
 /** Detalle del evento: panel flotante en la tabla, bloque en línea en la tarjeta del celular. */
 function DetalleEvento({ event, enLinea }: { event: AuditEvent; enLinea?: boolean }) {

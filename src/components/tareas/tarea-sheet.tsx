@@ -66,6 +66,11 @@ function horaDeTimestamp(value: string) {
   }).format(new Date(value))
 }
 
+function fechaDeMetadata(record: Record<string, unknown> | undefined, name: string) {
+  const value = stringField(record, name)
+  return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined
+}
+
 const isUuid = (val: string | undefined) =>
   val ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val.trim()) : false
 
@@ -109,8 +114,11 @@ export function convertirOperacionATarea(operation: OperationView): TareaResumen
     tallerId: summary.taller_movil?.id,
     contacto: stringField(metadata, "contacto") ?? summary.contacto ?? "",
     telefono: stringField(metadata, "telefono") ?? summary.telefono ?? "",
+    // La fecha cargada en el formulario se guarda en la metadata; si falta se usa `created_at`,
+    // que es un timestamp: el formulario y `tareaSchema` esperan YYYY-MM-DD (en -03:00).
     fechaSolicitud:
-      stringField(request, "created_at", "createdAt") ?? fechaDeTimestamp(summary.starts_at),
+      fechaDeMetadata(metadata, "fecha_solicitud") ??
+      fechaDeTimestamp(stringField(request, "created_at", "createdAt") ?? summary.starts_at),
     fechaEjecucion: fechaDeTimestamp(summary.starts_at),
     horario: horaDeTimestamp(summary.starts_at),
     tipo: stringField(metadata, "tipo") ?? summary.tipo ?? "Certificación",

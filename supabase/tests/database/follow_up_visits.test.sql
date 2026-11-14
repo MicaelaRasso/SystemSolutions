@@ -37,7 +37,8 @@ end;
 $$;
 grant execute on function public.test_follow_up_set_actor(uuid) to service_role;
 
-select is(has_function('public', 'api_create_followup_visit', array['uuid', 'uuid', 'uuid[]', 'uuid', 'timestamptz', 'timestamptz']::text[]), true, 'the follow-up visit command exists');
+-- has_function() ya es una aserción de pgTAP (devuelve texto TAP): no se envuelve en is().
+select has_function('public', 'api_create_followup_visit', array['uuid', 'uuid', 'uuid[]', 'uuid', 'timestamptz', 'timestamptz']::text[], 'the follow-up visit command exists');
 select is(has_function_privilege('authenticated', 'public.api_create_followup_visit(uuid,uuid,uuid[],uuid,timestamptz,timestamptz)', 'execute'), false, 'browser roles cannot call the command directly');
 select is(has_function_privilege('service_role', 'public.api_create_followup_visit(uuid,uuid,uuid[],uuid,timestamptz,timestamptz)', 'execute'), true, 'the Edge gateway can call the command');
 select is((select count(*) from pg_constraint where conrelid = 'public.visitas_servicio'::regclass and conname = 'visitas_servicio_solicitud_id_key'), 0::bigint, 'a Solicitud may have multiple Visitas');

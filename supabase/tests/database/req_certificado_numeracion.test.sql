@@ -41,7 +41,8 @@ returns text language sql as $fn$
       '%11$s', '%9$s', '%8$s', '%6$s', '%3$s', '%4$s', '%5$s', '%10$s', 'pendiente', 'cerrado',
       %12$L, 'Tomas Tecnico',
       '{"valvula":{"tag":"V-%2$s","marca":"Farris"},"ensayos":{"patron":{"id":"p1","label":"FLUKE"},"sp_inicial":{"valor":10,"unidad":"Kg/Cm2"},"sp_apertura":{"valor":11,"unidad":"Kg/Cm2"},"presion_cierre":{"valor":12,"unidad":"Kg/Cm2"}}}',
-      '[]', '{"catalog_version":"v1","items":[],"otros":null}', '{}',
+      -- Desde 20261113000001 la evidencia es un objeto con las tres fotos canónicas (pueden ser null).
+      '[]', '{"catalog_version":"v1","items":[],"otros":null}', '{"desarmada":null,"ensamblada_prueba":null,"placa_precinto":null}',
       'req-numeracion',
       (select id from public.plantillas_certificado order by created_at limit 1),
       '{"version":"req-numeracion","campos":[]}',
@@ -73,11 +74,50 @@ create function public.req_num_siguiente() returns bigint language sql stable as
 $fn$;
 
 -- Tres visitas firmadas, una con dos firmas pendientes, una incompleta.
-select public.req_num_correr(public.req_num_fixture(9101, '2026-03-10', array['tecnico', 'cliente']));
-select public.req_num_correr(public.req_num_fixture(9102, '2026-03-11', array['tecnico', 'cliente']));
-select public.req_num_correr(public.req_num_fixture(9103, '2026-03-12', array['tecnico', 'cliente']));
+-- La firma presencial del Cliente va antes que la del Técnico (enforce_visit_signature_order): el fixture firma en ese orden.
+select public.req_num_correr(public.req_num_fixture(9101, '2026-03-10', array['cliente', 'tecnico']));
+select public.req_num_correr(public.req_num_fixture(9102, '2026-03-11', array['cliente', 'tecnico']));
+select public.req_num_correr(public.req_num_fixture(9103, '2026-03-12', array['cliente', 'tecnico']));
 select public.req_num_correr(public.req_num_fixture(9104, '2026-03-13', array['tecnico']));
-select public.req_num_correr(public.req_num_fixture(9105, '2026-03-14', array['tecnico', 'cliente']));
+select public.req_num_correr(public.req_num_fixture(9105, '2026-03-14', array['cliente', 'tecnico']));
+
+-- RNF-11: dos sesiones reales: la segunda espera a que la primera libere el contador.
+-- Va antes de que esta sesión finalice o haga ALTER TABLE: si no, sus locks (contador FOR UPDATE, certificados) bloquean a req_a para siempre.
+-- En Supabase `postgres` no es superusuario: dblink exige que la contraseña se use de verdad, así que se entra por
+-- el alias de red `db` (scram) con la contraseña por defecto del stack local, no por loopback (trust).
+select extensions.dblink_connect('req_a', 'dbname=' || current_database() || ' user=postgres password=postgres host=db');
+select extensions.dblink_connect('req_b', 'dbname=' || current_database() || ' user=postgres password=postgres host=db');
+select extensions.dblink_exec('req_a', 'begin');
+select extensions.dblink_exec('req_b', 'begin');
+select extensions.dblink_exec(c, sentencias)
+from (values
+  ('req_a', public.req_num_fixture(9201, '2026-04-01', array['cliente', 'tecnico'])),
+  ('req_b', public.req_num_fixture(9202, '2026-04-02', array['cliente', 'tecnico']))
+) as f(c, sentencias);
+select * from extensions.dblink('req_a', format(
+  $$select jsonb_array_length(public.api_finalize_visit_certificates('%s'))$$, public.req_num_id(9201, 7)
+)) as r(emitidos integer);
+select extensions.dblink_send_query('req_b', format(
+  $$select jsonb_array_length(public.api_finalize_visit_certificates('%s'))$$, public.req_num_id(9202, 7)
+));
+select pg_sleep(0.5);
+select is(
+  extensions.dblink_is_busy('req_b'),
+  1,
+  'RNF-11 CA-11: una finalización simultánea espera a la otra en lugar de numerar a la vez'
+);
+select extensions.dblink_exec('req_a', 'rollback');
+select pg_sleep(0.5);
+select is(
+  (select emitidos from extensions.dblink_get_result('req_b') as r(emitidos integer)),
+  1,
+  'RNF-11 CA-11: al liberarse el contador, la segunda finalización continúa sin error'
+);
+-- dblink exige leer el resultado asíncrono hasta el conjunto vacío antes de mandar otro comando.
+select * from extensions.dblink_get_result('req_b') as r(emitidos integer);
+select extensions.dblink_exec('req_b', 'rollback');
+select extensions.dblink_disconnect('req_a');
+select extensions.dblink_disconnect('req_b');
 
 create temporary table req_inicio on commit drop as select public.req_num_siguiente() as valor;
 
@@ -149,38 +189,6 @@ select is(
   'RN-01 RN-08: la vigencia se cuenta desde la ejecución, no desde la sincronización'
 );
 
--- RNF-11: dos sesiones reales: la segunda espera a que la primera libere el contador.
-select extensions.dblink_connect('req_a', 'dbname=' || current_database() || ' user=postgres');
-select extensions.dblink_connect('req_b', 'dbname=' || current_database() || ' user=postgres');
-select extensions.dblink_exec('req_a', 'begin');
-select extensions.dblink_exec('req_b', 'begin');
-select extensions.dblink_exec(c, sentencias)
-from (values
-  ('req_a', public.req_num_fixture(9201, '2026-04-01', array['tecnico', 'cliente'])),
-  ('req_b', public.req_num_fixture(9202, '2026-04-02', array['tecnico', 'cliente']))
-) as f(c, sentencias);
-select * from extensions.dblink('req_a', format(
-  $$select jsonb_array_length(public.api_finalize_visit_certificates('%s'))$$, public.req_num_id(9201, 7)
-)) as r(emitidos integer);
-select extensions.dblink_send_query('req_b', format(
-  $$select jsonb_array_length(public.api_finalize_visit_certificates('%s'))$$, public.req_num_id(9202, 7)
-));
-select pg_sleep(0.5);
-select is(
-  extensions.dblink_is_busy('req_b'),
-  1,
-  'RNF-11 CA-11: una finalización simultánea espera a la otra en lugar de numerar a la vez'
-);
-select extensions.dblink_exec('req_a', 'rollback');
-select pg_sleep(0.5);
-select is(
-  (select emitidos from extensions.dblink_get_result('req_b') as r(emitidos integer)),
-  1,
-  'RNF-11 CA-11: al liberarse el contador, la segunda finalización continúa sin error'
-);
-select extensions.dblink_exec('req_b', 'rollback');
-select extensions.dblink_disconnect('req_a');
-select extensions.dblink_disconnect('req_b');
 
 select * from extensions.finish(true);
 rollback;

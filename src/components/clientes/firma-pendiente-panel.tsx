@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useEdgePendingClientSignatureVisits, useUploadEdgeVisitSignature } from "@/lib/api/hooks"
 import { Cargando } from "@/components/common/cargando"
+import { fmtFechaHoraArgentina } from "@/lib/format"
 
 function text(value: unknown) {
   return typeof value === "string" && value.trim() ? value : undefined
@@ -72,7 +73,7 @@ export function FirmaPendientePanel() {
                   <div>
                     <p className="font-medium">{name}</p>
                     <p className="text-sm text-muted-foreground">
-                      {date ? new Date(date).toLocaleString("es-AR") : "Fecha no informada"} ·{" "}
+                      {fmtFechaHoraArgentina(date) ?? "Fecha no informada"} ·{" "}
                       {visit.work_orders.length} Orden(es) de trabajo
                     </p>
                   </div>

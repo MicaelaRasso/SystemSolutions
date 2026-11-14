@@ -12,9 +12,17 @@ import { Input } from "@/components/ui/input"
 import { useEdgeAdminCertificates } from "@/lib/api/hooks"
 import { edgeApi } from "@/lib/api"
 import type { AdminCertificateFilters } from "@/lib/api/observability"
+import { fmtFechaHora } from "@/lib/format"
 
 const PAGE_SIZE = 50
 const initialFilters: AdminCertificateFilters = { limit: PAGE_SIZE, offset: 0 }
+
+/** Fecha de creación legible (dd/MM/yyyy HH:mm, hora local); nunca el ISO crudo (D13). */
+function fechaCreacion(value: unknown): string {
+  if (typeof value !== "string" || !value) return "—"
+  const fecha = new Date(value)
+  return Number.isNaN(fecha.getTime()) ? "—" : fmtFechaHora(value)
+}
 
 function resolveCertificatePd(certificate: Record<string, unknown>): string {
   const direct = certificate.pd ?? certificate.parte_diario ?? certificate.parte_diario_codigo
@@ -261,7 +269,7 @@ export function CertificateHistory() {
               {
                 id: "creado",
                 encabezado: "Creado",
-                celda: (certificate) => String(certificate.created_at ?? "—"),
+                celda: (certificate) => fechaCreacion(certificate.created_at),
               },
             ]}
             acciones={(certificate) => (

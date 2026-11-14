@@ -9,6 +9,7 @@ import { useEdgeAdminCertificate } from "@/lib/api/hooks"
 import { edgeApi } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { useState } from "react"
+import { fmtFechaHoraArgentina } from "@/lib/format"
 export default function Page() {
   const params = useParams<{ id: string }>()
   const query = useEdgeAdminCertificate(params.id)
@@ -111,7 +112,7 @@ export default function Page() {
                 <p>
                   {event.accion} · {event.resultado} ·{" "}
                   <time dateTime={event.recibida_en}>
-                    {new Date(event.recibida_en).toLocaleString("es-AR")}
+                    {fmtFechaHoraArgentina(event.recibida_en, { segundos: true }) ?? event.recibida_en}
                   </time>
                 </p>
                 <p className="mt-1 break-words text-muted-foreground">

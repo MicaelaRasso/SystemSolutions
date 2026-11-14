@@ -22,7 +22,7 @@ import { Cargando } from "@/components/common/cargando"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
 import { edgeApi } from "@/lib/api"
-import { useEdgeServiceRequests, useEdgeVisits } from "@/lib/api/hooks"
+import { useEdgeServiceRequests, useEdgeVisits, useEdgeYacimientos } from "@/lib/api/hooks"
 import { ESTADO_TAREA_LABEL } from "@/lib/domain/rules"
 import type { EstadoTarea } from "@/lib/domain/types"
 import { fmt, hoyIso } from "@/lib/fechas"
@@ -57,6 +57,11 @@ export function TareasList() {
   const operaciones = useOperaciones(filtro)
   const requests = useEdgeServiceRequests(usaSupabase())
   const visits = useEdgeVisits(usaSupabase())
+  const yacimientos = useEdgeYacimientos()
+  const nombreYacimiento = (id: unknown) => {
+    const yacimientoId = String(id ?? "")
+    return yacimientos.data?.find((y) => y.id === yacimientoId)?.nombre ?? "—"
+  }
   const data = (operaciones.data ?? []).map(convertirOperacionATarea)
   const isPending = operaciones.isPending
   const isError = operaciones.isError
@@ -78,9 +83,7 @@ export function TareasList() {
         return (
           !q ||
           String(request.numero_solicitud ?? "").includes(q) ||
-          String(request.yacimiento_id ?? "")
-            .toLowerCase()
-            .includes(q.toLowerCase())
+          nombreYacimiento(request.yacimiento_id).toLowerCase().includes(q.toLowerCase())
         )
       })
     : []
@@ -132,7 +135,7 @@ export function TareasList() {
 
       <BarraFiltros activos={filtrosActivos} onLimpiar={limpiarFiltros} columnas="sm:grid-cols-3">
         <CampoFiltro etiqueta="Estado">
-          <Select value={estado} onValueChange={setEstado}>
+          <Select value={estado} onValueChange={(v) => v && setEstado(v)}>
             <SelectTrigger className="w-full" aria-label="Estado">
               <SelectValue />
             </SelectTrigger>
@@ -147,7 +150,7 @@ export function TareasList() {
           </Select>
         </CampoFiltro>
         <CampoFiltro etiqueta="Taller">
-          <Select value={taller} onValueChange={setTaller}>
+          <Select value={taller} onValueChange={(v) => v && setTaller(v)}>
             <SelectTrigger className="w-full" aria-label="Taller">
               <SelectValue />
             </SelectTrigger>
@@ -163,7 +166,7 @@ export function TareasList() {
           </Select>
         </CampoFiltro>
         <CampoFiltro etiqueta="Cliente">
-          <Select value={empresa} onValueChange={setEmpresa}>
+          <Select value={empresa} onValueChange={(v) => v && setEmpresa(v)}>
             <SelectTrigger className="w-full" aria-label="Cliente">
               <SelectValue />
             </SelectTrigger>
@@ -206,7 +209,9 @@ export function TareasList() {
                 key={String(request.id)}
                 requestId={String(request.id)}
                 numero={String(request.numero_solicitud ?? "—")}
-                yacimientoId={String(request.yacimiento_id ?? "—")}
+                yacimientoNombre={nombreYacimiento(request.yacimiento_id)}
+                fechaInicial={metadataTexto(request.metadata, "fecha_ejecucion", FECHA)}
+                horaInicial={metadataTexto(request.metadata, "horario", HORA)}
                 valvulas={selected_valves.length}
                 talleres={(talleres.data ?? [])
                   .filter((item) => item.activo)
@@ -353,23 +358,38 @@ export function TareasList() {
   )
 }
 
-function SolicitudSinVisita({
+const FECHA = /^\d{4}-\d{2}-\d{2}$/
+const HORA = /^([01]\d|2[0-3]):[0-5]\d$/
+
+/** Lee un texto de la metadata de la solicitud solo si tiene el formato esperado. */
+function metadataTexto(metadata: unknown, campo: string, formato: RegExp) {
+  if (!metadata || typeof metadata !== "object") return undefined
+  const valor = (metadata as Record<string, unknown>)[campo]
+  return typeof valor === "string" && formato.test(valor) ? valor : undefined
+}
+
+export function SolicitudSinVisita({
   requestId,
   numero,
-  yacimientoId,
+  yacimientoNombre,
+  fechaInicial,
+  horaInicial,
   valvulas,
   talleres,
   onScheduled,
 }: {
   requestId: string
   numero: string
-  yacimientoId: string
+  yacimientoNombre: string
+  /** Fecha y horario capturados al cargar la tarea (metadata de la solicitud). */
+  fechaInicial?: string
+  horaInicial?: string
   valvulas: number
   talleres: { id: string; nombre: string }[]
   onScheduled: () => void
 }) {
-  const [fecha, setFecha] = useState("")
-  const [hora, setHora] = useState("08:00")
+  const [fecha, setFecha] = useState(fechaInicial ?? "")
+  const [hora, setHora] = useState(horaInicial ?? "08:00")
   const [tallerId, setTallerId] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
@@ -397,7 +417,7 @@ function SolicitudSinVisita({
   return (
     <li className="space-y-2 rounded-lg border p-3 text-sm">
       <p>
-        Solicitud N° {numero} · Yacimiento {yacimientoId}{" "}
+        Solicitud N° {numero} · Yacimiento {yacimientoNombre}{" "}
         <span className="text-muted-foreground">
           · Sin visita · {valvulas} válvulas seleccionadas
         </span>
@@ -417,7 +437,7 @@ function SolicitudSinVisita({
           onChange={(event) => setHora(event.target.value)}
           className="w-full sm:w-32"
         />
-        <Select value={tallerId} onValueChange={setTallerId}>
+        <Select value={tallerId} onValueChange={(v) => v && setTallerId(v)}>
           <SelectTrigger className="w-full sm:w-48" aria-label={`Taller para solicitud ${numero}`}>
             <SelectValue placeholder="Elegir Taller Móvil" />
           </SelectTrigger>

@@ -47,8 +47,6 @@ test.describe("Defectos conocidos del cierre de visita", () => {
       await omitirFirmaCliente(tarjeta)
       const seccion = await firmarTecnico(page, tarjeta)
       await seccion.getByRole("button", { name: "Completar visita" }).click()
-      // D1: exige `fecha_ejecucion` y `tecnico_ejecutor` también como campos personalizados.
-      test.fail(true, "D1: la plantilla de la migración impide cerrar la visita")
       await expect(estadoVisita(page).first()).toContainText("Visita completada", { timeout: 15_000 })
     } finally {
       await activarPlantillaSinD1(nombreUnico("post-D1"))
@@ -67,15 +65,14 @@ test.describe("Defectos conocidos del cierre de visita", () => {
     // Primer intento: la válvula evaluada todavía no tiene certificado completo y el cierre falla.
     const seccion = await firmarTecnico(page, tarjeta)
     await seccion.getByRole("button", { name: "Completar visita" }).click()
-    await expect(estadoVisita(page).first()).toContainText("certificate", { timeout: 20_000 })
+    // El mensaje se muestra traducido (S5): se acepta el original y la traducción.
+    await expect(estadoVisita(page).first()).toContainText(/certificate|certificado/, { timeout: 20_000 })
 
     // Se corrige la causa y se reintenta con la misma firma.
     await completarCaptura(page, orden, { fotos: false })
     await guardarBorrador(page, orden)
     await esperarAgendaEstable(page)
     await seccionFirmaTecnico(tarjeta).getByRole("button", { name: "Completar visita" }).click()
-    // D2: la firma del primer intento quedó guardada y el reintento responde «cannot be replaced».
-    test.fail(true, "D2: un cierre fallido deja la firma y traba la visita")
     await expect(estadoVisita(page).first()).toContainText("Visita completada", { timeout: 15_000 })
   })
 
@@ -83,8 +80,6 @@ test.describe("Defectos conocidos del cierre de visita", () => {
     const { tarjeta } = await visitaLista(abrir)
     const opciones = await seccionFirmaTecnico(tarjeta).locator("select").first().locator("option").allInnerTexts()
     expect(opciones.length).toBeGreaterThan(2)
-    // D3: las opciones traen solo el nombre.
-    test.fail(true, "D3: el selector de técnico omite el apellido")
     expect(opciones).toEqual(expect.arrayContaining([TECNICO.completo, SEGUNDO_TECNICO.completo]))
   })
 
@@ -97,8 +92,6 @@ test.describe("Defectos conocidos del cierre de visita", () => {
     await esperarAgendaEstable(page)
     await dibujarFirma(page, seccion)
     await seccion.getByRole("button", { name: "Completar visita" }).click()
-    // D3: la opción sin apellido no coincide con la nómina y la firma responde 403.
-    test.fail(true, "D3: el selector de técnico omite el apellido y da 403")
     await expect(estadoVisita(page).first()).toContainText("Visita completada", { timeout: 15_000 })
   })
 
@@ -119,9 +112,9 @@ test.describe("Defectos conocidos del cierre de visita", () => {
     await expect(page.locator("#detalle")).toBeVisible({ timeout: 45_000 })
     await page.locator("#detalle").fill("Detalle editado por la prueba")
     await page.getByRole("button", { name: "Guardar cambios" }).click()
-    // D11: la fecha de solicitud llega vacía al formulario de edición y bloquea el guardado.
-    test.fail(true, "D11: editar una tarea pierde la fecha de solicitud")
     await expect(page.locator("#fechaSolicitud")).not.toHaveText(/Seleccion|^\s*$/, { timeout: 5_000 })
+    // Se espera la confirmación: recargar antes cancela el guardado que todavía está en curso.
+    await expect(page.getByText("Tarea actualizada")).toBeVisible({ timeout: 30_000 })
     await page.reload()
     await expect(page.locator("#detalle")).toHaveValue("Detalle editado por la prueba", { timeout: 15_000 })
   })
@@ -135,8 +128,6 @@ test.describe("Defectos conocidos del cierre de visita", () => {
     const campo = tarjeta.locator('input[id^="parte-diario-code-"]')
     await expect(campo).toBeVisible()
     await esperarAgendaEstable(page)
-    // D12: el número de Parte Diario queda vacío aunque la tarea tiene PD/RTO.
-    test.fail(true, "D12: el PD/RTO de la tarea no llega a la visita")
     await expect(campo).toHaveValue(pd, { timeout: 5_000 })
   })
 
@@ -153,8 +144,6 @@ test.describe("Defectos conocidos del cierre de visita", () => {
     const estado = estadoVisita(page).first()
     await expect(estado).not.toHaveText("", { timeout: 20_000 })
     await expect(estado).toContainText(/certificate|certificado/, { timeout: 20_000 })
-    // D13: el backend responde en inglés y la pantalla lo muestra tal cual.
-    test.fail(true, "D13: errores en inglés")
     expect(await estado.innerText()).not.toMatch(/\b(every|requires|before|completion)\b/i)
   })
 })

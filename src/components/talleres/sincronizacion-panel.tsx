@@ -5,10 +5,12 @@ import { useCallback, useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { edgeApi, type SyncVisitInput } from "@/lib/api"
+import { edgeApi } from "@/lib/api"
+import { traducirMensajeError } from "@/lib/domain/errores"
+import { crearCoordinadorEdge as createCoordinator } from "@/lib/offline/coordinador-edge"
 import {
   IndexedDbOfflineStore,
-  OfflineSyncCoordinator,
+  RECIBO_FIRMA_YA_REGISTRADA,
   refreshedVisitCatalogs,
   syncPendingVisitStartsBeforeRefresh,
   type OperacionOffline,
@@ -17,6 +19,7 @@ import {
 import { getOfflineDeviceId } from "@/lib/offline/device"
 import { cargarResumenesDeVisitas, conResumenGuardado, resumenGuardado } from "./resumenes-visitas"
 import { tituloDeVisita } from "./visita-titulo"
+import { fmtFechaHoraArgentina } from "@/lib/format"
 
 function tituloGuardado(visit: VisitaOffline) {
   const context = visit.context as { visit?: Record<string, unknown> } | undefined
@@ -37,43 +40,6 @@ type ConflictOutcome = {
   resolution_action: "accepted" | "rejected" | "correction_authorized"
   resolution_reason: string
   resolved_at: string
-}
-
-function createCoordinator(store: IndexedDbOfflineStore) {
-  return new OfflineSyncCoordinator(store, {
-    async syncVisit(visitId, operations, deviceId) {
-      const response = await edgeApi.offline.syncVisit(visitId, {
-        deviceId,
-        operations: operations.map((rawOperation) => {
-          const operation = rawOperation as {
-            operation_id: string
-            kind: string
-            payload: Record<string, unknown>
-            schema_version: number
-            dependencies: string[]
-            device_timestamp: string
-          }
-          return {
-            operationId: operation.operation_id,
-            kind: operation.kind as SyncVisitInput["operations"][number]["kind"],
-            payload: operation.payload,
-            schemaVersion: operation.schema_version,
-            dependencies: operation.dependencies,
-            deviceTimestamp: operation.device_timestamp,
-          }
-        }),
-      })
-
-      return {
-        operations: response.operations.map((operation) => ({
-          operation_id: operation.operation_id,
-          estado: operation.estado,
-          result: operation.result,
-          error_message: operation.error_message,
-        })),
-      }
-    },
-  })
 }
 
 export function SincronizacionPanel() {
@@ -262,7 +228,7 @@ export function SincronizacionPanel() {
                   <p className="text-muted-foreground">Visita {outcome.visit_id} · operación {outcome.operation_id}</p>
                   <p className="text-muted-foreground">Motivo: {outcome.resolution_reason}</p>
                   <time className="text-xs text-muted-foreground" dateTime={outcome.resolved_at}>
-                    {new Date(outcome.resolved_at).toLocaleString()}
+                    {fmtFechaHoraArgentina(outcome.resolved_at) ?? outcome.resolved_at}
                   </time>
                 </li>
               ))}
@@ -367,11 +333,13 @@ export function SincronizacionPanel() {
                         </div>
                         {operation.receipt ? (
                           <p className="text-muted-foreground">
-                            Recibo recibido {operation.receipt.acknowledgedAt}
+                            {operation.receipt.serverStatus === RECIBO_FIRMA_YA_REGISTRADA
+                              ? "La firma ya estaba registrada en el servidor; se conserva la registrada."
+                              : `Recibo recibido ${operation.receipt.acknowledgedAt}`}
                           </p>
                         ) : null}
                         {operation.lastError ? (
-                          <p className="text-destructive">{operation.lastError}</p>
+                          <p className="text-destructive">{traducirMensajeError(operation.lastError)}</p>
                         ) : null}
                         {operation.estado === "conflicto" ? (
                           <p className="text-muted-foreground">

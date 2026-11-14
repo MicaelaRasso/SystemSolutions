@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { armarCertificadoVista, firmasDeVisita } from "./certificado-vista"
+import { armarCertificadoVista, firmasDeVisita, urlPublicaDeStorage } from "./certificado-vista"
 
 const snapshot = {
   yacimiento: {
@@ -176,5 +176,50 @@ describe("firmasDeVisita", () => {
 
   it("tolera respuestas vacías", () => {
     expect(firmasDeVisita(undefined)).toEqual({ tecnico: null, cliente: null })
+  })
+})
+
+describe("direcciones de imágenes (D7)", () => {
+  it("usa la dirección firmada que agrega el backend a la imagen de la firma", () => {
+    const firmas = firmasDeVisita([
+      {
+        parte: "cliente",
+        nombre_firmante: "Juan Pérez",
+        captured_at: "2026-02-04T15:00:00Z",
+        image: { bucket: "certificate-signatures", object_path: "visits/v/cliente/f.png", url: "https://storage.example.test/f.png" },
+      },
+    ])
+    expect(firmas.cliente?.imagenUrl).toBe("https://storage.example.test/f.png")
+  })
+
+  it("acepta el Storage local por http (127.0.0.1 o localhost) y rechaza otros http", () => {
+    const local = "http://127.0.0.1:55321/storage/v1/object/sign/certificate-signatures/f.png?token=t"
+    const firma = (url: string) =>
+      firmasDeVisita([{ parte: "tecnico", nombre_firmante: "T", image: { url } }]).tecnico?.imagenUrl
+    expect(firma(local)).toBe(local)
+    expect(firma("http://localhost:54321/storage/v1/object/sign/x.png")).toBe(
+      "http://localhost:54321/storage/v1/object/sign/x.png",
+    )
+    expect(firma("http://storage.example.test/x.png")).toBeNull()
+    expect(firma("javascript:alert(1)")).toBeNull()
+  })
+})
+
+describe("urlPublicaDeStorage", () => {
+  const publica = "http://127.0.0.1:55321"
+  it("lleva al host público la URL firmada con el host interno del Storage local", () => {
+    expect(
+      urlPublicaDeStorage("http://kong:8000/storage/v1/object/sign/certificate-signatures/a.png?token=t", publica),
+    ).toBe("http://127.0.0.1:55321/storage/v1/object/sign/certificate-signatures/a.png?token=t")
+  })
+
+  it("no toca URLs https, otras rutas ni URLs inválidas", () => {
+    const https = "https://ref.supabase.co/storage/v1/object/sign/certificate-evidence/a.png?token=t"
+    expect(urlPublicaDeStorage(https, publica)).toBe(https)
+    expect(urlPublicaDeStorage("http://kong:8000/otra/ruta.png", publica)).toBe("http://kong:8000/otra/ruta.png")
+    expect(urlPublicaDeStorage("no es url", publica)).toBe("no es url")
+    expect(urlPublicaDeStorage("http://kong:8000/storage/v1/object/sign/a.png", undefined)).toBe(
+      "http://kong:8000/storage/v1/object/sign/a.png",
+    )
   })
 })

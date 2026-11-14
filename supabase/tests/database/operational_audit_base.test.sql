@@ -61,14 +61,17 @@ select is(
   1,
   'visit filter returns the matching operational event'
 );
+-- Con otros datos en la base el filtro devuelve más eventos: se comprueba que todos coincidan y que esté el del fixture.
 select is(
-  jsonb_array_length(public.api_audit_events(action_filter => 'visita_completada')->'items'),
-  1,
+  (select bool_and(item->>'accion' = 'visita_completada') and bool_or(item->>'objetivo_id' = '00000000-0000-0000-0000-000000009911')
+   from jsonb_array_elements(public.api_audit_events(action_filter => 'visita_completada', limit_count => 100)->'items') item),
+  true,
   'action filter returns matching events'
 );
 select is(
-  jsonb_array_length(public.api_audit_events(target_type_filter => 'visita_servicio')->'items'),
-  1,
+  (select bool_and(item->>'tipo_objetivo' = 'visita_servicio') and bool_or(item->>'objetivo_id' = '00000000-0000-0000-0000-000000009911')
+   from jsonb_array_elements(public.api_audit_events(target_type_filter => 'visita_servicio', limit_count => 100)->'items') item),
+  true,
   'target-type filter returns matching events'
 );
 select is(
@@ -76,11 +79,15 @@ select is(
   1,
   'regular Administrador can inspect operational synchronization-conflict resolution'
 );
+-- La aserción es sobre el Administrador regular: hasta acá el actor era el Súper Administrador, que sí ve los rechazos.
+select public.test_audit_base_set_actor('00000000-0000-0000-0000-000000009901');
+-- Los rechazos de visitas o certificados sí son visibles: se prueba con la categoría no operativa del fixture (backup_manual).
 select is(
-  jsonb_array_length(public.api_audit_events(outcome_filter => 'fallido')->'items'),
+  jsonb_array_length(public.api_audit_events(outcome_filter => 'fallido', target_type_filter => 'backup_manual')->'items'),
   0,
   'regular administrators do not see rejected events outside operational service categories'
 );
+select public.test_audit_base_set_actor('00000000-0000-0000-0000-000000009902');
 select is(
   jsonb_array_length(public.api_audit_events(certificate_filter => '00000000-0000-0000-0000-000000009915'::uuid)->'items'),
   0,
@@ -107,11 +114,11 @@ select is(
   'date range filters by server receipt date'
 );
 select ok(
-  (public.api_audit_event((select id from public.registros_auditoria where accion = 'visita_completada'))->'resumen_cambio') @> '{"estado_nuevo":"completada"}'::jsonb,
+  (public.api_audit_event((select id from public.registros_auditoria where accion = 'visita_completada' and objetivo_id = '00000000-0000-0000-0000-000000009911'))->'resumen_cambio') @> '{"estado_nuevo":"completada"}'::jsonb,
   'event detail preserves the structured change summary'
 );
 select ok(
-  (public.api_audit_event((select id from public.registros_auditoria where accion = 'visita_completada'))->'identificadores_relacionados') @> '{"solicitud_id":"00000000-0000-0000-0000-000000009912"}'::jsonb,
+  (public.api_audit_event((select id from public.registros_auditoria where accion = 'visita_completada' and objetivo_id = '00000000-0000-0000-0000-000000009911'))->'identificadores_relacionados') @> '{"solicitud_id":"00000000-0000-0000-0000-000000009912"}'::jsonb,
   'event detail preserves related identifiers'
 );
 select ok(
@@ -128,9 +135,12 @@ select throws_ok(
 );
 
 select public.test_audit_base_set_actor('00000000-0000-0000-0000-000000009901');
+-- Con otros datos en la base: de los eventos del fixture ve los 2 operativos, y ningún evento de configuración (formato «fixture:configuración»).
 select is(
-  jsonb_array_length(public.api_audit_events()->'items'),
-  2,
+  (select (count(*) filter (where item->>'objetivo_id' in ('00000000-0000-0000-0000-000000009911', '00000000-0000-0000-0000-000000009914', '00000000-0000-0000-0000-000000009916')))::text
+     || ':' || (count(*) filter (where item->>'tipo_objetivo' = 'configuracion'))::text
+   from jsonb_array_elements(public.api_audit_events(limit_count => 100)->'items') item),
+  '2:0',
   'regular Administrador sees operational events but not configuration events'
 );
 select throws_ok(
@@ -151,23 +161,28 @@ select is(
 );
 
 select public.test_audit_base_set_actor('00000000-0000-0000-0000-000000009902');
+-- Se cuentan solo los eventos del fixture (4 registrados + 3 account_invited): la base trae otros (catálogos de las migraciones, datos de demo).
 select is(
-  jsonb_array_length(public.api_audit_events()->'items'),
+  (select count(*)::integer from jsonb_array_elements(public.api_audit_events(limit_count => 100)->'items') item
+   where item->>'objetivo_id' in (
+     '00000000-0000-0000-0000-000000009901', '00000000-0000-0000-0000-000000009902', '00000000-0000-0000-0000-000000009903',
+     '00000000-0000-0000-0000-000000009911', '00000000-0000-0000-0000-000000009914', '00000000-0000-0000-0000-000000009916'
+   ) or (item->>'accion' = 'sensitive_export_denied' and item->>'actor_cuenta_id' = '00000000-0000-0000-0000-000000009902')),
   7,
   'Súper Administrador sees all event categories, including rejected attempts'
 );
 select is(
-  public.api_audit_export(action_filter => 'visita_completada')->>'total',
+  public.api_audit_export(action_filter => 'visita_completada', visit_filter => '00000000-0000-0000-0000-000000009911')->>'total',
   '1',
   'audit export returns all rows matching the active filters'
 );
 select is(
-  public.api_audit_export(action_filter => 'visita_completada')->'items'->0->>'accion',
+  public.api_audit_export(action_filter => 'visita_completada', visit_filter => '00000000-0000-0000-0000-000000009911')->'items'->0->>'accion',
   'visita_completada',
   'audit export excludes events that do not match the requested action'
 );
 select ok(
-  (public.api_audit_export(action_filter => 'visita_completada')->'items'->0) ?& array[
+  (public.api_audit_export(action_filter => 'visita_completada', visit_filter => '00000000-0000-0000-0000-000000009911')->'items'->0) ?& array[
     'id', 'recibida_en', 'evento_dispositivo_en', 'actor_cuenta_id', 'actor_rol', 'actor_email',
     'accion', 'tipo_objetivo', 'objetivo_id', 'resultado', 'identidad_correlacion',
     'cliente_cuenta_id', 'yacimiento_id', 'yacimiento_nombre', 'visita_id', 'certificado_id',
@@ -201,7 +216,8 @@ select ok(
 );
 update public.cuentas set activo = false where id = '00000000-0000-0000-0000-000000009903';
 select ok(
-  exists (select 1 from public.registros_auditoria where accion = 'cuenta_acceso_actualizado' and resultado = 'exitoso'),
+  -- 20261006151926 renombró la acción a account_disabled; 20261114000007 la registra también cuando el cambio llega por `activo`.
+  exists (select 1 from public.registros_auditoria where accion = 'account_disabled' and resultado = 'exitoso' and objetivo_id = '00000000-0000-0000-0000-000000009903'),
   'account access changes receive a stable audit action'
 );
 

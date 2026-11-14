@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Cargando } from "@/components/common/cargando"
 import { edgeApi } from "@/lib/api"
-import { certificateQueryKeys } from "@/lib/api/certificates"
+import { certificateQueryKeys, VALVULAS_POR_LOTE } from "@/lib/api/certificates"
 import { hierarchyQueryKeys } from "@/lib/api/hierarchy"
 import { useEdgeYacimientos } from "@/lib/api/hooks"
 import { formatNroCertificado } from "@/lib/domain/rules"
@@ -141,21 +141,35 @@ export function CertificadosCliente() {
     return map
   }, [valvulas])
 
+  // Un pedido por lote de Válvulas (antes era uno por Válvula). Una Válvula cuyo historial falla
+  // no impide ver las demás. Los lotes se arman recién cuando terminó de cargar (o falló) el árbol
+  // de cada yacimiento: si se armaran a medida que llega cada árbol, cada lote parcial tendría otra
+  // clave y el historial se pediría dos veces (P8). Los árboles se piden en paralelo, así que la
+  // espera es la del árbol más lento.
+  const arbolesListos = !yacimientos.isPending && arboles.every((q) => !q.isPending)
+  const lotes = useMemo(() => {
+    if (!arbolesListos) return []
+    const ids = valvulas.map((valvula) => valvula.id)
+    const resultado: string[][] = []
+    for (let i = 0; i < ids.length; i += VALVULAS_POR_LOTE) resultado.push(ids.slice(i, i + VALVULAS_POR_LOTE))
+    return resultado
+  }, [arbolesListos, valvulas])
   const historiales = useQueries({
-    queries: valvulas.map((valvula) => ({
-      queryKey: certificateQueryKeys.valveHistory(valvula.id),
-      queryFn: () => edgeApi.certificates.valveHistory(valvula.id),
+    queries: lotes.map((ids) => ({
+      queryKey: certificateQueryKeys.valveHistories(ids),
+      queryFn: () => edgeApi.certificates.valveHistories(ids),
     })),
   })
 
-  const filas = historiales.flatMap((query, i) => {
-    const valvulaId = valvulas[i]?.id
-    const valvula = (valvulaId ? valvulasMap.get(valvulaId) : undefined) ?? valvulas[i]
-    if (!valvula) return []
-    return (query.data?.certificates ?? [])
-      .filter((entrada) => entrada.certificate?.estado !== "borrador")
-      .map((entrada) => ({ entrada, valvula }))
-  })
+  const filas = historiales.flatMap((query) =>
+    (query.data?.histories ?? []).flatMap((historial) => {
+      const valvula = valvulasMap.get(historial.valve_id)
+      if (!valvula) return []
+      return historial.certificates
+        .filter((entrada) => entrada.certificate?.estado !== "borrador")
+        .map((entrada) => ({ entrada, valvula }))
+    }),
+  )
 
   const cargando =
     yacimientos.isPending ||

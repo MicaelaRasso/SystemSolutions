@@ -33,21 +33,26 @@ select lives_ok(
   $$select public.api_register_client_account('00000000-0000-0000-0000-000000004603')$$,
   'an Administrador registers the invited Cuenta as Cliente'
 );
+-- CUIT propio del test: el CUIT es único y los datos de e2e/demo ya usan 30-12345678-9.
 select is((public.api_create_client(
-  '00000000-0000-0000-0000-000000004603', 'Cliente Principal', '30-12345678-9', 'Contacto',
+  '00000000-0000-0000-0000-000000004603', 'Cliente Principal', '30-99004603-9', 'Contacto',
   '111', 'principal@example.test', 'Dirección', true, true
 )->>'id'), '00000000-0000-0000-0000-000000004603', 'onboarding creates the Cliente profile for the principal Cuenta');
 select is((public.api_client('00000000-0000-0000-0000-000000004603')->>'razon_social'), 'Cliente Principal', 'Administradores can read the new profile');
 select lives_ok(
-  $$select public.api_update_client('00000000-0000-0000-0000-000000004603', 'Cliente Editado', '30-12345678-9', 'Contacto', '111', 'principal@example.test', 'Dirección', true, true)$$,
+  $$select public.api_update_client('00000000-0000-0000-0000-000000004603', 'Cliente Editado', '30-99004603-9', 'Contacto', '111', 'principal@example.test', 'Dirección', true, true)$$,
   'Administradores can edit Cliente profile fields'
 );
 
+-- El Cliente invitado acepta la invitación (email confirmado y contraseña, regla de 20261006151926) antes de entrar al portal.
+reset role;
+update auth.users set email_confirmed_at = now(), encrypted_password = 'onboarding-password-hash' where id = '00000000-0000-0000-0000-000000004603';
+set local role service_role;
 select public.test_set_onboarding_actor('00000000-0000-0000-0000-000000004603');
 select is((select rol::text from public.api_context()), 'cliente', 'the principal Cuenta authenticates with the Cliente portal role');
 select is((public.api_client('00000000-0000-0000-0000-000000004603')->>'razon_social'), 'Cliente Editado', 'a Cliente can read its own profile');
 select throws_ok(
-  $$select public.api_update_client('00000000-0000-0000-0000-000000004603', 'Self edit', '30-12345678-9', 'Contacto', '111', 'principal@example.test', 'Dirección', true, true)$$,
+  $$select public.api_update_client('00000000-0000-0000-0000-000000004603', 'Self edit', '30-99004603-9', 'Contacto', '111', 'principal@example.test', 'Dirección', true, true)$$,
   '42501', 'Only an Administrador can update a Cliente', 'a Cliente cannot update its profile'
 );
 select throws_ok(

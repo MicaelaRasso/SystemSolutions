@@ -1,6 +1,27 @@
 import type { CertificateCaptureCatalogsDto } from "../api/contracts"
+import { traducirMensajeError } from "../domain/errores"
 
 export const OFFLINE_SCHEMA_VERSION = 2
+
+/** Mensaje crudo del backend cuando ya existe una firma de esa parte para la visita. */
+const FIRMA_YA_REGISTRADA = "A visit signature cannot be replaced"
+
+/**
+ * Indica si un error (o su mensaje) dice que la firma de la visita ya está registrada en el
+ * servidor. Reconoce el mensaje crudo en inglés y su traducción al español.
+ */
+export function esFirmaYaRegistrada(error: unknown): boolean {
+  const mensaje =
+    error instanceof Error ? error.message : typeof error === "string" ? error : undefined
+  if (!mensaje) return false
+  return (
+    mensaje.includes(FIRMA_YA_REGISTRADA) ||
+    mensaje.includes(traducirMensajeError(FIRMA_YA_REGISTRADA))
+  )
+}
+
+/** Estado del recibo de una firma local que el servidor ya tenía registrada. */
+export const RECIBO_FIRMA_YA_REGISTRADA = "ya_registrada"
 
 export type EstadoOperacionLocal =
   | "guardada_local"
@@ -288,6 +309,81 @@ const hasUploadedReference = (payload: Record<string, unknown>) =>
   typeof payload.image_id === "string" &&
   payload.image_id.length > 0
 
+/** Referencia de Storage con la que el servidor registra una foto de evidencia del certificado. */
+export type ReferenciaEvidencia = { image_id: string; bucket: string; object_path: string }
+
+const esRegistro = (valor: unknown): valor is Record<string, unknown> =>
+  !!valor && typeof valor === "object" && !Array.isArray(valor)
+
+const esReferenciaEvidencia = (valor: unknown): valor is ReferenciaEvidencia =>
+  esRegistro(valor) &&
+  typeof valor.image_id === "string" &&
+  valor.image_id.length > 0 &&
+  typeof valor.bucket === "string" &&
+  valor.bucket.length > 0 &&
+  typeof valor.object_path === "string" &&
+  valor.object_path.length > 0
+
+/**
+ * Referencias de Storage ya conocidas para las fotos locales, por `media_id` (que es el mismo
+ * `image_id` del servidor). Salen de las operaciones cuyo archivo ya se subió y de los recibos de
+ * las ya sincronizadas (resultado directo o la evidencia del certificado devuelto).
+ */
+export function referenciasDeEvidencia(
+  operations: OperacionOffline[],
+): Map<string, ReferenciaEvidencia> {
+  const referencias = new Map<string, ReferenciaEvidencia>()
+  const agregar = (valor: unknown, mediaId?: unknown) => {
+    if (!esReferenciaEvidencia(valor)) return
+    const referencia = {
+      image_id: valor.image_id,
+      bucket: valor.bucket,
+      object_path: valor.object_path,
+    }
+    referencias.set(valor.image_id, referencia)
+    if (typeof mediaId === "string" && mediaId.length > 0) referencias.set(mediaId, referencia)
+  }
+  for (const operation of operations) {
+    agregar(operation.payload, operation.payload.media_id)
+    const resultado = operation.receipt?.serverResult
+    if (!esRegistro(resultado)) continue
+    agregar(resultado, resultado.media_id)
+    const certificado = resultado.certificate
+    if (esRegistro(certificado) && esRegistro(certificado.evidencia_fotografica))
+      for (const valor of Object.values(certificado.evidencia_fotografica)) agregar(valor)
+  }
+  return referencias
+}
+
+/**
+ * Reemplaza en la evidencia del certificado las fotos `{ media_id }` que el servidor ya registró
+ * por su referencia `{ image_id, bucket, object_path }`. Así un borrador guardado después de
+ * sincronizar no pisa la referencia registrada con el identificador local (P2).
+ */
+export function resolverEvidencia<T>(evidencia: T, referencias: Map<string, ReferenciaEvidencia>): T {
+  if (!esRegistro(evidencia) || referencias.size === 0) return evidencia
+  return Object.fromEntries(
+    Object.entries(evidencia).map(([seccion, valor]) => {
+      const mediaId =
+        esRegistro(valor) && !esReferenciaEvidencia(valor) && typeof valor.media_id === "string"
+          ? valor.media_id
+          : undefined
+      return [seccion, (mediaId && referencias.get(mediaId)) || valor]
+    }),
+  ) as T
+}
+
+/** Aplica `resolverEvidencia` a los datos de un guardado de borrador (`{ evidencia_fotografica }`). */
+export function resolverEvidenciaDelBorrador<T extends object>(
+  datos: T,
+  referencias: Map<string, ReferenciaEvidencia>,
+): T {
+  const actual = (datos as Record<string, unknown>).evidencia_fotografica
+  if (actual === undefined) return datos
+  const evidencia = resolverEvidencia(actual, referencias)
+  return evidencia === actual ? datos : { ...datos, evidencia_fotografica: evidencia }
+}
+
 export const migratePendingOperation = (operation: OperacionOffline): OperacionOffline => {
   if (operation.schemaVersion > OFFLINE_SCHEMA_VERSION) {
     return { ...operation, estado: "bloqueada", lastError: "Versión de operación no compatible" }
@@ -498,8 +594,22 @@ export class OfflineSyncCoordinator {
       }
     }
 
+    // Una firma que el servidor ya tenía registrada no se puede reemplazar: se da por sincronizada
+    // para que no trabe al resto (por ejemplo, el cierre de la visita encolado detrás).
+    for (const operation of initial) {
+      if (
+        operation.kind === "submit_signature" &&
+        (operation.estado === "fallida" || operation.estado === "conflicto") &&
+        esFirmaYaRegistrada(operation.lastError)
+      )
+        await this.marcarFirmaYaRegistrada(operation)
+    }
+
     const attempted = new Set<string>()
-    for (let layer = 0; layer < initial.length; layer += 1) {
+    // Si el servidor rechaza un lote entero por una firma repetida, se reintenta de a una operación
+    // para identificarla sin perder las demás.
+    let aislar = false
+    for (let layer = 0; layer <= initial.length; layer += 1) {
       const current = (await this.store.listOperations(visitId)).map(migratePendingOperation)
       const ready = current
         .filter(
@@ -514,6 +624,7 @@ export class OfflineSyncCoordinator {
             ),
         )
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.operationId.localeCompare(b.operationId))
+      if (aislar) ready.splice(1)
       if (ready.length === 0) break
 
       for (const operation of ready) {
@@ -525,6 +636,7 @@ export class OfflineSyncCoordinator {
       }
 
       const sendable: OperacionOffline[] = []
+      let firmaResueltaEnSubida = false
       for (const operation of ready) {
         if (!mediaOperationKinds.has(operation.kind)) {
           sendable.push(operation)
@@ -603,6 +715,11 @@ export class OfflineSyncCoordinator {
             throw new Error("La operación multimedia no recibió una referencia Storage válida")
           sendable.push(operation)
         } catch (error) {
+          if (operation.kind === "submit_signature" && esFirmaYaRegistrada(error)) {
+            await this.marcarFirmaYaRegistrada(operation)
+            firmaResueltaEnSubida = true
+            continue
+          }
           operation.estado = "fallida"
           operation.lastError = error instanceof Error ? error.message : "No se pudo cargar el archivo"
           const timestamp = Date.parse(this.clock.now())
@@ -611,7 +728,30 @@ export class OfflineSyncCoordinator {
           await this.store.saveOperation(operation)
         }
       }
-      if (sendable.length === 0) break
+      if (sendable.length === 0) {
+        if (firmaResueltaEnSubida) continue
+        break
+      }
+
+      // Un borrador encolado con `{ media_id }` lleva la referencia de Storage si la foto ya se
+      // subió (en esta pasada o antes); si no, el servidor reemplazaría la evidencia registrada.
+      const referencias = referenciasDeEvidencia(current)
+      for (const operation of sendable) {
+        if (operation.kind !== "update_certificate_draft" || !esRegistro(operation.payload.data))
+          continue
+        const data = resolverEvidenciaDelBorrador(operation.payload.data, referencias)
+        if (JSON.stringify(data) === JSON.stringify(operation.payload.data)) continue
+        operation.payload = { ...operation.payload, data }
+        await this.store.saveOperation(operation)
+      }
+
+      // El servidor exige que cada dependencia figure sincronizada de su lado; una firma que ya
+      // estaba registrada quedó sincronizada solo en el dispositivo, así que no se declara.
+      const resueltasLocalmente = new Set(
+        current
+          .filter((operation) => operation.receipt?.serverStatus === RECIBO_FIRMA_YA_REGISTRADA)
+          .map((operation) => operation.operationId),
+      )
 
       let response: Awaited<ReturnType<SyncTransport["syncVisit"]>>
       try {
@@ -621,7 +761,9 @@ export class OfflineSyncCoordinator {
             operation_id: operation.operationId,
             idempotency_key: operation.idempotencyKey ?? operation.operationId,
             kind: operation.kind,
-            dependencies: operation.dependencies,
+            dependencies: operation.dependencies.filter(
+              (dependency) => !resueltasLocalmente.has(dependency),
+            ),
             schema_version: operation.schemaVersion,
             payload: operation.payload,
             base_versions: operation.baseVersions,
@@ -630,7 +772,25 @@ export class OfflineSyncCoordinator {
           deviceId,
         )
       } catch (error) {
-        for (const operation of ready) {
+        if (
+          esFirmaYaRegistrada(error) &&
+          sendable.some((operation) => operation.kind === "submit_signature")
+        ) {
+          if (sendable.length === 1) {
+            await this.marcarFirmaYaRegistrada(sendable[0])
+            continue
+          }
+          aislar = true
+          for (const operation of sendable) {
+            operation.estado = "fallida"
+            operation.lastError = error instanceof Error ? error.message : "No se pudo sincronizar"
+            attempted.delete(operation.operationId)
+            await this.store.saveOperation(operation)
+          }
+          continue
+        }
+        // Las que fallaron al subir su archivo ya quedaron fallidas con su propio motivo.
+        for (const operation of sendable) {
           operation.estado = "fallida"
           operation.lastError = error instanceof Error ? error.message : "No se pudo sincronizar"
           const timestamp = Date.parse(this.clock.now())
@@ -648,6 +808,15 @@ export class OfflineSyncCoordinator {
           operation.estado = "fallida"
           operation.lastError = "El servidor no confirmó la operación"
           await this.store.saveOperation(operation)
+          continue
+        }
+        if (
+          result.estado !== "sincronizada" &&
+          operation.kind === "submit_signature" &&
+          esFirmaYaRegistrada(result.error_message)
+        ) {
+          await this.marcarFirmaYaRegistrada(operation, result.server_received_at)
+          acknowledged = true
           continue
         }
         if (result.estado === "conflicto") {
@@ -687,7 +856,7 @@ export class OfflineSyncCoordinator {
         )
         await this.store.saveVisit(visit)
       }
-      if (!acknowledged) break
+      if (!acknowledged && !aislar) break
     }
 
     const remaining = await this.store.listOperations(visitId)
@@ -697,6 +866,27 @@ export class OfflineSyncCoordinator {
       await this.store.saveVisit(visit)
     }
     return remaining
+  }
+
+  /** Da por sincronizada una firma local cuya parte ya tenía firma registrada en el servidor. */
+  private async marcarFirmaYaRegistrada(operation: OperacionOffline, serverReceivedAt?: string) {
+    operation.estado = "sincronizada"
+    delete operation.nextRetryAt
+    delete operation.lastError
+    operation.receipt = {
+      serverStatus: RECIBO_FIRMA_YA_REGISTRADA,
+      serverResult: {
+        motivo: "La firma de esta parte ya estaba registrada en el servidor; se conserva la registrada.",
+      },
+      serverReceivedAt,
+      acknowledgedAt: this.clock.now(),
+    }
+    await this.store.saveOperation(operation)
+    await this.store.removeOperationPayload(operation.operationId, operation.receipt)
+    for (const mediaId of operation.mediaIds ?? []) {
+      await this.store.removeMedia?.(mediaId)
+      await this.store.deleteMedia?.(mediaId)
+    }
   }
 
   async retryAutomatically(visitId: string, deviceId: string) {

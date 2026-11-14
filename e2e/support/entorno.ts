@@ -19,11 +19,33 @@ export const CONTENEDOR_DB = process.env.E2E_DB_CONTAINER ?? "supabase_db_system
 /** Secreto fijo solo para pruebas: firma el ticket de sesión sin conexión del build E2E. */
 export const OFFLINE_SESSION_SECRET_E2E = "e2e-solo-pruebas-offline-secret-0123456789abcdef"
 
-const PREFIJOS_LOCALES = ["http://127.0.0.1:", "http://localhost:"]
+const HOSTS_LOCALES = new Set(["127.0.0.1", "localhost"])
+
+/**
+ * `true` solo para `http://127.0.0.1:<puerto>` o `http://localhost:<puerto>`. Se analiza la URL
+ * en lugar de mirar el prefijo: `http://127.0.0.1:x@proyecto.supabase.co` empieza igual y apunta
+ * a un host remoto.
+ */
+export function esUrlLocal(url: string) {
+  let destino: URL
+  try {
+    destino = new URL(url)
+  } catch {
+    return false
+  }
+  return (
+    destino.protocol === "http:" &&
+    HOSTS_LOCALES.has(destino.hostname) &&
+    destino.port !== "" &&
+    !destino.username &&
+    !destino.password &&
+    /^http:\/\/(127\.0\.0\.1|localhost):\d+(\/|$)/.test(url)
+  )
+}
 
 /** Corta la ejecución si una URL de Supabase no apunta a esta máquina. */
 export function asegurarUrlLocal(url: string, origen = "E2E_SUPABASE_URL") {
-  if (!PREFIJOS_LOCALES.some((prefijo) => url.startsWith(prefijo))) {
+  if (!esUrlLocal(url)) {
     throw new Error(
       `Seguridad E2E: ${origen} debe empezar con http://127.0.0.1: o http://localhost: y vale "${url}"`,
     )

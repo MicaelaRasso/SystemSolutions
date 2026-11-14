@@ -10,7 +10,9 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "datos:demo": "jiti scripts/datos-demo/cli.ts",
+    "demo:app": "jiti scripts/datos-demo/app-local.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",

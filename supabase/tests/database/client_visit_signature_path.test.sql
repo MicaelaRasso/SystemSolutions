@@ -1,3 +1,4 @@
+-- pgTAP no tiene like()/unlike() con descripción: se usan alike()/unalike().
 begin;
 
 select plan(12);
@@ -35,17 +36,17 @@ select is(
   true,
   'the authenticated Edge gateway can register visit signatures'
 );
-select like(
+select alike(
   pg_get_functiondef('public.api_submit_visit_signature(uuid,public.parte_firma_visita,text,text,text,text)'::regprocedure),
   '%capture_method = ''panel_cliente''%',
   'post-visit Cliente signatures require the Cliente panel capture method'
 );
-select like(
+select alike(
   pg_get_functiondef('public.api_submit_visit_signature(uuid,public.parte_firma_visita,text,text,text,text)'::regprocedure),
   '%capture_method = ''pwa_cliente_presencial''%',
   'Técnico-captured in-person Cliente signatures remain supported'
 );
-select like(
+select alike(
   pg_get_functiondef('public.api_submit_visit_signature(uuid,public.parte_firma_visita,text,text,text,text)'::regprocedure),
   '%api_finalize_visit_certificates(target_visit)%',
   'the visit signature is applied to eligible certificates through the visit finalizer'
@@ -60,17 +61,17 @@ select ok(
   ),
   'the in-person Cliente signature is ordered before the Técnico signature'
 );
-select like(
+select alike(
   pg_get_functiondef('public.enforce_visit_signature_order()'::regprocedure),
   '%array_length(regexp_split_to_array(btrim(new.nombre_firmante)%',
   'Cliente signatures require first and last name'
 );
-select like(
+select alike(
   pg_get_functiondef('public.enforce_visit_signature_order()'::regprocedure),
   '%new.capture_method = ''pwa_cliente_presencial''%signature.parte = ''tecnico''%',
   'an in-person Cliente signature cannot be added after the Técnico signature'
 );
-select unlike(
+select unalike(
   pg_get_functiondef('public.enforce_visit_signatures_before_completion()'::regprocedure),
   '%signature.parte = ''cliente''%',
   'the Cliente signature remains optional for visit completion'

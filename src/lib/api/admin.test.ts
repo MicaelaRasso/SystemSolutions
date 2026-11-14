@@ -31,6 +31,28 @@ describe("Cliente logo API mapping", () => {
     })
   })
 
+  it("P8: serves a logo signed with the internal local Storage host from the public Supabase URL", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://127.0.0.1:55321")
+    try {
+      const local = {
+        ...clientDto,
+        logo_url: "http://kong:8000/storage/v1/object/sign/client-logos/clients/c1/logo.png?token=t",
+      }
+      const request = vi.fn().mockResolvedValueOnce(local).mockResolvedValueOnce([local])
+      const api = createAdminApi({ request } as unknown as EdgeAccessClient)
+
+      await expect(api.clients.get("cliente-1")).resolves.toMatchObject({
+        logoUrl: "http://127.0.0.1:55321/storage/v1/object/sign/client-logos/clients/c1/logo.png?token=t",
+      })
+      const [fila] = await api.clients.list()
+      expect(fila.logoUrl).toBe(
+        "http://127.0.0.1:55321/storage/v1/object/sign/client-logos/clients/c1/logo.png?token=t",
+      )
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it("removes a logo through the Edge asset route", async () => {
     const request = vi.fn().mockResolvedValue(clientDto)
     const api = createAdminApi({ request } as unknown as EdgeAccessClient)

@@ -1,3 +1,4 @@
+-- pgTAP no tiene like()/unlike() con descripción: se usan alike()/unalike().
 begin;
 
 select plan(16);
@@ -33,27 +34,27 @@ select is(
   false,
   'a browser JWT cannot execute the portal logo RPC directly'
 );
-select like(
+select alike(
   pg_get_functiondef('public.api_set_own_client_logo(text)'::regprocedure),
   '%rol = ''cliente'' and activo%',
   'the RPC requires an active Cliente actor'
 );
-select like(
+select alike(
   pg_get_functiondef('public.api_set_own_client_logo(text)'::regprocedure),
   '%auth.uid()%',
   'logo ownership is derived from the authenticated Edge actor'
 );
-select like(
+select alike(
   pg_get_functiondef('public.api_set_own_client_logo(text)'::regprocedure),
   '%actor_id::text%',
   'the logo object must belong to the actor-specific namespace'
 );
-select like(
+select alike(
   pg_get_functiondef('public.api_set_own_client_logo(text)'::regprocedure),
   '%bucket_id = ''client-logos''%',
   'the RPC accepts only uploaded objects from the private Cliente logo bucket'
 );
-select unlike(
+select unalike(
   pg_get_functiondef('public.api_set_own_client_logo(text)'::regprocedure),
   '%razon_social =%',
   'the portal logo RPC cannot change Cliente profile fields'

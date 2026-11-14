@@ -151,9 +151,10 @@ select throws_ok(
   $$select public.api_create_service_request('00000000-0000-0000-0000-000000001301'::uuid, '[{"kind":"valvula","id":"00000000-0000-0000-0000-000000001601"}]'::jsonb)$$,
   '42501', 'Only the owning Cliente can create a service request', 'another Cliente cannot create a request for the Yacimiento'
 );
+-- Las dos aserciones estaban en el bloque del actor equivocado (la del Administrador con un Cliente y viceversa): se intercambian.
 select throws_ok(
-  $$select public.api_admin_create_service_request('00000000-0000-0000-0000-000000001101'::uuid, '00000000-0000-0000-0000-000000001303'::uuid, '[{"kind":"valvula","id":"00000000-0000-0000-0000-000000001607"}]'::jsonb)$$,
-  '23503', 'The selected Cliente does not own the Yacimiento', 'an administrator cannot create a request with a mismatched Cliente and Yacimiento'
+  $$select public.api_admin_create_service_request('00000000-0000-0000-0000-000000001101'::uuid, '00000000-0000-0000-0000-000000001301'::uuid, '[{"kind":"valvula","id":"00000000-0000-0000-0000-000000001601"}]'::jsonb)$$,
+  '42501', 'Only an active Administrador can create a service request', 'a Cliente is denied administrative request creation'
 );
 
 select public.test_workflow_set_actor('00000000-0000-0000-0000-000000001105');
@@ -167,8 +168,8 @@ select is(
   'an Administrador regular creates a request for the selected Cliente'
 );
 select throws_ok(
-  $$select public.api_admin_create_service_request('00000000-0000-0000-0000-000000001101'::uuid, '00000000-0000-0000-0000-000000001301'::uuid, '[{"kind":"valvula","id":"00000000-0000-0000-0000-000000001601"}]'::jsonb)$$,
-  '42501', 'Only an active Administrador can create a service request', 'a Cliente is denied administrative request creation'
+  $$select public.api_admin_create_service_request('00000000-0000-0000-0000-000000001101'::uuid, '00000000-0000-0000-0000-000000001303'::uuid, '[{"kind":"valvula","id":"00000000-0000-0000-0000-000000001607"}]'::jsonb)$$,
+  '23503', 'The selected Cliente does not own the Yacimiento', 'an administrator cannot create a request with a mismatched Cliente and Yacimiento'
 );
 select public.test_workflow_set_actor('00000000-0000-0000-0000-000000001106');
 select is(
@@ -270,10 +271,13 @@ select is(
   'aceptada',
   'the assigned Taller Móvil accepts the visit'
 );
+-- Editar la solicitud es del Cliente dueño: el cierre por aceptación se prueba con ese actor (el Taller recibe 42501 antes).
+select public.test_workflow_set_actor('00000000-0000-0000-0000-000000001101');
 select throws_ok(
   $$select public.api_update_service_request(current_setting('app.workflow_request_id')::uuid, '[{"kind":"valvula","id":"00000000-0000-0000-0000-000000001603"}]'::jsonb)$$,
   '23514', 'Accepted service requests cannot be edited', 'request editing closes when the Taller Móvil accepts'
 );
+select public.test_workflow_set_actor('00000000-0000-0000-0000-000000001103');
 select ok(
   exists (
     select 1 from public.asignaciones_servicio
@@ -311,6 +315,8 @@ select is(
   'a second Yacimiento of the same Cliente can receive access'
 );
 
+-- La denegación se prueba con el Taller no asignado: el actor vigente era el asignado, que inició la visita y rompía el resto.
+select public.test_workflow_set_actor('00000000-0000-0000-0000-000000001104');
 select throws_ok(
   $$select public.api_start_visit(current_setting('app.workflow_primary_visit_id')::uuid)$$,
   '42501', 'Only the assigned Taller Móvil can execute this visit', 'only the assigned Técnico can execute a visit'
@@ -390,6 +396,14 @@ select is(
   'the no evaluada reason is preserved on its work order'
 );
 
+-- Fixture: desde 20261006130927 completar exige un resultado explícito en toda orden, incluida la Válvula que agregó el Técnico.
+select public.api_update_work_order(
+  (select id from public.ordenes_trabajo where visita_id = current_setting('app.workflow_primary_visit_id')::uuid and valvula_id = '00000000-0000-0000-0000-000000001605'::uuid),
+  'no_evaluada'::public.estado_orden_trabajo,
+  'Fuera del alcance de la jornada'
+);
+-- Orden de las comprobaciones de cierre desde 20261006130927: resultados, certificados completos y recién después la firma del Técnico.
+-- Las aserciones siguen ese orden para que cada una llegue a la regla que prueba.
 select set_config(
   'app.workflow_certificate_id',
   (public.api_start_certificate_draft(
@@ -401,21 +415,6 @@ select is(
   (select count(*) from public.certificados where visita_id = current_setting('app.workflow_primary_visit_id')::uuid),
   1::bigint,
   'an unevaluated Válvula creates no certificate'
-);
-select throws_ok(
-  $$select public.api_complete_visit(current_setting('app.workflow_primary_visit_id')::uuid)$$,
-  '23514', 'A Técnico signature is required to complete a visit', 'a failed completion does not succeed without a Técnico signature'
-);
-select is(
-  (select count(*) from public.registros_auditoria
-   where visita_id = current_setting('app.workflow_primary_visit_id')::uuid
-     and accion = 'visita_completada'),
-  0::bigint,
-  'a failed completion transaction leaves no successful completion event'
-);
-select lives_ok(
-  $$select public.api_submit_visit_signature(current_setting('app.workflow_primary_visit_id')::uuid, 'tecnico'::public.parte_firma_visita, 'Tecnico A', 'certificates', 'workflow/primary-tech.png')$$,
-  'a Técnico signature authorizes visit completion'
 );
 update public.ordenes_trabajo
 set estado = 'pendiente', no_evaluada_razon = null
@@ -454,11 +453,28 @@ select is(
   true,
   'a certificate with complete required technical data can pass validation'
 );
-select set_config(
-  'request.headers',
-  '{"x-systemsolutions-actor-id":"00000000-0000-0000-0000-000000001104"}',
-  true
+select throws_ok(
+  $$select public.api_complete_visit(current_setting('app.workflow_primary_visit_id')::uuid)$$,
+  '23514', 'A Técnico signature is required to complete a visit', 'a failed completion does not succeed without a Técnico signature'
 );
+select is(
+  (select count(*) from public.registros_auditoria
+   where visita_id = current_setting('app.workflow_primary_visit_id')::uuid
+     and accion = 'visita_completada'),
+  0::bigint,
+  'a failed completion transaction leaves no successful completion event'
+);
+-- La firma tiene que ser un objeto subido a certificate-signatures bajo visits/<visita>/<parte>/<uuid> (regla de api_submit_visit_signature).
+reset role;
+insert into storage.objects (bucket_id, name)
+values ('certificate-signatures', 'visits/' || current_setting('app.workflow_primary_visit_id') || '/tecnico/00000000-0000-0000-0000-000000001911.png');
+set local role service_role;
+select lives_ok(
+  $$select public.api_submit_visit_signature(current_setting('app.workflow_primary_visit_id')::uuid, 'tecnico'::public.parte_firma_visita, 'Tecnico A', 'certificate-signatures', 'visits/' || current_setting('app.workflow_primary_visit_id') || '/tecnico/00000000-0000-0000-0000-000000001911.png')$$,
+  'a Técnico signature authorizes visit completion'
+);
+-- El gateway instala la identidad: cambiar solo el header no cambiaba auth.uid().
+select public.test_workflow_set_actor('00000000-0000-0000-0000-000000001104');
 select throws_ok(
   $$select public.api_update_certificate_draft(current_setting('app.workflow_certificate_id')::uuid, '{"observaciones":"unauthorized"}'::jsonb)$$,
   '42501', 'Only the assigned Taller Móvil can execute this visit', 'a different Taller Móvil cannot edit a certificate draft by guessing its id'
@@ -468,6 +484,7 @@ select set_config(
   '{"x-systemsolutions-actor-id":"00000000-0000-0000-0000-000000001103","x-systemsolutions-correlation-id":"completion-audit-correlation"}',
   true
 );
+select public.require_systemsolutions_edge_gateway();
 insert into public.operaciones_sync(
   operation_id, visita_id, kind, payload, device_timestamp, server_received_at
 ) values (
@@ -533,7 +550,8 @@ select is(
 );
 select is(
   public.api_admin_metrics('2099-01-10'::date, '2099-01-10'::date)->>'pending_certificates',
-  '1',
+  -- Es un total de toda la base, sin filtro de fecha: con datos de e2e o demo hay más que el del fixture.
+  (select count(*) from public.certificados where estado = 'pendiente')::text,
   'pending certificates remain a separate outstanding-work count'
 );
 select is(
@@ -649,10 +667,13 @@ select is(
   'conflicto',
   'a correction authorization does not mark the original operation as applied'
 );
+-- El borrador lo edita el Taller asignado; con el Administrador como actor la autorización rechazaba antes (42501).
+select public.test_workflow_set_actor('00000000-0000-0000-0000-000000001103');
 select throws_ok(
   $$select public.api_update_certificate_draft(current_setting('app.workflow_certificate_id')::uuid, '{"observaciones":"late"}'::jsonb)$$,
   '23514', 'Certificate capture is closed', 'completed visits reject later certificate draft edits'
 );
+select public.test_workflow_set_actor('00000000-0000-0000-0000-000000001105');
 select ok(
   exists (
     select 1 from public.asignaciones_servicio
@@ -768,7 +789,9 @@ select throws_ok(
 );
 select is(
   (select count(*) from public.registros_auditoria
-   where identificadores_relacionados->>'solicitud_id' = current_setting('app.workflow_parallel_request_conflict')),
+   where identificadores_relacionados->>'solicitud_id' = current_setting('app.workflow_parallel_request_conflict')
+     -- Solo los eventos de la programación: crear la solicitud ya deja eventos de alcance (solicitud_servicio).
+     and tipo_objetivo <> 'solicitud_servicio'),
   0::bigint,
   'a failed scheduling transaction leaves no successful audit event'
 );

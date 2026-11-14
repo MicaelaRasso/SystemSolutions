@@ -3,6 +3,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 const storage = vi.hoisted(() => ({
   uploadStorageObject: vi.fn(),
   removeStorageObject: vi.fn(),
+  createSignedStorageUrl: vi.fn(
+    async (bucket: string, objectName: string) => `https://storage.example.test/${bucket}/${objectName}?token=t`,
+  ),
   validateStorageObject: vi.fn(
     (input: { objectName: unknown; contentType: unknown; size: unknown }) => ({
       ok: true as const,
@@ -244,5 +247,127 @@ describe("certificate signature upload seam", () => {
       "certificate-signatures",
       expect.stringMatching(new RegExp(`^visits/${visitId}/cliente/[0-9a-f-]{36}\\.png$`)),
     )
+  })
+
+  it("removes the retried upload when the signature was already registered (P1)", async () => {
+    storage.removeStorageObject.mockClear()
+    const registered = {
+      signature_id: visitId,
+      image_id: visitId,
+      finalized_certificates: [],
+      already_registered: true,
+    }
+    const rpc = vi.fn().mockResolvedValue({ data: registered, error: null })
+    const file = new File(["signature"], "signature.png", { type: "image/png" })
+
+    await expect(
+      handler(context({ file, party: "tecnico", signer_name: "Tomás" }, rpc)),
+    ).resolves.toEqual({ data: registered, error: null })
+
+    expect(storage.removeStorageObject).toHaveBeenCalledWith(
+      "certificate-signatures",
+      expect.stringMatching(new RegExp(`^visits/${visitId}/tecnico/[0-9a-f-]{36}\\.png$`)),
+    )
+  })
+})
+
+describe("signed image URLs in certificate reads (D7)", () => {
+  const certificateId = "00000000-0000-0000-0000-0000000000c1"
+  const signed = (bucket: string, path: string) => `https://storage.example.test/${bucket}/${path}?token=t`
+  const finalized = () => ({
+    certificate: {
+      id: certificateId,
+      evidencia_fotografica: {
+        desarmada: { bucket: "certificate-evidence", image_id: "i1", object_path: "visits/v/evidence/i1.png" },
+      },
+    },
+    images: [{ id: "i2", bucket: "certificate-evidence", categoria: "parte_diario", object_path: "visits/v/parte-diario/i2.png" }],
+    signatures: [{ parte: "tecnico", image: { id: "s1", bucket: "certificate-signatures", object_path: "visits/v/tecnico/s1.png" } }],
+    client_logo: null,
+    other: { bucket: "attachments", object_path: "private/doc.pdf" },
+  })
+
+  for (const [route, rpcName] of [
+    ["finalized", "api_finalized_certificate"],
+    ["download", "api_cliente_certificate_export"],
+  ] as const) {
+    it(`adds a signed url to every evidence, image and signature reference (${route})`, async () => {
+      const rpc = vi.fn().mockResolvedValue({ data: finalized(), error: null })
+      const result = (await handler(context({}, rpc, ["certificates", certificateId, route], "GET"))) as {
+        data: ReturnType<typeof finalized> & Record<string, never>
+      }
+      expect(rpc).toHaveBeenCalledWith(rpcName, { certificate_id: certificateId })
+      const data = result.data as unknown as {
+        certificate: { evidencia_fotografica: { desarmada: { url?: string } } }
+        images: { url?: string }[]
+        signatures: { image: { url?: string } }[]
+        other: { url?: string }
+      }
+      expect(data.certificate.evidencia_fotografica.desarmada.url).toBe(
+        signed("certificate-evidence", "visits/v/evidence/i1.png"),
+      )
+      expect(data.images[0].url).toBe(signed("certificate-evidence", "visits/v/parte-diario/i2.png"))
+      expect(data.signatures[0].image.url).toBe(signed("certificate-signatures", "visits/v/tecnico/s1.png"))
+      // Solo buckets de imágenes del certificado: nunca adjuntos privados.
+      expect(data.other.url).toBeUndefined()
+    })
+  }
+
+  it("keeps the response when a signed url cannot be created", async () => {
+    storage.createSignedStorageUrl.mockRejectedValueOnce(new Error("storage down"))
+    const rpc = vi.fn().mockResolvedValue({ data: { images: [{ bucket: "certificate-evidence", object_path: "visits/v/x.png" }] }, error: null })
+    const result = (await handler(context({}, rpc, ["certificates", certificateId, "finalized"], "GET"))) as {
+      data: { images: { url?: string }[] }
+    }
+    expect(result.data.images[0].url).toBeUndefined()
+  })
+
+  it("passes RPC errors through unchanged", async () => {
+    const error = { message: "denied", code: "42501" }
+    const rpc = vi.fn().mockResolvedValue({ data: null, error })
+    await expect(handler(context({}, rpc, ["certificates", certificateId, "finalized"], "GET"))).resolves.toEqual({
+      data: null,
+      error,
+    })
+  })
+})
+
+describe("historial de certificados de varias Válvulas en un solo pedido", () => {
+  const valvulaA = "00000000-0000-0000-0000-00000000000a"
+  const valvulaB = "00000000-0000-0000-0000-00000000000b"
+
+  it("consulta el historial de cada Válvula y devuelve uno por id, sin las que fallan", async () => {
+    const rpc = vi.fn(async (_name: string, args: { target_valvula: string }) =>
+      args.target_valvula === valvulaA
+        ? { data: { current_certificate_id: null, certificates: [{ certificate: { id: "c-1" } }] }, error: null }
+        : { data: null, error: { message: "Válvula fuera del alcance", code: "42501" } },
+    )
+
+    await expect(
+      handler(context({ valve_ids: [valvulaA, valvulaB, valvulaA] }, rpc, ["certificates", "valve-histories"])),
+    ).resolves.toEqual({
+      data: {
+        histories: [
+          { valve_id: valvulaA, current_certificate_id: null, certificates: [{ certificate: { id: "c-1" } }] },
+        ],
+        failed_valve_ids: [valvulaB],
+      },
+      error: null,
+    })
+    expect(rpc).toHaveBeenCalledTimes(2)
+    expect(rpc).toHaveBeenCalledWith("api_valvula_certificates_by_pd", { target_valvula: valvulaA, pd_code: null })
+  })
+
+  it("rechaza una lista vacía, ids inválidos o más de 200 Válvulas", async () => {
+    const rpc = vi.fn()
+    const pedir = (valveIds: unknown) =>
+      handler(context({ valve_ids: valveIds }, rpc, ["certificates", "valve-histories"]))
+
+    await expect(pedir([])).rejects.toThrow("valve_ids")
+    await expect(pedir(["no-es-uuid"])).rejects.toThrow("valve_ids")
+    await expect(pedir("x")).rejects.toThrow("valve_ids")
+    const muchas = Array.from({ length: 201 }, (_, i) => `00000000-0000-0000-0000-${String(i).padStart(12, "0")}`)
+    await expect(pedir(muchas)).rejects.toThrow("valve_ids")
+    expect(rpc).not.toHaveBeenCalled()
   })
 })

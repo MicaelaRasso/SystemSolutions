@@ -7,6 +7,8 @@ import { edgeApi } from "@/lib/api"
 import { certificateQueryKeys } from "@/lib/api/certificates"
 import { hierarchyInvalidations, hierarchyQueryKeys } from "@/lib/api/hierarchy"
 import { operationQueryKeys } from "@/lib/api/operations"
+import { serviceWorkflowQueryKeys } from "@/lib/api/service-workflow"
+import { traducirMensajeError } from "@/lib/domain/errores"
 import type {
   Adjunto,
   Certificado,
@@ -44,14 +46,19 @@ export const qk = {
 /** Prefijos a invalidar tras modificar un catálogo (formularios y administración). */
 export const INVALIDAR_CATALOGOS = [["catalogo"], ["catalogo-admin"]]
 /** Prefijos a invalidar tras modificar tareas o la proyección de operaciones. */
-export const INVALIDAR_TAREAS = [["tareas"], ["tarea"], [...operationQueryKeys.all]]
+export const INVALIDAR_TAREAS = [
+  ["tareas"],
+  ["tarea"],
+  [...operationQueryKeys.all],
+  [...serviceWorkflowQueryKeys.all],
+]
 
 export function invalidarEstructura(empresaId: ID): QueryKey[] {
   return usaSupabase() ? [...hierarchyInvalidations] : [qk.arbol(empresaId), ["empresas"]]
 }
 
 export function mensajeError(error: unknown) {
-  return error instanceof Error ? error.message : "Ocurrió un error inesperado"
+  return error instanceof Error ? traducirMensajeError(error.message) : "Ocurrió un error inesperado"
 }
 
 function toValvulaView(dto: Awaited<ReturnType<typeof edgeApi.valves.valve>>): Valvula {
@@ -188,6 +195,9 @@ async function solicitudIdDeOperacion(operationId: ID) {
   return requestId
 }
 
+/** Motivo de auditoría cuando solo cambian la fecha o el horario de la visita (mismo taller). */
+const MOTIVO_REPROGRAMACION = "Reprogramación de fecha u horario desde la edición de la tarea"
+
 /** Canonical write path for the task screens. It never creates or updates an operation. */
 export async function guardarSolicitudYVisita(
   operation: OperationRead | undefined,
@@ -206,24 +216,13 @@ export async function guardarSolicitudYVisita(
   const scheduleChanged = !!desiredWindow && (
     new Date(desiredWindow.startsAt).getTime() !== new Date(operation!.operation.starts_at).getTime()
   )
-  const context = operation ? undefined : await edgeApi.identity.context()
-  const isAdministrator =
-    context?.rol === "administrador_regular" || context?.rol === "super_administrador"
-  const response = operation
-    ? undefined
-    : isAdministrator
-      ? await edgeApi.serviceRequests.createAdministrativeRequest({
-          clientId: data.empresaId,
-          ...serviceSelection(data),
-        })
-      : await edgeApi.serviceRequests.createRequest(serviceSelection(data))
-  const canonicalRequestId = operation ? requestId! : responseRequestId(response!)
-
-  await edgeApi.serviceWorkflow.updateRequestMetadata(canonicalRequestId, {
+  const metadata = {
     contacto: data.contacto.trim(),
     telefono: data.telefono.trim(),
+    fecha_solicitud: data.fechaSolicitud,
     fecha_ejecucion: data.fechaEjecucion,
-    horario: data.horario,
+    // null explícito: la metadata se combina con la anterior y omitir la clave conserva el valor.
+    horario: data.horario || null,
     tipo: data.tipo,
     detalle: data.detalle.trim(),
     pd_rto: data.pdRto || null,
@@ -236,45 +235,80 @@ export async function guardarSolicitudYVisita(
       bucket,
       object_path,
     })),
-  })
-
-  if (operation) {
-    const visitId = operation.operation.id
-    if (!data.tallerId && currentWorkshopId && scheduleChanged)
-      await edgeApi.serviceWorkflow.schedule(canonicalRequestId, {
-        tallerMovilId: currentWorkshopId,
-        ...desiredWindow!,
-      })
-    if (!data.tallerId && currentWorkshopId)
-      await edgeApi.serviceWorkflow.unassignVisit(visitId, { reason: actionReason! })
-    else if (data.tallerId && !currentWorkshopId)
-      await edgeApi.serviceWorkflow.assignVisit(visitId, {
-        tallerMovilId: data.tallerId,
-        reason: actionReason!,
-        ...desiredWindow!,
-      })
-    else if (data.tallerId && currentWorkshopId !== data.tallerId)
-      await edgeApi.serviceWorkflow.reassignVisit(visitId, {
-        tallerMovilId: data.tallerId,
-        reason: actionReason!,
-        ...desiredWindow!,
-      })
-    else if (data.tallerId && currentWorkshopId && scheduleChanged)
-      await edgeApi.serviceWorkflow.schedule(canonicalRequestId, {
-        tallerMovilId: data.tallerId,
-        ...desiredWindow!,
-      })
-    else return operation
-    return edgeApi.operations.get(visitId)
   }
 
-  if (!data.tallerId) return undefined
-  const scheduled = await edgeApi.serviceWorkflow.schedule(canonicalRequestId, {
-    tallerMovilId: data.tallerId,
-    ...visitWindow(data.fechaEjecucion, data.horario),
-  })
-  const operationId = stringField(scheduled.visit, "id")
-  return operationId ? edgeApi.operations.get(operationId) : undefined
+  if (!operation) {
+    const context = await edgeApi.identity.context()
+    const isAdministrator =
+      context?.rol === "administrador_regular" || context?.rol === "super_administrador"
+    if (isAdministrator) {
+      // Alta atómica: la solicitud, su metadata y la visita se crean en una sola transacción, así
+      // un fallo al programar no deja una solicitud huérfana ni la duplica al reintentar.
+      const created = await edgeApi.serviceWorkflow.createAdministrativeRequestWithVisit({
+        clientId: data.empresaId,
+        ...serviceSelection(data),
+        metadata,
+        visit: data.tallerId
+          ? { tallerMovilId: data.tallerId, ...visitWindow(data.fechaEjecucion, data.horario) }
+          : undefined,
+      })
+      const operationId = created.scheduled_visit?.visit.id
+      return operationId ? edgeApi.operations.get(operationId) : undefined
+    }
+    const response = await edgeApi.serviceRequests.createRequest(serviceSelection(data))
+    const createdRequestId = responseRequestId(response)
+    await edgeApi.serviceWorkflow.updateRequestMetadata(createdRequestId, metadata)
+    if (!data.tallerId) return undefined
+    const scheduled = await edgeApi.serviceWorkflow.schedule(createdRequestId, {
+      tallerMovilId: data.tallerId,
+      ...visitWindow(data.fechaEjecucion, data.horario),
+    })
+    const operationId = stringField(scheduled.visit, "id")
+    return operationId ? edgeApi.operations.get(operationId) : undefined
+  }
+
+  await edgeApi.serviceWorkflow.updateRequestMetadata(requestId!, metadata)
+
+  // Siempre se opera sobre la visita editada por su id: `schedule(requestId)` toma la primera
+  // visita programada de la solicitud y rechaza las solicitudes aceptadas (seguimientos).
+  const visitId = operation.operation.id
+  if (!data.tallerId && !currentWorkshopId) {
+    // Visita sin taller: solo se reprograma si cambió la fecha o el horario.
+    if (!scheduleChanged) return operation
+    await edgeApi.serviceWorkflow.rescheduleVisit(visitId, {
+      reason: MOTIVO_REPROGRAMACION,
+      ...desiredWindow!,
+    })
+    return edgeApi.operations.get(visitId)
+  }
+  if (!data.tallerId && currentWorkshopId && scheduleChanged)
+    await edgeApi.serviceWorkflow.reassignVisit(visitId, {
+      tallerMovilId: currentWorkshopId,
+      reason: MOTIVO_REPROGRAMACION,
+      ...desiredWindow!,
+    })
+  if (!data.tallerId && currentWorkshopId)
+    await edgeApi.serviceWorkflow.unassignVisit(visitId, { reason: actionReason! })
+  else if (data.tallerId && !currentWorkshopId)
+    await edgeApi.serviceWorkflow.assignVisit(visitId, {
+      tallerMovilId: data.tallerId,
+      reason: actionReason!,
+      ...desiredWindow!,
+    })
+  else if (data.tallerId && currentWorkshopId !== data.tallerId)
+    await edgeApi.serviceWorkflow.reassignVisit(visitId, {
+      tallerMovilId: data.tallerId,
+      reason: actionReason!,
+      ...desiredWindow!,
+    })
+  else if (data.tallerId && currentWorkshopId && scheduleChanged)
+    await edgeApi.serviceWorkflow.reassignVisit(visitId, {
+      tallerMovilId: data.tallerId,
+      reason: actionReason || MOTIVO_REPROGRAMACION,
+      ...desiredWindow!,
+    })
+  else return operation
+  return edgeApi.operations.get(visitId)
 }
 
 export async function guardarTarea(tarea: TareaResumen | undefined, data: TareaInput) {
@@ -555,8 +589,14 @@ export function useServiceMutation<TVars, TResult>(
 export const useEmpresas = (filtro: { q?: string; incluirInactivas?: boolean } = {}) =>
   useQuery({ queryKey: qk.empresas(filtro), queryFn: () => services.empresas.list(filtro) })
 
-export const useEmpresa = (id: ID) =>
-  useQuery({ queryKey: qk.empresa(id), queryFn: () => services.empresas.get(id) })
+/** Sin id no se consulta: `/portal/empresa` arranca con "" hasta tener la cuenta, y `GET clients/` da 403. */
+export const consultaEmpresa = (id: ID) => ({
+  queryKey: qk.empresa(id),
+  queryFn: () => services.empresas.get(id),
+  enabled: Boolean(id),
+})
+
+export const useEmpresa = (id: ID) => useQuery(consultaEmpresa(id))
 
 export const useArbol = (empresaId: ID) =>
   useQuery({

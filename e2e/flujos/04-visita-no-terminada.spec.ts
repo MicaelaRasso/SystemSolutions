@@ -62,9 +62,6 @@ test.describe("Flujo 4: visita no terminada y reprogramación agrupada", () => {
     await formulario.locator('input[type="time"]').fill("10:00")
     await formulario.getByRole("button", { name: "Crear visita de seguimiento" }).click()
 
-    // D5: `follow-up-visits` falta en supabase/functions/_shared/route.ts y responde 404. Detrás de
-    // este bloqueo queda sin cubrir el listado agrupado en el portal: no hay otra vía en la app.
-    test.fail(true, "D5: la ruta follow-up-visits da 404")
     await expect(page).not.toHaveURL(new RegExp(visita.visitaId), { timeout: 15_000 })
 
     const solicitud = await edge<{ visit: { solicitud_id: string } }>(

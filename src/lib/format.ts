@@ -13,3 +13,39 @@ export const nombreCompleto = (p: { nombre: string; apellido: string }) =>
 
 export const plural = (n: number, singular: string, pluralForm = `${singular}s`) =>
   `${n} ${n === 1 ? singular : pluralForm}`
+
+export const ZONA_ARGENTINA = "America/Argentina/Buenos_Aires"
+
+const fechaHoraArgentina = (segundos: boolean) =>
+  new Intl.DateTimeFormat("es-AR", {
+    timeZone: ZONA_ARGENTINA,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    ...(segundos ? { second: "2-digit" as const } : {}),
+    hourCycle: "h23",
+  })
+const formatoMinutos = fechaHoraArgentina(false)
+const formatoSegundos = fechaHoraArgentina(true)
+
+/**
+ * Instante (timestamp ISO o `Date`) → «13/11/2026 16:00» en hora argentina y 24 h, sin importar la
+ * zona del dispositivo. `toLocaleString("es-AR")` usaba la zona del navegador y, según el motor,
+ * mostraba las 16:00 como «04:00:00». Sin segundos salvo `{ segundos: true }` (auditoría, donde la
+ * hora exacta importa: RNF-12). Devuelve `undefined` si no es una fecha.
+ */
+export function fmtFechaHoraArgentina(
+  valor: unknown,
+  { segundos = false }: { segundos?: boolean } = {},
+): string | undefined {
+  if (typeof valor !== "string" && !(valor instanceof Date)) return undefined
+  const fecha = typeof valor === "string" ? new Date(valor) : valor
+  if (Number.isNaN(fecha.getTime())) return undefined
+  const partes = (segundos ? formatoSegundos : formatoMinutos).formatToParts(fecha)
+  const dato = (tipo: Intl.DateTimeFormatPartTypes) =>
+    partes.find((parte) => parte.type === tipo)?.value ?? ""
+  const hora = `${dato("hour")}:${dato("minute")}${segundos ? `:${dato("second")}` : ""}`
+  return `${dato("day")}/${dato("month")}/${dato("year")} ${hora}`
+}

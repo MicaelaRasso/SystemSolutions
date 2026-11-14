@@ -106,6 +106,9 @@ export function SignaturePad({
           onPointerMove={move}
           onPointerUp={stop}
           onPointerCancel={stop}
+          // Si la tarjeta se mueve en la lista (refresco de la agenda), el navegador suelta la
+          // captura y nunca llega `pointerup`: sin esto el trazo se ve pero no se guarda.
+          onLostPointerCapture={stop}
           aria-label={title}
         />
         <p className="mt-2 text-xs text-muted-foreground">

@@ -106,4 +106,24 @@ describe("EdgeTransport", () => {
       code: "network",
     })
   })
+
+  it("traduce al español los errores de negocio y de restricciones conocidos", async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error:
+            'conflicting key value violates exclusion constraint "visita_equipos_no_simultaneous_equipment"',
+        }),
+        { status: 409 },
+      ),
+    )
+    const transport = new EdgeTransport({ functionUrls, request })
+
+    await expect(
+      transport.request("service-workflow", "requests/r/schedule"),
+    ).rejects.toMatchObject({
+      message: expect.stringMatching(/equipo ya tiene otra visita/i),
+      code: "conflict",
+    })
+  })
 })

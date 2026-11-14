@@ -347,12 +347,7 @@ function EquipoForm({
           placeholder="Ej. K52100"
           autoFocus
         />
-        <CampoTexto
-          form={form}
-          name="descripcion"
-          label="Descripción (opcional)"
-          placeholder="Ej. Unidad compresora"
-        />
+        {/* Sin «Descripción»: el backend no guarda descripción de equipos y se perdía en silencio. */}
         <Pie pendiente={guardar.isPending} cerrar={cerrar} crear={!equipo} />
       </FieldGroup>
     </form>

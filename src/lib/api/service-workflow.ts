@@ -1,16 +1,20 @@
 import { z } from "zod"
 
 import type { EdgeAccessClient } from "../services/edge"
+import { urlPublicaDeStorage } from "../storage-url"
 import {
   createServiceRequestInputSchema,
   createAdministrativeServiceRequestInputSchema,
+  createAdministrativeRequestWithVisitInputSchema,
   serviceRequestDtoSchema,
+  serviceRequestWithVisitDtoSchema,
   scheduleVisitInputSchema,
   createFollowupVisitInputSchema,
   updateServiceRequestInputSchema,
   updateWorkOrderInputSchema,
   visitAdministrationInputSchema,
   visitAssignmentInputSchema,
+  visitRescheduleInputSchema,
   visitDtoSchema,
   visitParteDiarioDtoSchema,
   visitParteDiarioImageRegisterDtoSchema,
@@ -19,11 +23,13 @@ import {
   certificateDraftDtoSchema,
   type CreateServiceRequestInput,
   type CreateAdministrativeServiceRequestInput,
+  type CreateAdministrativeRequestWithVisitInput,
   type ScheduleVisitInput,
   type CreateFollowupVisitInput,
   type UpdateServiceRequestInput,
   type UpdateWorkOrderInput,
   type VisitAssignmentInput,
+  type VisitRescheduleInput,
 } from "./contracts"
 
 export const serviceWorkflowQueryKeys = {
@@ -60,10 +66,11 @@ export function createServiceWorkflowApi(edge: EdgeAccessClient) {
     },
 
     async visitAttachments(visitId: string) {
-      return edge.request(
+      const adjuntos = await edge.request(
         `visits/${encodeURIComponent(visitId)}/attachments`,
         attachmentDtoSchema.array(),
       )
+      return adjuntos.map((adjunto) => ({ ...adjunto, url: urlPublicaDeStorage(adjunto.url) }))
     },
 
     async visitParteDiario(visitId: string) {
@@ -143,6 +150,23 @@ export function createServiceWorkflowApi(edge: EdgeAccessClient) {
           cliente_cuenta_id: data.clientId,
           yacimiento_id: data.yacimientoId,
           selections: data.selections,
+        }),
+      })
+    },
+
+    /** Crea solicitud, metadata y visita en una sola transacción (sin solicitudes huérfanas). */
+    async createAdministrativeRequestWithVisit(input: CreateAdministrativeRequestWithVisitInput) {
+      const data = createAdministrativeRequestWithVisitInputSchema.parse(input)
+      return edge.request("admin/requests", serviceRequestWithVisitDtoSchema, {
+        method: "POST",
+        body: json({
+          cliente_cuenta_id: data.clientId,
+          yacimiento_id: data.yacimientoId,
+          selections: data.selections,
+          metadata: data.metadata,
+          taller_movil_id: data.visit?.tallerMovilId ?? null,
+          starts_at: data.visit?.startsAt ?? null,
+          ends_at: data.visit?.endsAt ?? null,
         }),
       })
     },
@@ -232,6 +256,15 @@ export function createServiceWorkflowApi(edge: EdgeAccessClient) {
           ends_at: data.endsAt ?? null,
           reason: data.reason,
         }),
+      })
+    },
+
+    /** Cambia la fecha u horario de una visita que todavía no fue aceptada, con o sin taller. */
+    async rescheduleVisit(visitId: string, input: VisitRescheduleInput) {
+      const data = visitRescheduleInputSchema.parse(input)
+      return edge.request(`visits/${encodeURIComponent(visitId)}/reschedule`, visitTransitionDtoSchema, {
+        method: "POST",
+        body: json({ starts_at: data.startsAt, ends_at: data.endsAt, reason: data.reason ?? null }),
       })
     },
 

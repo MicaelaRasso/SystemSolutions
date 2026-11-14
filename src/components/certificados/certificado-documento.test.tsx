@@ -62,7 +62,16 @@ describe("documento del certificado SYS", () => {
     const html = render(false)
     expect(html).toContain("Foto registrada")
     expect(html).toContain("Sin foto")
-    expect(html).not.toContain("<img")
+    // La única imagen es el logo de System Solutions; ninguna foto se inventa sin URL.
+    const imagenes = html.match(/<img[^>]*>/g) ?? []
+    expect(imagenes).toHaveLength(1)
+    expect(imagenes[0]).toContain('alt="System Solutions"')
+  })
+
+  it("usa siempre el logo a color de System Solutions, que se imprime sobre blanco", () => {
+    const html = render(false)
+    expect(html).toContain("logo-system-solutions.png")
+    expect(html).not.toContain("logo-system-solutions-blanco.png")
   })
 
   it("muestra la leyenda REQUIERE FIRMA cuando faltan firmas", () => {

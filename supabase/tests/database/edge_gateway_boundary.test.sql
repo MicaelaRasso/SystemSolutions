@@ -37,14 +37,14 @@ select is(
 
 select is(
   has_function_privilege('anon', 'public.require_systemsolutions_edge_gateway()', 'execute'),
-  true,
-  'anonymous Data API requests can reach the gateway guard to be rejected'
+  false, -- 20261006151926 revocó el guard a anon/authenticated: PostgREST falla cerrado en el pre-request.
+  'anonymous Data API requests cannot execute the gateway guard and are rejected'
 );
 
 select is(
   has_function_privilege('authenticated', 'public.require_systemsolutions_edge_gateway()', 'execute'),
-  true,
-  'authenticated Data API requests can reach the gateway guard to be rejected'
+  false, -- 20261006151926 revocó el guard a anon/authenticated: PostgREST falla cerrado en el pre-request.
+  'authenticated Data API requests cannot execute the gateway guard and are rejected'
 );
 
 select is(
@@ -71,7 +71,7 @@ set local role authenticated;
 select throws_ok(
   $$select public.require_systemsolutions_edge_gateway()$$,
   '42501',
-  'SystemSolutions Edge gateway required',
+  'permission denied for function require_systemsolutions_edge_gateway', -- sin EXECUTE desde 20261006151926.
   'an authenticated caller without an Edge gateway is denied before actor setup'
 );
 
@@ -108,7 +108,7 @@ select set_config(
 select throws_ok(
   $$select public.require_systemsolutions_edge_gateway()$$,
   '42501',
-  'SystemSolutions Edge gateway required',
+  'Cuenta is not active', -- 20261005154045 rechaza toda Cuenta inexistente o no activa con este mensaje.
   'service_role requests for an unknown Cuenta are denied'
 );
 

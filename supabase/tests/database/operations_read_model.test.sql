@@ -135,13 +135,14 @@ select set_config('request.jwt.claim.role', 'service_role', true);
 select public.test_set_operations_gateway_actor('00000000-0000-0000-0000-000000000901');
 
 select is(
-  (select jsonb_agg(v->'visit'->>'id' order by v->'visit'->>'id') from public.api_visits() v),
+  -- La base puede traer otras Visitas (e2e, demo): se miran las del fixture (ids 00000000-...-0000000009xx).
+  (select jsonb_agg(v->'visit'->>'id' order by v->'visit'->>'id') from public.api_visits() v where v->'visit'->>'id' like '00000000-0000-0000-0000-0000000009%'),
   '["00000000-0000-0000-0000-000000000991", "00000000-0000-0000-0000-000000000992", "00000000-0000-0000-0000-000000000993"]'::jsonb,
   'Administradores retain the complete canonical visit schedule'
 );
 
 select is(
-  jsonb_array_length(public.api_operations(null, null, null, null, null, null, 100, 0)->'items'),
+  (select count(*)::integer from jsonb_array_elements(public.api_operations(null, null, null, null, null, null, 100, 0)->'items') item where item->>'id' like '00000000-0000-0000-0000-0000000009%'),
   3,
   'the list contains visits only and excludes the unscheduled request'
 );
@@ -196,7 +197,7 @@ select is(
 );
 
 select is(
-  jsonb_array_length(public.api_operations(null, null, null, null, null, 'Taller Norte', 100, 0)->'items'),
+  (select count(*)::integer from jsonb_array_elements(public.api_operations(null, null, null, null, null, 'Taller Norte', 100, 0)->'items') item where item->>'id' like '00000000-0000-0000-0000-0000000009%'),
   2,
   'search matches the Taller name'
 );
@@ -219,9 +220,10 @@ select is(
   'search matches the Yacimiento name'
 );
 
+-- El total es el de todas las Visitas de la base, no solo las del fixture.
 select is(
   (public.api_operations(null, null, null, null, null, null, 500, 0)->>'total')::integer,
-  3,
+  (select count(*)::integer from public.visitas_servicio),
   'the envelope reports the total before pagination'
 );
 

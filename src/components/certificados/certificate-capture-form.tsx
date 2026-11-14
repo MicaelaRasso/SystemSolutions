@@ -1,7 +1,7 @@
 "use client"
 
 
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 
 import { Combobox } from "@/components/common/combobox"
 import { SelectNativo } from "@/components/common/select-nativo"
@@ -92,9 +92,69 @@ type CertificateCaptureFormProps = {
   certificate?: Record<string, unknown>
   valve?: ValveLike
   evidence?: Partial<Record<EvidenceKey, unknown>>
+  /** Estado visible de la última foto elegida en cada sección (lo maneja quien guarda la foto). */
+  evidenceStatus?: Partial<Record<EvidenceKey, EstadoFotoEvidencia>>
   disabled?: boolean
   onCapturePhoto?: (section: EvidenceKey, file: File | undefined) => void
   onSave: (payload: UpdateCertificateDraftInput) => void
+}
+
+export type EstadoFotoEvidencia = {
+  estado: "guardando" | "lista" | "error"
+  nombre?: string
+  /** URL local (`blob:`) para la miniatura de la foto recién elegida. */
+  vistaPrevia?: string
+  mensaje?: string
+}
+
+const esObjeto = (valor: unknown): valor is Record<string, unknown> =>
+  !!valor && typeof valor === "object" && !Array.isArray(valor)
+
+/**
+ * Evidencia a enviar al guardar el borrador. Las fotos nuevas de esta sesión ganan; si una sección
+ * no tiene foto nueva se conserva la ya registrada en el certificado, para no borrarla con `null`.
+ * Si el servidor ya registró la foto de esta sesión (su `image_id` es el `media_id` local), se
+ * manda la referencia registrada y no `{ media_id }`, que la pisaría (P2).
+ */
+export function evidenciaParaGuardar(
+  evidence: Partial<Record<EvidenceKey, unknown>> | undefined,
+  certificate: Record<string, unknown> | undefined,
+): Record<EvidenceKey, unknown> {
+  const guardada = esObjeto(certificate?.evidencia_fotografica)
+    ? certificate.evidencia_fotografica
+    : {}
+  const elegir = (key: EvidenceKey) => {
+    const nueva = evidence?.[key]
+    const registrada = guardada[key]
+    if (
+      esObjeto(nueva) &&
+      esObjeto(registrada) &&
+      typeof nueva.media_id === "string" &&
+      registrada.image_id === nueva.media_id
+    )
+      return registrada
+    return nueva ?? registrada ?? null
+  }
+  return Object.fromEntries(
+    CERTIFICATE_EVIDENCE_SECTIONS.map(({ key }) => [key, elegir(key)]),
+  ) as Record<EvidenceKey, unknown>
+}
+
+/**
+ * Forma canónica del patrón que se guarda en `datos_tecnicos.ensayos.patron`. Además de `id` y
+ * `label` conserva el número de serie y el vencimiento del catálogo: el certificado muestra el
+ * vencimiento del patrón (D10).
+ */
+export function patronCanonico(
+  patron: (CertificateOption & { nro_serie?: string; vencimiento?: string }) | null,
+) {
+  if (!patron) return null
+  return {
+    id: patron.id,
+    label: patron.label,
+    ...(patron.nro_serie ? { nro_serie: patron.nro_serie } : {}),
+    ...(patron.vencimiento ? { vencimiento: patron.vencimiento } : {}),
+  }
 }
 
 const emptyTechnical = (): TechnicalData => ({
@@ -417,6 +477,7 @@ export function CertificateCaptureForm({
   certificate,
   valve,
   evidence,
+  evidenceStatus,
   disabled = false,
   onCapturePhoto,
   onSave,
@@ -447,7 +508,14 @@ export function CertificateCaptureForm({
   const [errors, setErrors] = useState<string[]>([])
 
   // Auto-complete any technical field that is still empty if pre-existing valve or draft data arrives.
-  useEffect(() => {
+  // Adjusted during render when the sources change (no effect): the initial state already resolves them.
+  const [technicalSources, setTechnicalSources] = useState({ catalogs, certificate, valve })
+  if (
+    technicalSources.catalogs !== catalogs ||
+    technicalSources.certificate !== certificate ||
+    technicalSources.valve !== valve
+  ) {
+    setTechnicalSources({ catalogs, certificate, valve })
     const resolved = resolveTechnicalData(certificate, valve, catalogs)
     setForm((current) => {
       let changed = false
@@ -460,7 +528,7 @@ export function CertificateCaptureForm({
       }
       return changed ? { ...current, technical: nextTechnical } : current
     })
-  }, [catalogs, certificate, valve])
+  }
 
   const opcionesTipo = useMemo(
     () =>
@@ -552,9 +620,7 @@ export function CertificateCaptureForm({
       typeof item === "string" ? item : { id: item.id, label: item.label },
     )
 
-    const cleanPatron = form.tests.patron
-      ? { id: form.tests.patron.id, label: form.tests.patron.label }
-      : null
+    const cleanPatron = patronCanonico(form.tests.patron)
 
     onSave({
       fecha_ejecucion: form.fecha_ejecucion,
@@ -588,11 +654,7 @@ export function CertificateCaptureForm({
         items: cleanReplacements,
         otros: form.otherParts.trim() || null,
       },
-      evidencia_fotografica: {
-        desarmada: evidence?.desarmada ?? null,
-        ensamblada_prueba: evidence?.ensamblada_prueba ?? null,
-        placa_precinto: evidence?.placa_precinto ?? null,
-      },
+      evidencia_fotografica: evidenciaParaGuardar(evidence, certificate),
       observaciones: form.observations.trim() || null,
     })
   }
@@ -1045,18 +1107,55 @@ export function CertificateCaptureForm({
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid gap-2 sm:grid-cols-3">
-            {CERTIFICATE_EVIDENCE_SECTIONS.map(({ key, label }) => (
-              <Label key={key} className="rounded-md border p-3 text-sm">
-                <span>{label}</span>
-                <Input
-                  type="file"
-                  accept="image/*"
-                  className="mt-2 h-auto py-2 pointer-coarse:h-auto"
-                  onChange={(event) => onCapturePhoto?.(key, event.target.files?.[0])}
-                  disabled={disabled}
-                />
-              </Label>
-            ))}
+            {CERTIFICATE_EVIDENCE_SECTIONS.map(({ key, label }) => {
+              const estado = evidenceStatus?.[key]
+              const registrada = evidence?.[key] ?? evidenciaParaGuardar(undefined, certificate)[key]
+              return (
+                <div key={key} className="min-w-0 space-y-2 rounded-md border p-3 text-sm">
+                  <Label htmlFor={`certificate-evidence-${key}`}>{label}</Label>
+                  <Input
+                    id={`certificate-evidence-${key}`}
+                    type="file"
+                    accept="image/*"
+                    className="h-auto py-2 pointer-coarse:h-auto"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0]
+                      // Se vacía para que elegir otra vez el mismo archivo vuelva a disparar el cambio.
+                      event.currentTarget.value = ""
+                      onCapturePhoto?.(key, file)
+                    }}
+                    disabled={disabled || estado?.estado === "guardando"}
+                  />
+                  <div aria-live="polite" className="text-xs">
+                    {estado?.estado === "guardando" ? (
+                      <p className="text-muted-foreground">
+                        Guardando {estado.nombre ?? "la foto"}…
+                      </p>
+                    ) : estado?.estado === "error" ? (
+                      <p className="text-destructive">
+                        {estado.mensaje ?? "No se pudo guardar la foto."}
+                      </p>
+                    ) : estado?.estado === "lista" ? (
+                      <div className="flex items-center gap-2">
+                        {estado.vistaPrevia ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- miniatura local (blob:)
+                          <img
+                            src={estado.vistaPrevia}
+                            alt={`Miniatura: ${label}`}
+                            className="size-12 shrink-0 rounded border object-cover"
+                          />
+                        ) : null}
+                        <p className="min-w-0 break-all text-muted-foreground">
+                          Adjuntada: {estado.nombre ?? "foto"}
+                        </p>
+                      </div>
+                    ) : registrada ? (
+                      <p className="text-muted-foreground">Foto ya registrada</p>
+                    ) : null}
+                  </div>
+                </div>
+              )
+            })}
           </div>
           <Textarea
             value={form.observations}

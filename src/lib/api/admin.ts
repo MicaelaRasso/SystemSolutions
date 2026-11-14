@@ -3,6 +3,7 @@ import { z } from "zod"
 import type { Empresa, ID, ListaCatalogo, NominaJornada, OpcionCatalogo, Patron, Persona, Usuario } from "../domain/types"
 import type { TallerConCuenta } from "../services/contracts"
 import type { EdgeAccessClient } from "../services/edge"
+import { urlPublicaDeStorage } from "../storage-url"
 import {
   accountDtoSchema,
   catalogOptionDtoSchema,
@@ -36,7 +37,7 @@ const toEmpresa = (dto: z.infer<typeof clientDtoSchema>): Empresa => ({
   telefono: dto.telefono,
   email: dto.email,
   direccion: dto.direccion,
-  logoUrl: typeof dto.logo_url === "string" ? dto.logo_url : undefined,
+  logoUrl: typeof dto.logo_url === "string" ? urlPublicaDeStorage(dto.logo_url) : undefined,
   avisoVencimiento: dto.aviso_vencimiento,
   activo: dto.activo,
   creadoEn: dto.creado_en,

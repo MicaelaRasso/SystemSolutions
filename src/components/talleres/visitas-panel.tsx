@@ -1,20 +1,41 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState, type ComponentProps } from "react"
-import { ChevronDown, ChevronUp, CloudOff, FileCheck2, Lock, Paperclip, RefreshCw, Wifi } from "lucide-react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react"
+import {
+  Camera,
+  ChevronDown,
+  ChevronUp,
+  CloudOff,
+  FileCheck2,
+  ImagePlus,
+  Lock,
+  Paperclip,
+  RefreshCw,
+  Wifi,
+} from "lucide-react"
 
 import { SignaturePad, dataUrlToFile } from "@/components/certificados/signature-pad"
-import { CertificateCaptureForm } from "@/components/certificados/certificate-capture-form"
+import {
+  CertificateCaptureForm,
+  type EstadoFotoEvidencia,
+} from "@/components/certificados/certificate-capture-form"
 import { SelectNativo } from "@/components/common/select-nativo"
 import { ErrorState } from "@/components/common/states"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
 import { edgeApi } from "@/lib/api"
-import { type CertificateEvidenceKey } from "@/lib/api/certificates"
+import { CERTIFICATE_EVIDENCE_SECTIONS, type CertificateEvidenceKey } from "@/lib/api/certificates"
+import {
+  idsDeImagenes,
+  listarFotosParteDiario,
+  textoCantidadFotos,
+  type FotoParteDiarioSesion,
+} from "@/lib/media/fotos-parte-diario"
+import { prepararImagen } from "@/lib/media/preparar-imagen"
 import { useEdgeCertificateCaptureCatalogs, useEdgeCertificateDraft } from "@/lib/api/hooks"
 import type {
   CertificateCaptureCatalogsDto,
@@ -22,13 +43,18 @@ import type {
   WorkOrderDetailDto,
 } from "@/lib/api/contracts"
 import { certificateTemplateSchema } from "@/lib/api/contracts"
+import { traducirMensajeError } from "@/lib/domain/errores"
+import { crearCoordinadorEdge as createCoordinator } from "@/lib/offline/coordinador-edge"
 import {
   IndexedDbOfflineStore,
   OfflineSyncCoordinator,
   certificateCatalogsForVisit,
+  esFirmaYaRegistrada,
   pinVisitCertificateCatalogs,
   queueOfflineSignatureCapture,
+  referenciasDeEvidencia,
   refreshedVisitCatalogs,
+  resolverEvidenciaDelBorrador,
   syncPendingVisitStartsBeforeRefresh,
   type OperacionOffline,
   type VisitaOffline,
@@ -36,12 +62,20 @@ import {
 import { visitCompletionBlocker } from "@/lib/offline/completion"
 import { getOfflineDeviceId as deviceId } from "@/lib/offline/device"
 import { Cargando } from "@/components/common/cargando"
-import { cargarResumenesDeVisitas, conResumenGuardado, resumenGuardado } from "./resumenes-visitas"
+import {
+  cargarResumenesDeVisitas,
+  codigoPdSugerido,
+  conResumenGuardado,
+  resumenGuardado,
+} from "./resumenes-visitas"
 import { tituloDeVisita, type ResumenVisita, type TituloVisita } from "./visita-titulo"
+import { visitaIniciada } from "./estado-visita"
+import { nombreDeTecnico, type TecnicoAsignado } from "./tecnicos"
+import { fmtFechaHoraArgentina } from "@/lib/format"
 
 type StoredVisitContext = VisitDto & {
   context?: unknown
-  assigned_technicians?: { id?: string; name?: string; nombre?: string }[]
+  assigned_technicians?: TecnicoAsignado[]
   certificate_catalogs?: CertificateCaptureCatalogsDto
 }
 
@@ -84,7 +118,7 @@ function ContactoVisita({ rotulo }: { rotulo: TituloVisita }) {
 function visitDate(visit: VisitaOffline) {
   const row = contextOf(visit).visit as Record<string, unknown> | undefined
   const value = row?.starts_at ?? row?.fecha_inicio ?? row?.fecha_ejecucion
-  return typeof value === "string" ? new Date(value).toLocaleString("es-AR") : "Fecha no informada"
+  return fmtFechaHoraArgentina(value) ?? "Fecha no informada"
 }
 
 function findEquipo(context: StoredVisitContext, equipoId: string | undefined) {
@@ -179,57 +213,23 @@ export function workOrderName(
   return "Válvula asignada"
 }
 
-function createCoordinator(store: IndexedDbOfflineStore) {
-  return new OfflineSyncCoordinator(store, {
-    async uploadMedia({ visitId, deviceId, operationId, mediaId, kind, party, category }) {
-      const media = await store.getMedia(mediaId)
-      if (!media) throw new Error("El archivo multimedia no está disponible en IndexedDB")
-      return edgeApi.offline.uploadMedia(visitId, {
-        deviceId,
-        operationId,
-        mediaId,
-        kind,
-        party,
-        category,
-        file: (media.file ?? media.blob) as Blob,
-        fileName: media.fileName,
-      })
-    },
-    async syncVisit(visitId, operations, currentDeviceId) {
-      const response = await edgeApi.offline.syncVisit(visitId, {
-        deviceId: currentDeviceId,
-        operations: operations.map((raw) => {
-          const operation = raw as {
-            operation_id: string
-            kind: string
-            payload: Record<string, unknown>
-            schema_version: number
-            dependencies: string[]
-            device_timestamp: string
-            idempotency_key?: string
-            base_versions?: Record<string, number>
-          }
-          return {
-            operationId: operation.operation_id,
-            kind: operation.kind as Parameters<
-              typeof edgeApi.offline.syncVisit
-            >[1]["operations"][number]["kind"],
-            payload: operation.payload,
-            schemaVersion: operation.schema_version,
-            dependencies: operation.dependencies,
-            deviceTimestamp: operation.device_timestamp,
-            idempotencyKey: operation.idempotency_key,
-            baseVersions: operation.base_versions,
-          }
-        }),
-      })
-      return {
-        operations: response.operations,
-        visit_acknowledgement: response.visit_acknowledgement,
-      }
-    },
-    claimVisit: (visitId, currentDeviceId) => edgeApi.offline.claimVisit(visitId, currentDeviceId),
-  })
+type Aviso = { texto: string; lugar: "general" | "cliente" | "cierre"; error?: boolean }
+
+/** Texto en español de un error capturado, con el motivo del servidor traducido. */
+function textoDeError(caught: unknown, porDefecto: string) {
+  return caught instanceof Error && caught.message
+    ? traducirMensajeError(caught.message)
+    : porDefecto
+}
+
+/** Confirma en el servidor si la visita ya quedó completada (por ejemplo, en un intento previo). */
+async function visitaYaCompletada(visitId: string) {
+  try {
+    const { visit } = await edgeApi.serviceWorkflow.visit(visitId)
+    return visit.estado === "completada"
+  } catch {
+    return false
+  }
 }
 
 async function pendingStartOperationIds(store: IndexedDbOfflineStore, visitId: string) {
@@ -259,7 +259,12 @@ export function VisitasPanel() {
   const loadLocal = useCallback(async () => {
     const store = new IndexedDbOfflineStore()
     const cached = await store.listVisits()
-    setVisits(cached.sort((a, b) => a.cachedAt.localeCompare(b.cachedAt)))
+    // Orden estable por horario de la visita (y id): ordenar por `cachedAt` movía la tarjeta
+    // abierta en cada refresco y cortaba el trazo de una firma en curso (N1 de e2e).
+    const inicio = (visit: VisitaOffline) => String(contextOf(visit).visit?.starts_at ?? "")
+    setVisits(
+      cached.sort((a, b) => inicio(a).localeCompare(inicio(b)) || a.id.localeCompare(b.id)),
+    )
     const entries: Record<string, OperacionOffline[]> = {}
     for (const visit of cached) entries[visit.id] = await store.listOperations(visit.id)
     setOperations(entries)
@@ -447,9 +452,7 @@ export function VisitasPanel() {
                   <div className="min-w-0 space-y-1">
                     <p className="font-medium break-words">{rotulo.titulo}</p>
                     <p className="text-sm text-muted-foreground">
-                      {typeof visit.starts_at === "string"
-                        ? new Date(visit.starts_at).toLocaleString("es-AR")
-                        : "Fecha no informada"}
+                      {fmtFechaHoraArgentina(visit.starts_at) ?? "Fecha no informada"}
                       {` · ${workOrders.length} orden${workOrders.length === 1 ? "" : "es"} de trabajo`}
                     </p>
                     <ContactoVisita rotulo={rotulo} />
@@ -525,12 +528,54 @@ function VisitCard({
   const pending = operations.filter((operation) => operation.estado !== "sincronizada")
   const conflicts = operations.filter((operation) => operation.estado === "conflicto")
   const failed = operations.filter((operation) => operation.estado === "fallida")
+  // Motivos de los cambios fallidos, traducidos y sin repetir.
+  const failedReasons = [
+    ...new Set(
+      failed.map((operation) =>
+        traducirMensajeError(operation.lastError ?? "No se pudo sincronizar el cambio"),
+      ),
+    ),
+  ]
+  const [retrying, setRetrying] = useState(false)
+  const [retryMessage, setRetryMessage] = useState<string>()
+
+  const retrySync = async () => {
+    if (!navigator.onLine) {
+      setRetryMessage("Sin conexión: conectate para reintentar la sincronización.")
+      return
+    }
+    setRetrying(true)
+    setRetryMessage(undefined)
+    try {
+      const remaining = await createCoordinator(store).sync(visit.id, deviceId())
+      const unsynced = remaining.filter((operation) => operation.estado !== "sincronizada").length
+      await onChanged()
+      setRetryMessage(
+        unsynced === 0
+          ? "Sincronización completa: todos los cambios llegaron al servidor."
+          : `Quedan ${unsynced} cambio(s) sin sincronizar. Revisá el motivo de cada uno.`,
+      )
+    } catch (caught) {
+      setRetryMessage(textoDeError(caught, "No se pudo sincronizar la visita"))
+    } finally {
+      setRetrying(false)
+    }
+  }
+
+  // Al abrir (o cambiar de visita) se marca la carga durante el render, sin setState en el efecto.
+  const attachmentsKey = open ? visit.id : null
+  const [loadedAttachmentsKey, setLoadedAttachmentsKey] = useState<string | null>(null)
+  if (attachmentsKey !== loadedAttachmentsKey) {
+    setLoadedAttachmentsKey(attachmentsKey)
+    if (attachmentsKey) {
+      setLoadingAttachments(true)
+      setAttachmentsError(null)
+    }
+  }
 
   useEffect(() => {
     if (!open) return
     let cancelled = false
-    setLoadingAttachments(true)
-    setAttachmentsError(null)
     void edgeApi.serviceWorkflow.visitAttachments(visit.id)
       .then((files) => { if (!cancelled) setAttachments(files) })
       .catch((error: unknown) => {
@@ -551,7 +596,10 @@ function VisitCard({
         <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
           <div className="min-w-0">
             <CardTitle className="break-words" data-visit-id={visit.id}>{rotulo.titulo}</CardTitle>
-            <CardDescription>{visitDate(visit)} · Visita de servicio</CardDescription>
+            <CardDescription>
+              {visitDate(visit)} · Visita de servicio
+              {rotulo.referencia ? ` · ${rotulo.referencia}` : null}
+            </CardDescription>
           </div>
           <Badge
             variant={
@@ -588,8 +636,31 @@ function VisitCard({
           </div>
         ) : null}
         {failed.length ? (
-          <p className="text-sm text-destructive">
-            Hay cambios fallidos. Podés reintentar sin volver a capturar el trabajo.
+          <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+            <p>Hay cambios fallidos. Podés reintentar sin volver a capturar el trabajo.</p>
+            <ul aria-label="Motivos de los cambios fallidos" className="list-disc space-y-1 pl-5">
+              {failedReasons.map((reason) => (
+                <li key={reason} className="break-words">
+                  {reason}
+                </li>
+              ))}
+            </ul>
+            <Button
+              type="button"
+              variant="outline"
+              className="max-sm:w-full"
+              onClick={() => void retrySync()}
+              disabled={retrying}
+              aria-busy={retrying}
+            >
+              <RefreshCw className={cn("mr-2 size-4", retrying && "animate-spin")} />
+              {retrying ? "Sincronizando…" : "Reintentar sincronización"}
+            </Button>
+          </div>
+        ) : null}
+        {retryMessage ? (
+          <p aria-live="polite" className="text-sm text-muted-foreground">
+            {retryMessage}
           </p>
         ) : null}
         <Button variant="outline" className="max-sm:w-full" onClick={onOpen}>
@@ -611,7 +682,14 @@ function VisitCard({
             ))}
           </section>
         ) : null}
-        {open ? <VisitEditor visit={visit} store={store} onChanged={onChanged} /> : null}
+        {open ? (
+          <VisitEditor
+            visit={visit}
+            store={store}
+            pdSugerido={codigoPdSugerido(resumen ?? resumenGuardado(visit.context))}
+            onChanged={onChanged}
+          />
+        ) : null}
       </CardContent>
     </Card>
   )
@@ -620,13 +698,27 @@ function VisitCard({
 function VisitEditor({
   visit,
   store,
+  pdSugerido = "",
   onChanged,
 }: {
   visit: VisitaOffline
   store: IndexedDbOfflineStore
+  /** PD/RTO de la tarea, normalizado: se ofrece mientras la visita no tenga un PD guardado (D12). */
+  pdSugerido?: string
   onChanged: () => Promise<void>
 }) {
-  const [message, setMessage] = useState<string>()
+  // Un único aviso con role="status"; se muestra junto al paso que lo originó (firma del Cliente o
+  // cierre) para que se vea al lado del botón, y al pie para el resto.
+  const [aviso, setAviso] = useState<Aviso>()
+  const setMessage = useCallback(
+    (texto?: string) => setAviso(texto ? { texto, lugar: "general" } : undefined),
+    [],
+  )
+  const avisarCliente = (texto: string, error = false) =>
+    setAviso({ texto, lugar: "cliente", error })
+  const avisarCierre = (texto: string, error = false) =>
+    setAviso({ texto, lugar: "cierre", error })
+  const [completing, setCompleting] = useState(false)
   const [clientSigner, setClientSigner] = useState("")
   const [clientSignature, setClientSignature] = useState<string>()
   const [clientSignatureSaved, setClientSignatureSaved] = useState(false)
@@ -636,14 +728,27 @@ function VisitEditor({
   const [technician, setTechnician] = useState("")
   const [customTechnician, setCustomTechnician] = useState(false)
   const [technicianSignature, setTechnicianSignature] = useState<string>()
+  // La firma del Técnico se sube antes de completar; si el cierre falla, el reintento no la vuelve
+  // a subir porque el backend no permite reemplazarla (D2).
+  const [technicianSignatureUploaded, setTechnicianSignatureUploaded] = useState(false)
   const [incompleteReason, setIncompleteReason] = useState(
     "Falta de tiempo en jornada — reprogramar válvulas pendientes",
   )
   const [savingIncomplete, setSavingIncomplete] = useState(false)
   const [pdCode, setPdCode] = useState("")
+  const [pdEditado, setPdEditado] = useState(false)
   const [savedPdCode, setSavedPdCode] = useState<string | null>(null)
   const [pdImagesCount, setPdImagesCount] = useState(0)
   const [savingPd, setSavingPd] = useState(false)
+  // Estado de la última foto del PD, visible dentro de la propia tarjeta (no solo al pie).
+  const [pdPhotoStatus, setPdPhotoStatus] = useState<{
+    tipo: "subiendo" | "ok" | "error"
+    texto: string
+  } | null>(null)
+  const [pdRemoteImageIds, setPdRemoteImageIds] = useState<string[]>([])
+  const [pdSessionPhotos, setPdSessionPhotos] = useState<FotoParteDiarioSesion[]>([])
+  const [openingPdImage, setOpeningPdImage] = useState<string | null>(null)
+  const pdObjectUrls = useRef<string[]>([])
   const context = contextOf(visit)
   const visitRow = context.visit as
     | {
@@ -652,6 +757,9 @@ function VisitEditor({
       }
     | undefined
   const existingClientSignature = visitRow?.signatures?.find((signature) => signature.parte === "cliente")
+  const hasTechnicianSignature =
+    technicianSignatureUploaded ||
+    !!visitRow?.signatures?.some((signature) => signature.parte === "tecnico")
   const coordinator = useMemo(() => createCoordinator(store), [store])
   const technicians = context.assigned_technicians ?? []
   const catalogsQuery = useEdgeCertificateCaptureCatalogs(
@@ -663,17 +771,23 @@ function VisitEditor({
   )
   const closed = visit.estadoLocal === "completada_local"
   const clientSignatureStepDone = clientSignatureSaved || clientSignatureSkipped
-  const started =
-    visit.estadoLocal === "en_curso_local" ||
-    visit.backendStatus === "en_curso" ||
-    context.visit?.estado === "en_curso"
+  const started = visitaIniciada(visit, context.visit?.estado)
+
+  // La firma del Cliente ya registrada se refleja durante el render; el efecto solo consulta la
+  // cola local cuando todavía no existe.
+  const existingClientSigner = existingClientSignature
+    ? (existingClientSignature.nombre_firmante ?? "")
+    : null
+  const [appliedClientSigner, setAppliedClientSigner] = useState<string | null>(null)
+  if (existingClientSigner !== null && existingClientSigner !== appliedClientSigner) {
+    setAppliedClientSigner(existingClientSigner)
+    setClientSigner(existingClientSigner)
+    setClientSignatureSaved(true)
+  }
+  const hasExistingClientSignature = existingClientSigner !== null
 
   useEffect(() => {
-    if (existingClientSignature) {
-      setClientSigner(existingClientSignature.nombre_firmante ?? "")
-      setClientSignatureSaved(true)
-      return
-    }
+    if (hasExistingClientSignature) return
 
     void store.listOperations(visit.id).then((pendingOperations) => {
       const clientOperation = pendingOperations.find(
@@ -689,7 +803,7 @@ function VisitEditor({
         setClientSignatureSaved(true)
       }
     })
-  }, [existingClientSignature, store, visit.id])
+  }, [hasExistingClientSignature, store, visit.id])
 
   useEffect(() => {
     let cancelled = false
@@ -728,6 +842,7 @@ function VisitEditor({
       }
       if (!cancelled) {
         setPdImagesCount(cachedImages + queuedImageOps.length)
+        setPdRemoteImageIds(idsDeImagenes(visitRow?.parte_diario?.images))
       }
 
       if (typeof navigator !== "undefined" && navigator.onLine) {
@@ -743,6 +858,7 @@ function VisitEditor({
               setSavedPdCode(effectiveCode)
             }
             setPdImagesCount(remotePd.images.length + queuedImageOps.length)
+            setPdRemoteImageIds(remotePd.images.map((image) => image.id))
           }
         } catch {
           // Best-effort online fetch; local state remains authoritative when offline.
@@ -755,7 +871,20 @@ function VisitEditor({
     }
   }, [store, visit.id, visitRow?.parte_diario])
 
-  const saveParteDiarioCode = async (rawCode = pdCode): Promise<string | null> => {
+  // Las miniaturas de las fotos de esta sesión usan URLs locales que se liberan al desmontar.
+  useEffect(() => {
+    const urls = pdObjectUrls.current
+    return () => {
+      for (const url of urls) URL.revokeObjectURL(url)
+    }
+  }, [])
+
+  // Sin PD guardado ni escrito, se precarga el PD/RTO de la tarea; si el técnico borra el campo,
+  // la sugerencia no vuelve a aparecer.
+  const pdValor = pdCode || (pdEditado ? "" : pdSugerido)
+  const pdPhotoList = listarFotosParteDiario(pdRemoteImageIds, pdSessionPhotos)
+
+  const saveParteDiarioCode = async (rawCode = pdValor): Promise<string | null> => {
     const normalized = rawCode.trim().replace(/[^A-Za-z0-9]/g, "").toUpperCase()
     if (!normalized) {
       setMessage("Ingresá un número o código alfanumérico de Parte Diario.")
@@ -794,20 +923,30 @@ function VisitEditor({
     }
   }
 
-  const captureParteDiarioPhoto = async (file: File | undefined) => {
-    if (!file || closed || !started) return
-    const normalized = (pdCode || savedPdCode || "")
+  const captureParteDiarioPhoto = async (picked: File | undefined) => {
+    if (!picked || closed || !started) return
+    const normalized = (pdValor || savedPdCode || "")
       .trim()
       .replace(/[^A-Za-z0-9]/g, "")
       .toUpperCase()
     if (!normalized) {
-      setMessage("Ingresá primero el número de Parte Diario antes de adjuntar su foto.")
+      const texto = "Ingresá primero el número de Parte Diario antes de adjuntar su foto."
+      setPdPhotoStatus({ tipo: "error", texto })
+      setMessage(texto)
       return
     }
+    const online = navigator.onLine
     setSavingPd(true)
+    setPdPhotoStatus({
+      tipo: "subiendo",
+      texto: online ? "Subiendo foto…" : "Guardando foto en el dispositivo…",
+    })
+    let saved = false
     try {
+      // Convierte HEIC y reduce las fotos pesadas de la cámara al formato que acepta el servidor.
+      const file = await prepararImagen(picked)
       const imageId = window.crypto.randomUUID()
-      if (navigator.onLine) {
+      if (online) {
         await edgeApi.serviceWorkflow.setVisitParteDiario(visit.id, normalized)
         await edgeApi.serviceWorkflow.uploadVisitParteDiarioImage(visit.id, {
           codigo: normalized,
@@ -863,21 +1002,53 @@ function VisitEditor({
           { mediaIds: [imageId] },
         )
       }
+      const url = URL.createObjectURL(file)
+      pdObjectUrls.current.push(url)
+      setPdSessionPhotos((current) => [
+        ...current,
+        { id: imageId, nombre: file.name || "foto.jpg", url, pendiente: !online },
+      ])
+      if (online)
+        setPdRemoteImageIds((current) => (current.includes(imageId) ? current : [...current, imageId]))
       setPdCode(normalized)
       setSavedPdCode(normalized)
       setPdImagesCount((count) => count + 1)
-      setMessage(
-        navigator.onLine
-          ? `Foto del Parte Diario ${normalized} adjuntada a la visita.`
-          : `Foto del Parte Diario ${normalized} guardada localmente y lista para sincronizar.`,
-      )
-      await onChanged()
+      const texto = online
+        ? `Foto del Parte Diario ${normalized} adjuntada a la visita.`
+        : `Foto del Parte Diario ${normalized} guardada localmente y lista para sincronizar.`
+      setPdPhotoStatus({ tipo: "ok", texto })
+      setMessage(texto)
+      saved = true
     } catch (caught) {
-      setMessage(
-        caught instanceof Error ? caught.message : "No se pudo adjuntar la foto del Parte Diario",
-      )
+      const texto =
+        caught instanceof Error ? caught.message : "No se pudo adjuntar la foto del Parte Diario"
+      setPdPhotoStatus({ tipo: "error", texto })
+      setMessage(texto)
     } finally {
       setSavingPd(false)
+    }
+    if (saved) await onChanged()
+  }
+
+  // La foto se pide al backend y se abre en otra pestaña. La pestaña se abre antes de esperar la
+  // descarga para que el navegador del celular no la bloquee como ventana emergente.
+  const openParteDiarioImage = async (imageId: string) => {
+    const tab = window.open("", "_blank")
+    setOpeningPdImage(imageId)
+    try {
+      const response = await edgeApi.serviceWorkflow.downloadVisitParteDiarioImage(visit.id, imageId)
+      const url = URL.createObjectURL(await response.blob())
+      if (tab) tab.location.href = url
+      else window.open(url, "_blank")
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch (caught) {
+      tab?.close()
+      setPdPhotoStatus({
+        tipo: "error",
+        texto: caught instanceof Error ? caught.message : "No se pudo abrir la foto del Parte Diario",
+      })
+    } finally {
+      setOpeningPdImage(null)
     }
   }
 
@@ -941,20 +1112,27 @@ function VisitEditor({
   const captureClientSignature = async () => {
     const signerName = clientSigner.trim()
     if (!/^\S+\s+\S+/.test(signerName) || !clientSignature) {
-      setMessage("Ingresá el nombre y apellido del representante y registrá su firma.")
+      avisarCliente("Ingresá el nombre y apellido del representante y registrá su firma.", true)
       return
     }
     setSavingClientSignature(true)
     setMessage(undefined)
     try {
       const file = dataUrlToFile(clientSignature, `firma-cliente-${visit.id}.png`)
+      let yaRegistrada = false
       if (navigator.onLine) {
-        await edgeApi.certificates.uploadVisitSignature(visit.id, {
-          party: "cliente",
-          captureMethod: "pwa_cliente_presencial",
-          signerName,
-          file,
-        })
+        try {
+          await edgeApi.certificates.uploadVisitSignature(visit.id, {
+            party: "cliente",
+            captureMethod: "pwa_cliente_presencial",
+            signerName,
+            file,
+          })
+        } catch (caught) {
+          // Un intento previo ya la registró (por ejemplo, se cortó la respuesta): se continúa.
+          if (!esFirmaYaRegistrada(caught)) throw caught
+          yaRegistrada = true
+        }
       } else {
         const { signatureOperation } = await queueOfflineSignatureCapture({
           store,
@@ -969,28 +1147,36 @@ function VisitEditor({
         setClientSignatureOperationId(signatureOperation.operationId)
       }
       setClientSignatureSaved(true)
-      setMessage(
-        navigator.onLine
-          ? "Firma del Cliente registrada. Ahora puede firmar el Técnico."
-          : "Firma del Cliente guardada en el dispositivo. Se sincronizará antes que la firma del Técnico.",
+      avisarCliente(
+        yaRegistrada
+          ? "La firma del Cliente ya estaba registrada en el servidor. Ahora puede firmar el Técnico."
+          : navigator.onLine
+            ? "Firma del Cliente registrada. Ahora puede firmar el Técnico."
+            : "Firma del Cliente guardada en el dispositivo. Se sincronizará antes que la firma del Técnico.",
       )
       await onChanged()
     } catch (caught) {
-      setMessage(caught instanceof Error ? caught.message : "No se pudo registrar la firma del Cliente")
+      avisarCliente(textoDeError(caught, "No se pudo registrar la firma del Cliente"), true)
     } finally {
       setSavingClientSignature(false)
     }
   }
 
-  const complete = async () => {
+  /** Completa la visita; devuelve `true` solo si quedó completada (en el servidor o localmente). */
+  const complete = async (): Promise<boolean> => {
     if (!clientSignatureStepDone) {
-      setMessage("Registrá la firma del Cliente o indicá que no hay un representante presente.")
-      return
+      avisarCierre("Registrá la firma del Cliente o indicá que no hay un representante presente.", true)
+      return false
     }
     if (!technician.trim() || !technicianSignature) {
-      setMessage("Seleccioná el Técnico ejecutor y registrá su firma antes de completar la visita.")
-      return
+      avisarCierre(
+        "Seleccioná el Técnico ejecutor y registrá su firma antes de completar la visita.",
+        true,
+      )
+      return false
     }
+    setCompleting(true)
+    avisarCierre("Completando visita…")
     try {
       if (!navigator.onLine) {
         const blocker = visitCompletionBlocker(
@@ -998,20 +1184,36 @@ function VisitEditor({
           await store.listOperations(visit.id),
         )
         if (blocker) {
-          setMessage(blocker)
-          return
+          avisarCierre(blocker, true)
+          return false
         }
       }
       const file = dataUrlToFile(technicianSignature, `firma-tecnico-${visit.id}.png`)
       if (navigator.onLine) {
-        if (clientSignatureOperationId)
+        // Lo encolado sin conexión (firma del Cliente, resultados) tiene que llegar antes del cierre.
+        const operations = await store.listOperations(visit.id)
+        if (clientSignatureOperationId || operations.some((op) => op.estado !== "sincronizada"))
           await coordinator.sync(visit.id, deviceId())
-        await edgeApi.certificates.uploadVisitSignature(visit.id, {
-          party: "tecnico",
-          signerName: technician,
-          file,
-        })
-        await edgeApi.visits.transition(visit.id, "complete")
+        if (!hasTechnicianSignature) {
+          try {
+            await edgeApi.certificates.uploadVisitSignature(visit.id, {
+              party: "tecnico",
+              signerName: technician,
+              file,
+            })
+          } catch (caught) {
+            // Un intento anterior ya subió la firma del Técnico pero el cierre no terminó: el
+            // servidor no permite reemplazarla, así que se sigue con el cierre.
+            if (!esFirmaYaRegistrada(caught)) throw caught
+          }
+          setTechnicianSignatureUploaded(true)
+        }
+        try {
+          await edgeApi.visits.transition(visit.id, "complete")
+        } catch (caught) {
+          // Si la visita ya figura completada (se perdió la respuesta de un intento previo), es éxito.
+          if (!(await visitaYaCompletada(visit.id))) throw caught
+        }
       } else {
         const { signatureOperation } = await queueOfflineSignatureCapture({
           store,
@@ -1040,29 +1242,33 @@ function VisitEditor({
         )
         await coordinator.markVisitLocallyComplete(visit.id)
       }
-      setMessage(
+      avisarCierre(
         navigator.onLine
           ? "Visita completada y enviada al backend."
           : "Visita completada localmente; queda pendiente de sincronización.",
       )
       await onChanged()
+      return true
     } catch (caught) {
-      setMessage(caught instanceof Error ? caught.message : "No se pudo completar la visita")
+      avisarCierre(textoDeError(caught, "No se pudo completar la visita"), true)
+      return false
+    } finally {
+      setCompleting(false)
     }
   }
 
   const completeIncompleteVisit = async () => {
     const reasonText = incompleteReason.trim()
     if (!reasonText) {
-      setMessage("Indicá el motivo por el cual la visita quedó sin terminar.")
+      avisarCierre("Indicá el motivo por el cual la visita quedó sin terminar.", true)
       return
     }
     if (!clientSignatureStepDone) {
-      setMessage("Registrá la firma del Cliente o indicá que no hay un representante presente.")
+      avisarCierre("Registrá la firma del Cliente o indicá que no hay un representante presente.", true)
       return
     }
     if (!technician.trim() || !technicianSignature) {
-      setMessage("Seleccioná el Técnico ejecutor y registrá su firma antes de cerrar la visita.")
+      avisarCierre("Seleccioná el Técnico ejecutor y registrá su firma antes de cerrar la visita.", true)
       return
     }
     setSavingIncomplete(true)
@@ -1105,20 +1311,37 @@ function VisitEditor({
           )
         }
       }
-      await complete()
-      setMessage(
+      // Si el cierre falla, `complete` ya dejó el motivo junto al botón: no se lo pisa con un éxito.
+      if (!(await complete())) return
+      avisarCierre(
         navigator.onLine
           ? "Visita cerrada como no terminada. Las válvulas pendientes quedaron listas para reprogramar por el Administrador."
           : "Visita cerrada localmente como no terminada; al sincronizar se notificará al Administrador para reprogramar las válvulas pendientes.",
       )
     } catch (caught) {
-      setMessage(
-        caught instanceof Error ? caught.message : "No se pudo cerrar la visita no terminada",
-      )
+      avisarCierre(textoDeError(caught, "No se pudo cerrar la visita no terminada"), true)
     } finally {
       setSavingIncomplete(false)
     }
   }
+
+  // El aviso se muestra junto a su paso solo si ese paso está a la vista; si no, al pie.
+  const lugarDelAviso: Aviso["lugar"] | undefined = !aviso
+    ? undefined
+    : aviso.lugar === "cierre" && !(started && clientSignatureStepDone)
+      ? "general"
+      : aviso.lugar === "cliente" && !started
+        ? "general"
+        : aviso.lugar
+  const avisoEn = (lugar: Aviso["lugar"]) =>
+    aviso && lugarDelAviso === lugar ? (
+      <p
+        className={cn("text-sm", aviso.error ? "text-destructive" : "text-muted-foreground")}
+        role="status"
+      >
+        {aviso.texto}
+      </p>
+    ) : null
 
   return (
     <div className="space-y-5 border-t pt-4">
@@ -1162,12 +1385,7 @@ function VisitEditor({
           <CardHeader>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <CardTitle className="text-sm">Parte Diario (Facturación)</CardTitle>
-              {savedPdCode ? (
-                <Badge variant="outline">
-                  PD {savedPdCode}
-                  {pdImagesCount > 0 ? ` · ${pdImagesCount} foto(s)` : ""}
-                </Badge>
-              ) : null}
+              {savedPdCode ? <Badge variant="outline">PD {savedPdCode}</Badge> : null}
             </div>
             <CardDescription>
               El Parte Diario cubre todas las válvulas revisadas en esta visita y queda vinculado a
@@ -1180,8 +1398,11 @@ function VisitEditor({
                 <Label htmlFor={`parte-diario-code-${visit.id}`}>Número de Parte Diario (PD)</Label>
                 <Input
                   id={`parte-diario-code-${visit.id}`}
-                  value={pdCode}
-                  onChange={(event) => setPdCode(event.target.value)}
+                  value={pdValor}
+                  onChange={(event) => {
+                    setPdEditado(true)
+                    setPdCode(event.target.value)
+                  }}
                   placeholder="Ej. PD1234 o 4078"
                   disabled={closed || savingPd}
                 />
@@ -1191,28 +1412,102 @@ function VisitEditor({
                 variant="outline"
                 className="max-sm:w-full"
                 onClick={() => void saveParteDiarioCode()}
-                disabled={closed || savingPd || !pdCode.trim()}
+                disabled={closed || savingPd || !pdValor.trim()}
               >
                 {savingPd ? "Guardando…" : "Guardar número PD"}
               </Button>
             </div>
-            <div className="space-y-1">
-              <Label htmlFor={`parte-diario-photo-${visit.id}`}>
-                Sacar foto o adjuntar imagen del Parte Diario
-              </Label>
-              <Input
-                id={`parte-diario-photo-${visit.id}`}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                disabled={closed || savingPd}
-                className="h-auto py-2 pointer-coarse:h-auto"
-                onChange={(event) => {
-                  const file = event.target.files?.[0]
-                  void captureParteDiarioPhoto(file)
-                  event.currentTarget.value = ""
-                }}
-              />
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Foto del Parte Diario</p>
+              {/* Dos entradas: con `capture` Android abre solo la cámara y oculta la galería. */}
+              <div className="grid gap-2 sm:flex">
+                {(
+                  [
+                    { id: `parte-diario-camara-${visit.id}`, texto: "Sacar foto", camara: true },
+                    { id: `parte-diario-photo-${visit.id}`, texto: "Elegir de la galería", camara: false },
+                  ] as const
+                ).map((opcion) => (
+                  <label
+                    key={opcion.id}
+                    htmlFor={opcion.id}
+                    className={cn(
+                      buttonVariants({ variant: "outline" }),
+                      "cursor-pointer focus-within:ring-3 focus-within:ring-ring/50 max-sm:w-full",
+                      (closed || savingPd) && "pointer-events-none opacity-50",
+                    )}
+                  >
+                    {opcion.camara ? <Camera /> : <ImagePlus />}
+                    {pdPhotoStatus?.tipo === "subiendo" ? "Subiendo…" : opcion.texto}
+                    <input
+                      id={opcion.id}
+                      type="file"
+                      accept="image/*"
+                      capture={opcion.camara ? "environment" : undefined}
+                      disabled={closed || savingPd}
+                      className="sr-only"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0]
+                        void captureParteDiarioPhoto(file)
+                        event.currentTarget.value = ""
+                      }}
+                    />
+                  </label>
+                ))}
+              </div>
+              {pdPhotoStatus ? (
+                <p
+                  aria-live="polite"
+                  className={cn(
+                    "text-sm",
+                    pdPhotoStatus.tipo === "error" ? "text-destructive" : "text-muted-foreground",
+                  )}
+                >
+                  {pdPhotoStatus.texto}
+                </p>
+              ) : null}
+              <p className="text-xs text-muted-foreground">{textoCantidadFotos(pdImagesCount)}</p>
+              {pdPhotoList.length ? (
+                <ul aria-label="Fotos del Parte Diario" className="grid gap-2 sm:grid-cols-2">
+                  {pdPhotoList.map((foto) => (
+                    <li
+                      key={foto.id}
+                      className="flex min-w-0 items-center gap-2 rounded-md border p-2 text-sm"
+                    >
+                      {foto.origen === "sesion" ? (
+                        <>
+                          <a href={foto.foto.url} target="_blank" rel="noreferrer" className="shrink-0">
+                            {/* eslint-disable-next-line @next/next/no-img-element -- miniatura local (blob:) */}
+                            <img
+                              src={foto.foto.url}
+                              alt={`Parte Diario, foto ${foto.numero}`}
+                              className="size-12 rounded border object-cover"
+                            />
+                          </a>
+                          <span className="min-w-0 break-all">
+                            Foto {foto.numero}
+                            <span className="block text-xs text-muted-foreground">
+                              {foto.foto.pendiente ? "Pendiente de sincronizar" : "Subida"}
+                            </span>
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="min-w-0 flex-1">Foto {foto.numero}</span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={openingPdImage === foto.id}
+                            onClick={() => void openParteDiarioImage(foto.id)}
+                          >
+                            {openingPdImage === foto.id ? "Abriendo…" : "Ver"}
+                          </Button>
+                        </>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </div>
           </CardContent>
         </Card>
@@ -1272,7 +1567,7 @@ function VisitEditor({
                 className="max-sm:w-full"
                 onClick={() => {
                   setClientSignatureSkipped(true)
-                  setMessage("Se omitió la firma presencial. El Cliente podrá firmar luego desde su cuenta.")
+                  avisarCliente("Se omitió la firma presencial. El Cliente podrá firmar luego desde su cuenta.")
                 }}
                 disabled={closed || !started || savingClientSignature}
               >
@@ -1288,6 +1583,7 @@ function VisitEditor({
               Se omitió la firma presencial. El Cliente podrá firmar después desde su cuenta.
             </p>
           )}
+          {avisoEn("cliente")}
           {clientSignatureStepDone ? (
             <section aria-label="Firma del Técnico" className="space-y-3 rounded-md border p-3">
               <h3 className="font-medium">Paso 2 · Firma del Técnico</h3>
@@ -1311,11 +1607,8 @@ function VisitEditor({
                   >
                     <option value="">Seleccionar Técnico</option>
                     {technicians.map((person) => (
-                      <option
-                        key={person.id ?? person.name ?? person.nombre}
-                        value={person.name ?? person.nombre ?? ""}
-                      >
-                        {person.name ?? person.nombre}
+                      <option key={person.id ?? nombreDeTecnico(person)} value={nombreDeTecnico(person)}>
+                        {nombreDeTecnico(person)}
                       </option>
                     ))}
                     <option value="__otro__">Otro técnico / Reemplazo…</option>
@@ -1343,10 +1636,12 @@ function VisitEditor({
               <Button
                 className="max-sm:w-full"
                 onClick={() => void complete()}
-                disabled={closed || !started || savingIncomplete}
+                disabled={closed || !started || savingIncomplete || completing}
+                aria-busy={completing}
               >
-                {closed ? "Visita cerrada" : "Completar visita"}
+                {closed ? "Visita cerrada" : completing ? "Completando visita…" : "Completar visita"}
               </Button>
+              {avisoEn("cierre")}
               <div className="space-y-2 rounded-md border border-dashed bg-muted/20 p-3">
                 <p className="text-xs font-medium">
                   ¿No llegaron a revisar todas las válvulas en el día?
@@ -1361,14 +1656,14 @@ function VisitEditor({
                   value={incompleteReason}
                   onChange={(event) => setIncompleteReason(event.target.value)}
                   placeholder="Motivo para reprogramar las válvulas faltantes"
-                  disabled={closed || !started || savingIncomplete}
+                  disabled={closed || !started || savingIncomplete || completing}
                 />
                 <Button
                   type="button"
                   variant="outline"
                   className="max-sm:w-full"
                   onClick={() => void completeIncompleteVisit()}
-                  disabled={closed || !started || savingIncomplete}
+                  disabled={closed || !started || savingIncomplete || completing}
                 >
                   {savingIncomplete
                     ? "Cerrando visita…"
@@ -1385,11 +1680,7 @@ function VisitEditor({
           ) : null}
         </CardContent>
       </Card> : null}
-      {message ? (
-        <p className="text-sm text-muted-foreground" role="status">
-          {message}
-        </p>
-      ) : null}
+      {avisoEn("general")}
     </div>
   )
 }
@@ -1410,7 +1701,7 @@ function WorkOrderEditor({
   store: IndexedDbOfflineStore
   coordinator: OfflineSyncCoordinator
   catalogs?: CertificateCaptureCatalogsDto
-  technicians: { id?: string; name?: string; nombre?: string }[]
+  technicians: TecnicoAsignado[]
   disabled: boolean
   onChanged: () => Promise<void>
   onMessage: (message: string) => void
@@ -1426,12 +1717,28 @@ function WorkOrderEditor({
   const [evidence, setEvidence] = useState<
     Partial<Record<CertificateEvidenceKey, { media_id: string }>>
   >({})
+  // Estado y miniatura de cada foto de evidencia; vive acá porque el formulario se vuelve a montar
+  // cada vez que el borrador cambia en el servidor.
+  const [evidenceStatus, setEvidenceStatus] = useState<
+    Partial<Record<CertificateEvidenceKey, EstadoFotoEvidencia>>
+  >({})
+  const evidenceUrls = useRef<Partial<Record<CertificateEvidenceKey, string>>>({})
+  useEffect(() => {
+    const urls = evidenceUrls.current
+    return () => {
+      for (const url of Object.values(urls)) if (url) URL.revokeObjectURL(url)
+    }
+  }, [])
   const draft = useEdgeCertificateDraft(certificateId || undefined)
   const currentCertificate = draft.data?.certificate ?? localCertificate
-  useEffect(() => {
+  // Si el servidor cambia el estado o el motivo de la orden, se resincroniza durante el render.
+  const serverOrderKey = JSON.stringify([order.estado ?? "pendiente", order.no_evaluada_razon ?? ""])
+  const [syncedOrderKey, setSyncedOrderKey] = useState(serverOrderKey)
+  if (serverOrderKey !== syncedOrderKey) {
+    setSyncedOrderKey(serverOrderKey)
     setOutcome(order.estado ?? "pendiente")
     setReason(order.no_evaluada_razon ?? "")
-  }, [order.estado, order.no_evaluada_razon])
+  }
 
   const snapshot = currentCertificate?.plantilla_snapshot
   const boundTemplate = useMemo(() => {
@@ -1583,13 +1890,17 @@ function WorkOrderEditor({
   }
 
   const saveDraft = async (
-    payload: Parameters<NonNullable<ComponentProps<typeof CertificateCaptureForm>["onSave"]>>[0],
+    entrada: Parameters<NonNullable<ComponentProps<typeof CertificateCaptureForm>["onSave"]>>[0],
   ) => {
     if (!certificateId || disabled) return
     try {
+      // Las fotos de esta sesión que ya se subieron viajan con su referencia de Storage y no como
+      // `{ media_id }`, para no pisar la evidencia que el servidor ya registró (P2).
+      const operations = await store.listOperations(visit.id)
+      const payload = resolverEvidenciaDelBorrador(entrada, referenciasDeEvidencia(operations))
       if (navigator.onLine) await edgeApi.certificates.updateDraft(certificateId, payload)
       else {
-        const priorOperations = (await store.listOperations(visit.id))
+        const priorOperations = operations
           .filter(
             (operation) =>
               operation.payload.certificate_id === certificateId &&
@@ -1616,36 +1927,60 @@ function WorkOrderEditor({
     }
   }
 
-  const capturePhoto = async (section: CertificateEvidenceKey, file: File | undefined) => {
-    if (!file || disabled) return
-    const mediaId = window.crypto.randomUUID()
-    await store.saveMedia?.({
-      id: mediaId,
-      mediaId,
-      visitId: visit.id,
-      operationId: mediaId,
-      kind: "photo",
-      blob: file,
-      file,
-      contentType: file.type,
-      fileName: file.name,
-      createdAt: new Date().toISOString(),
-    })
-    setEvidence((current) => ({ ...current, [section]: { media_id: mediaId } }))
-    await coordinator.queue(
-      visit.id,
-      deviceId(),
-      "upload_photo",
-      {
-        media_id: mediaId,
-        certificate_id: certificateId || null,
-        category: section,
-        content_type: file.type,
-      },
-      await pendingStartOperationIds(store, visit.id),
-      { mediaIds: [mediaId] },
-    )
-    onMessage(`Foto de ${section} guardada localmente y lista para sincronizar.`)
+  const capturePhoto = async (section: CertificateEvidenceKey, picked: File | undefined) => {
+    if (!picked || disabled) return
+    const sectionLabel =
+      CERTIFICATE_EVIDENCE_SECTIONS.find(({ key }) => key === section)?.label ?? section
+    setEvidenceStatus((current) => ({
+      ...current,
+      [section]: { estado: "guardando", nombre: picked.name },
+    }))
+    try {
+      // Convierte HEIC y reduce las fotos pesadas: el servidor solo acepta JPG, PNG o WEBP ≤ 10 MB.
+      const file = await prepararImagen(picked)
+      const mediaId = window.crypto.randomUUID()
+      const fileName = file.name || `evidencia-${mediaId}.jpg`
+      await store.saveMedia?.({
+        id: mediaId,
+        mediaId,
+        visitId: visit.id,
+        operationId: mediaId,
+        kind: "photo",
+        blob: file,
+        file,
+        contentType: file.type,
+        fileName,
+        createdAt: new Date().toISOString(),
+      })
+      setEvidence((current) => ({ ...current, [section]: { media_id: mediaId } }))
+      await coordinator.queue(
+        visit.id,
+        deviceId(),
+        "upload_photo",
+        {
+          media_id: mediaId,
+          certificate_id: certificateId || null,
+          category: section,
+          content_type: file.type,
+        },
+        await pendingStartOperationIds(store, visit.id),
+        { mediaIds: [mediaId] },
+      )
+      const previousUrl = evidenceUrls.current[section]
+      if (previousUrl) URL.revokeObjectURL(previousUrl)
+      const vistaPrevia = URL.createObjectURL(file)
+      evidenceUrls.current[section] = vistaPrevia
+      setEvidenceStatus((current) => ({
+        ...current,
+        [section]: { estado: "lista", nombre: fileName, vistaPrevia },
+      }))
+      onMessage(`Foto «${sectionLabel}» guardada localmente y lista para sincronizar.`)
+    } catch (caught) {
+      const mensaje = caught instanceof Error ? caught.message : "No se pudo guardar la foto"
+      setEvidenceStatus((current) => ({ ...current, [section]: { estado: "error", mensaje } }))
+      onMessage(mensaje)
+      return
+    }
     await onChanged()
   }
 
@@ -1702,6 +2037,7 @@ function WorkOrderEditor({
                 certificate={currentCertificate}
                 valve={findValve(contextOf(visit), order.valvula_id, order, currentCertificate)}
                 evidence={evidence}
+                evidenceStatus={evidenceStatus}
                 disabled={disabled}
                 onCapturePhoto={(section, file) => void capturePhoto(section, file)}
                 onSave={(payload) => void saveDraft(payload)}

@@ -1,0 +1,93 @@
+import { describe, expect, it } from "vitest"
+
+import { traducirMensajeError } from "./errores"
+
+describe("traducirMensajeError", () => {
+  it("traduce la superposición de equipo de la restricción de exclusión", () => {
+    expect(
+      traducirMensajeError(
+        'conflicting key value violates exclusion constraint "visita_equipos_no_simultaneous_equipment"',
+      ),
+    ).toMatch(/equipo ya tiene otra visita/i)
+  })
+
+  it("traduce cualquier otra restricción de exclusión como superposición", () => {
+    expect(
+      traducirMensajeError(
+        'conflicting key value violates exclusion constraint "otra_restriccion"',
+      ),
+    ).toMatch(/se superpone/i)
+  })
+
+  it.each([
+    ["Cliente not found", /Cliente/],
+    ["The target account is not an active Cliente", /cuenta del Cliente/],
+    ["An accepted service request cannot be scheduled", /ya fue aceptada/],
+    ["Only an accepted service request can have a follow-up visit", /seguimiento/],
+    ["The selected Cliente does not own the Yacimiento", /yacimiento/i],
+    ["A visit requires a valid date and time window", /fecha u horario/],
+    ["Only a cancelled visit can be restored", /cancelada/],
+    ["The schedule is unchanged", /cambios/],
+  ])("traduce el mensaje conocido %s", (mensaje, esperado) => {
+    const traducido = traducirMensajeError(mensaje)
+    expect(traducido).not.toBe(mensaje)
+    expect(traducido).toMatch(esperado)
+  })
+
+  it("traduce los permisos de administrador por prefijo", () => {
+    expect(traducirMensajeError("Only an active Administrador can schedule a visit")).toMatch(
+      /administrador activo/i,
+    )
+  })
+
+  it("traduce los errores del cierre de la visita del Taller (D13)", () => {
+    const cierre = traducirMensajeError(
+      "Every evaluated work order requires a complete certificate before visit completion",
+    )
+    expect(cierre).toMatch(/certificado/)
+    expect(cierre).not.toMatch(/(every|requires|before|completion)/i)
+    for (const mensaje of [
+      "A visit signature cannot be replaced",
+      "A Técnico signature is required to complete a visit",
+      "The Técnico is not assigned to this visit Taller Móvil",
+      "The Técnico is not assigned to the visit Taller Móvil",
+      "An in-person Cliente signature must be captured before the Técnico signature",
+      "Certificate drafts can be started only while the visit is in progress",
+      "Certificate capture is closed",
+    ])
+      expect(traducirMensajeError(mensaje)).not.toBe(mensaje)
+  })
+
+  it.each([
+    ["Only an in-progress visit can be completed", /en curso/],
+    ["An offline operation dependency is not synchronized", /sincroniz/],
+  ])("traduce el error de cierre y sincronización %s", (mensaje, esperado) => {
+    const traducido = traducirMensajeError(mensaje)
+    expect(traducido).not.toBe(mensaje)
+    expect(traducido).toMatch(esperado)
+  })
+
+  it.each([
+    ["Unsupported storage content type", /formato/i],
+    ["Invalid storage object size", /10 MB/],
+    ["A Parte diario image file is required", /foto del Parte Diario/],
+    ["A valid alphanumeric Parte diario code is required", /alfanumérico/],
+  ])("traduce el error de fotos y Parte Diario %s", (mensaje, esperado) => {
+    const traducido = traducirMensajeError(mensaje)
+    expect(traducido).not.toBe(mensaje)
+    expect(traducido).toMatch(esperado)
+  })
+
+  it("traduce el rechazo a aceptar un conflicto de firma (P1)", () => {
+    expect(
+      traducirMensajeError(
+        "An Administrador cannot accept a visit-signature operation; reject it or authorize a certificate correction",
+      ),
+    ).toMatch(/Rechazar/)
+  })
+
+  it("conserva los mensajes desconocidos y los que ya están en español", () => {
+    expect(traducirMensajeError("Algo inesperado")).toBe("Algo inesperado")
+    expect(traducirMensajeError("requestId must be a UUID")).toBe("requestId must be a UUID")
+  })
+})

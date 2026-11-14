@@ -83,4 +83,27 @@ describe("administrative certificate history screen", () => {
     expect(html).toContain("/admin/certificados/pending-id")
     expect(html).toContain("Descargar")
   })
+
+  it("muestra la fecha de creación formateada, sin el ISO crudo (D13)", () => {
+    useCertificates.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: {
+        items: [
+          {
+            id: "iso-id",
+            estado: "finalizado",
+            signature_state: "complete",
+            created_at: "2026-10-01T15:45:00.000Z",
+          },
+        ],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      },
+    })
+    const html = render()
+    expect(html).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/)
+    expect(html).toContain("01/10/2026")
+  })
 })

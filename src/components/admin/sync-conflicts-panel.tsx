@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { edgeApi } from "@/lib/api"
+import { esFirmaYaRegistrada } from "@/lib/offline/sync"
 import { Cargando } from "@/components/common/cargando"
 
 type Conflict = Record<string, unknown> & {
@@ -22,6 +23,21 @@ type Conflict = Record<string, unknown> & {
 }
 
 type CorrectionInput = { provider_id: string; starts_at: string; ends_at: string }
+
+/** El servidor no permite aceptar (reaplicar) una firma: se rechaza o se autoriza una corrección. */
+export function sePuedeAceptar(operationKind: string | undefined): boolean {
+  return operationKind !== "submit_signature"
+}
+
+/** Ayuda para decidir los conflictos de firma, que no se pueden aceptar. */
+export function avisoDelConflicto(
+  conflict: Pick<Conflict, "operation_kind" | "reason">,
+): string | undefined {
+  if (conflict.operation_kind !== "submit_signature") return undefined
+  if (esFirmaYaRegistrada(conflict.reason))
+    return "La firma de esta parte ya estaba registrada y se conserva. Este reintento no cambia nada: resolvelo con «Rechazar»."
+  return "Una firma no se puede aceptar desde acá: resolvelo con «Rechazar» o autorizá una corrección."
+}
 
 export function SyncConflictsPanel() {
   const [items, setItems] = useState<Conflict[]>([])
@@ -173,6 +189,9 @@ export function SyncConflictsPanel() {
                   {JSON.stringify(conflict.payload ?? {}, null, 2)}
                 </pre>
               </details>
+              {!resolved && avisoDelConflicto(conflict) ? (
+                <p className="text-sm text-muted-foreground">{avisoDelConflicto(conflict)}</p>
+              ) : null}
               {resolved ? (
                 <p className="text-sm text-muted-foreground">
                   Motivo administrativo: {conflict.resolution_reason}
@@ -224,13 +243,15 @@ export function SyncConflictsPanel() {
                     />
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      onClick={() => void resolve(conflict, "accept")}
-                      disabled={busy === conflict.id || !reasons[conflict.id]?.trim()}
-                    >
-                      Aceptar y aplicar
-                    </Button>
+                    {sePuedeAceptar(conflict.operation_kind) ? (
+                      <Button
+                        type="button"
+                        onClick={() => void resolve(conflict, "accept")}
+                        disabled={busy === conflict.id || !reasons[conflict.id]?.trim()}
+                      >
+                        Aceptar y aplicar
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       variant="outline"

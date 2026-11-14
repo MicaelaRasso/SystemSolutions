@@ -2,6 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ErrorState } from "@/components/common/states"
+import { PageHeader } from "@/components/common/page-header"
 import { Cargando } from "@/components/common/cargando"
 import { useEdgeContext } from "@/lib/api/hooks"
 import { useEmpresa } from "@/lib/hooks/queries"
@@ -28,22 +29,26 @@ export function ClienteEmpresaPortal() {
   ] as const
 
   return (
-    <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_18rem]">
-      <Card>
-        <CardHeader>
-          <CardTitle>Datos de la empresa</CardTitle>
-          <CardDescription>Estos datos son administrados por System Solutions.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
-          {fields.map(([label, value]) => (
-            <div className="min-w-0 rounded-md border bg-muted/20 p-3" key={label}>
-              <p className="text-xs text-muted-foreground">{label}</p>
-              <p className="mt-1 text-sm font-medium break-words">{value || "—"}</p>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-      <LogoUploader empresa={empresa.data} />
+    <div className="space-y-6">
+      {/* Título de página como en el resto del portal (también da el encabezado accesible). */}
+      <PageHeader titulo="Mi empresa" />
+      <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_18rem]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Datos de la empresa</CardTitle>
+            <CardDescription>Estos datos son administrados por System Solutions.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-2">
+            {fields.map(([label, value]) => (
+              <div className="min-w-0 rounded-md border bg-muted/20 p-3" key={label}>
+                <p className="text-xs text-muted-foreground">{label}</p>
+                <p className="mt-1 text-sm font-medium break-words">{value || "—"}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+        <LogoUploader empresa={empresa.data} />
+      </div>
     </div>
   )
 }

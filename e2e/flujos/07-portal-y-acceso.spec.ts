@@ -73,8 +73,6 @@ test.describe("RN-06: certificado vencido", () => {
     const vencido = leerEstado<Vencido>("vencido")
     const respuesta = await edgeCrudo("cliente", "certificate-field", `certificates/${vencido.certificadoId}/download`)
     expect(respuesta.status).toBeLessThan(500)
-    // N3: el bloqueo existe solo en la pantalla; la API entrega el documento vencido.
-    test.fail(true, "N3: RN-06 el servidor entrega certificados vencidos al Cliente")
     expect(respuesta.status).toBeGreaterThanOrEqual(400)
   })
 
@@ -122,7 +120,12 @@ test.describe("Alcance del Cliente y de los roles", () => {
   })
 
   test("RF-46 ADR-0014 RF-37: el backup masivo es solo del Súper Administrador", async ({ abrir }) => {
-    const admin = await edgeCrudo("admin", "backup-export", "backups", { method: "POST", body: { desde: "2020-01-01" } })
+    // Cuerpo válido (`scope`/`from`/`to`): con `desde` la función rechazaba la forma (400) antes de
+    // llegar al control de rol, y la prueba no medía el permiso.
+    const admin = await edgeCrudo("admin", "backup-export", "backups", {
+      method: "POST",
+      body: { scope: "date_range", from: "2020-01-01", to: "2020-01-02" },
+    })
     expect(admin.status).toBe(403)
     const { page } = await abrir("super")
     await page.goto("/superadmin/backups")
@@ -177,8 +180,6 @@ test.describe("Historial y portal sin datos crudos", () => {
     await expect(page.getByRole("button", { name: "Aplicar filtros" })).toBeVisible({ timeout: 45_000 })
     const tabla = page.getByRole("table").first()
     await expect(tabla).toBeVisible({ timeout: 45_000 })
-    // D13: la tabla imprime fechas ISO y UUID sin formatear.
-    test.fail(true, "D13: fechas ISO e ID en el historial")
     const texto = await tabla.innerText()
     expect(texto).not.toMatch(REGEX_UUID)
     expect(texto).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/)
@@ -189,8 +190,24 @@ test.describe("Historial y portal sin datos crudos", () => {
     await page.goto("/portal/empresa")
     await expect(page.getByRole("heading").first()).toBeVisible({ timeout: 45_000 })
     await page.waitForLoadState("networkidle")
-    // D13: el portal pide `GET clients/`, reservado al Administrador, y recibe 403.
-    test.fail(true, "D13: GET clients/ da 403 en /portal/empresa")
     expect(problemas.respuestas.filter((r) => r.status === 403)).toEqual([])
+  })
+
+  test("RNF-05 RF-33: /portal/certificados pide el historial de las Válvulas en lote, no uno por Válvula", async ({
+    abrir,
+  }) => {
+    const { page, problemas } = await abrir("cliente")
+    const historiales: string[] = []
+    page.on("request", (pedido) => {
+      const ruta = new URL(pedido.url()).pathname
+      if (/\/certificate-field\/(valves\/[^/]+\/certificates|certificates\/valve-histories)$/.test(ruta))
+        historiales.push(ruta.replace(/.*certificate-field\//, ""))
+    })
+    await page.goto("/portal/certificados")
+    await expect(page.getByRole("link", { name: "Ver certificado" }).first()).toBeVisible({ timeout: 45_000 })
+    await page.waitForLoadState("networkidle")
+    // La suite deja decenas de Válvulas en el yacimiento del Cliente: entran en un solo lote.
+    expect(historiales).toEqual(["certificates/valve-histories"])
+    expect(problemas.respuestas).toEqual([])
   })
 })

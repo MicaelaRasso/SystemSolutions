@@ -3,12 +3,18 @@
  * nombres salen del resumen de la operación (`GET /operations`). Nunca se muestra un UUID.
  */
 
+import { fmtFechaHoraArgentina } from "@/lib/format"
+
 export interface ResumenVisita {
   cliente?: { nombre?: string }
   yacimiento?: { nombre?: string }
   plantas?: { nombre?: string }[]
   contacto?: string
   telefono?: string
+  /** PD/RTO cargado en la tarea: se precarga como número de Parte Diario de la visita. */
+  pdRto?: string
+  /** Número de la Solicitud de servicio: referencia para el Taller, también sin conexión (RF-19). */
+  numeroSolicitud?: number
 }
 
 export interface VisitaParaTitulo {
@@ -22,6 +28,8 @@ export interface TituloVisita {
   lineas: string[]
   contacto?: string
   telefono?: string
+  /** «Solicitud N° X» cuando se conoce el número de la solicitud (RF-19). */
+  referencia?: string
 }
 
 const SEPARADOR = " · "
@@ -31,22 +39,8 @@ function limpio(valor: string | undefined) {
   return texto ? texto : undefined
 }
 
-function formatearFecha(valor: unknown) {
-  if (typeof valor !== "string") return undefined
-  const fecha = new Date(valor)
-  if (Number.isNaN(fecha.getTime())) return undefined
-  const partes = new Intl.DateTimeFormat("es-AR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(fecha)
-  const dato = (tipo: Intl.DateTimeFormatPartTypes) =>
-    partes.find((parte) => parte.type === tipo)?.value ?? ""
-  return `${dato("day")}/${dato("month")}/${dato("year")} ${dato("hour")}:${dato("minute")}`
-}
+/** Día y hora de la visita en hora argentina (24 h, sin segundos). */
+const formatearFecha = fmtFechaHoraArgentina
 
 function nombrePlanta(plantas: ResumenVisita["plantas"]) {
   const nombres = (plantas ?? []).map((planta) => limpio(planta.nombre)).filter(Boolean) as string[]
@@ -56,7 +50,11 @@ function nombrePlanta(plantas: ResumenVisita["plantas"]) {
 
 export function tituloDeVisita(visita: VisitaParaTitulo, operacion?: ResumenVisita): TituloVisita {
   const partes = operacion
-    ? [limpio(operacion.cliente?.nombre), limpio(operacion.yacimiento?.nombre), nombrePlanta(operacion.plantas)]
+    ? [
+        limpio(operacion.cliente?.nombre),
+        limpio(operacion.yacimiento?.nombre),
+        nombrePlanta(operacion.plantas),
+      ]
     : []
   const nombres = partes.filter(Boolean) as string[]
 
@@ -71,5 +69,16 @@ export function tituloDeVisita(visita: VisitaParaTitulo, operacion?: ResumenVisi
   const telefono = limpio(operacion?.telefono)
   const linea = [contacto, telefono].filter(Boolean).join(SEPARADOR)
 
-  return { titulo, lineas: linea ? [linea] : [], contacto, telefono }
+  const referencia =
+    typeof operacion?.numeroSolicitud === "number"
+      ? `Solicitud N° ${operacion.numeroSolicitud}`
+      : undefined
+
+  return {
+    titulo,
+    lineas: linea ? [linea] : [],
+    contacto,
+    telefono,
+    ...(referencia ? { referencia } : {}),
+  }
 }

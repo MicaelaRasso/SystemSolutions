@@ -1,5 +1,7 @@
 # Datos de prueba para SystemSolutions
 
+> Para la base LOCAL hay un dataset completo (solicitudes, visitas y certificados en todos los estados) que se carga con `npm run datos:demo`: ver [guia-pruebas-demo.md](guia-pruebas-demo.md). Este fixture SQL queda como referencia de la jerarquía mínima.
+
 Este fixture agrega un Cliente, un Taller Móvil y una jerarquía completa para probar las pantallas de administración de activos. Los nombres, correos y tags son ficticios. No crea Solicitudes de servicio, Visitas de servicio ni Certificados: créalos desde la aplicación para conservar sus validaciones y Registro de auditoría.
 
 ## Preparación

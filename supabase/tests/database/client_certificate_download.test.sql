@@ -1,6 +1,6 @@
 begin;
 
-select plan(9);
+select plan(10);
 
 select has_function(
   'public',
@@ -18,25 +18,30 @@ select is(
   false,
   'browser roles cannot execute the Cliente export RPC directly'
 );
-select like(
+select alike(
   pg_get_functiondef('public.api_cliente_certificate_export(uuid)'::regprocedure),
-  '%rol <> ''cliente''%',
+  '%account_role <> ''cliente''%',
   'the export is restricted to Cliente accounts'
 );
-select like(
+select alike(
   pg_get_functiondef('public.api_cliente_certificate_export(uuid)'::regprocedure),
   '%api_finalized_certificate(certificate_id)%',
   'the export delegates to the finalized certificate boundary'
 );
-select like(
+select alike(
   pg_get_functiondef('public.api_finalized_certificate(uuid)'::regprocedure),
   '%parte = ''tecnico''%',
   'a Técnico signature is required for download'
 );
-select like(
+select alike(
   pg_get_functiondef('public.api_finalized_certificate(uuid)'::regprocedure),
   '%parte = ''cliente''%',
   'a Cliente signature is required for download'
+);
+select alike(
+  pg_get_functiondef('public.api_cliente_certificate_export(uuid)'::regprocedure),
+  '%vigencia_hasta < current_date%',
+  'the Cliente export rejects an expired certificate (RN-06)'
 );
 select has_function(
   'public',
@@ -44,7 +49,7 @@ select has_function(
   array['uuid'],
   'history reads remain available separately from download'
 );
-select like(
+select alike(
   pg_get_functiondef('public.api_valvula_certificates(uuid)'::regprocedure),
   '%estado = ''pendiente''%',
   'pending and historical records remain readable'

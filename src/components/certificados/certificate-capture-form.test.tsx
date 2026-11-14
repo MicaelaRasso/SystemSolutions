@@ -2,7 +2,12 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it, vi } from "vitest"
 
-import { CertificateCaptureForm, resolveTechnicalData } from "./certificate-capture-form"
+import {
+  CertificateCaptureForm,
+  evidenciaParaGuardar,
+  patronCanonico,
+  resolveTechnicalData,
+} from "./certificate-capture-form"
 import { armarCertificadoVista } from "./certificado-vista"
 import { findValve, workOrderName } from "@/components/talleres/visitas-panel"
 
@@ -246,7 +251,6 @@ describe("CertificateCaptureForm", () => {
   })
 
   it("normaliza alcance_mantenimiento, repuestos y patron a la forma canónica esperada por la base de datos", () => {
-    let capturedPayload: unknown = null
     const form = createElement(CertificateCaptureForm, {
       template: baseTemplate,
       catalogs: baseCatalogs,
@@ -273,12 +277,107 @@ describe("CertificateCaptureForm", () => {
           clave_desconocida_que_rompe: "invalida",
         },
       },
-      onSave: (payload) => {
-        capturedPayload = payload
-      },
+      onSave: vi.fn(),
     })
     renderToStaticMarkup(form)
     // Rendered successfully without throwing
     expect(form).toBeDefined()
+  })
+
+  it("muestra el estado de cada foto de evidencia junto a su campo", () => {
+    const html = renderToStaticMarkup(
+      createElement(CertificateCaptureForm, {
+        template: baseTemplate,
+        catalogs: baseCatalogs,
+        technicians: [],
+        certificate: {
+          evidencia_fotografica: {
+            desarmada: null,
+            ensamblada_prueba: null,
+            placa_precinto: { image_id: "img-1", bucket: "certificate-evidence", object_path: "x.jpg" },
+          },
+        },
+        evidenceStatus: {
+          desarmada: { estado: "lista", nombre: "desarmada.jpg", vistaPrevia: "blob:vista-1" },
+          ensamblada_prueba: { estado: "error", mensaje: "No se pudo leer la imagen." },
+        },
+        onSave: vi.fn(),
+      }),
+    )
+    expect(html).toContain("Adjuntada: desarmada.jpg")
+    expect(html).toContain('src="blob:vista-1"')
+    expect(html).toContain("No se pudo leer la imagen.")
+    expect(html).toContain("Foto ya registrada")
+    // Sin `capture`: en Android forzaría la cámara y ocultaría la galería.
+    expect(html).not.toContain("capture=")
+  })
+})
+
+describe("evidenciaParaGuardar", () => {
+  it("conserva la evidencia ya registrada cuando no se sacó una foto nueva", () => {
+    expect(
+      evidenciaParaGuardar(
+        { desarmada: { media_id: "m-1" } },
+        {
+          evidencia_fotografica: {
+            desarmada: { image_id: "viejo" },
+            ensamblada_prueba: { image_id: "img-2" },
+            placa_precinto: null,
+          },
+        },
+      ),
+    ).toEqual({
+      desarmada: { media_id: "m-1" },
+      ensamblada_prueba: { image_id: "img-2" },
+      placa_precinto: null,
+    })
+  })
+
+  it("usa la referencia del servidor cuando ya registró la foto de esta sesión (P2)", () => {
+    const registrada = {
+      image_id: "m-1",
+      bucket: "certificate-evidence",
+      object_path: "visits/v-1/evidence/m-1.jpg",
+    }
+    expect(
+      evidenciaParaGuardar(
+        { desarmada: { media_id: "m-1" } },
+        { evidencia_fotografica: { desarmada: registrada } },
+      ).desarmada,
+    ).toEqual(registrada)
+  })
+
+  it("completa con null las secciones sin foto", () => {
+    expect(evidenciaParaGuardar(undefined, undefined)).toEqual({
+      desarmada: null,
+      ensamblada_prueba: null,
+      placa_precinto: null,
+    })
+  })
+})
+
+describe("patronCanonico (D10)", () => {
+  it("conserva el número de serie y el vencimiento del patrón para mostrarlos en el certificado", () => {
+    const patron = patronCanonico({
+      id: "s-1",
+      label: "KELLER LEO 1 · 122330",
+      nro_serie: "122330",
+      vencimiento: "2027-03-31",
+    })
+    expect(patron).toEqual({
+      id: "s-1",
+      label: "KELLER LEO 1 · 122330",
+      nro_serie: "122330",
+      vencimiento: "2027-03-31",
+    })
+    const vista = armarCertificadoVista({
+      certificate: { id: "c-1", datos_tecnicos: { ensayos: { patron } } },
+    })
+    expect(vista.ensayos.vencimientoPatron).toBe("31/03/2027")
+  })
+
+  it("omite las claves vacías y devuelve null sin patrón", () => {
+    expect(patronCanonico({ id: "s-1", label: "KELLER" })).toEqual({ id: "s-1", label: "KELLER" })
+    expect(patronCanonico(null)).toBeNull()
   })
 })

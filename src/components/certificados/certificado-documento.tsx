@@ -36,7 +36,7 @@ export function CertificadoDocumento({
       {requiereFirma && <MarcaRequiereFirma />}
 
       <header className="grid grid-cols-[38mm_1fr_38mm] items-center gap-[4mm] pb-[5mm]">
-        <Logo className="text-[11pt]" />
+        <Logo variant="color" className="text-[11pt]" />
         <h2 className="text-center text-[9pt] leading-snug font-bold">
           MANTENIMIENTO Y CALIBRACIÓN
           <br />

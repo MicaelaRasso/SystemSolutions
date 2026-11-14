@@ -38,13 +38,13 @@ test.describe("Tareas y agenda del Administrador", () => {
     await crearTareaPorPantalla(page, { equipo: equipo.equipo, horario: "13:20", contacto, telefono, detalle })
 
     await page.goto("/admin/agenda")
-    const tarjeta = page.locator(`button[title*="${contacto}"]`).first()
-    await tarjeta.waitFor({ state: "attached", timeout: 45_000 }).catch(() => undefined)
-    if ((await tarjeta.count()) === 0) {
-      // El día tiene más tarjetas de las que entran: se abre el diálogo del día.
-      await page.getByText(/\+\d+ más/).first().click()
-    }
-    const visible = page.locator(`button[title*="${contacto}"]`).first()
+    // La celda del día muestra como mucho 3 tarjetas y el calendario también renderiza (ocultas en
+    // escritorio) las listas de celular, así que se abre el diálogo del día, que las lista a todas.
+    const hoy = Number(fechaArgentina().slice(8, 10))
+    const dia = page.getByRole("button", { name: new RegExp(`\\b${hoy}\\b.*: \\d+`) }).first()
+    await expect(dia).toBeVisible({ timeout: 45_000 })
+    await dia.click()
+    const visible = page.getByRole("dialog").last().locator(`button[title*="${contacto}"]`)
     await expect(visible).toBeVisible({ timeout: 30_000 })
     for (const texto of ["13:20", CLIENTE, TALLER, "Planta Uno", contacto, telefono, detalle]) {
       await expect(visible).toContainText(texto)
@@ -84,13 +84,14 @@ test.describe("Tareas y agenda del Administrador", () => {
     await completarDatosTarea(page, { conTaller: false, horario: "15:40" })
     await page.getByRole("button", { name: "Crear tarea" }).click()
     await expect(page.getByText(/Solicitud N° \d+/).first()).toBeVisible({ timeout: 45_000 })
-    expect(sql(`select count(*) from public.equipos where nombre = '${nombre}'`)).toBe("1")
+    expect(sql(`select count(*) from public.equipos_unidades where nombre = '${nombre}'`)).toBe("1")
   })
 
   test("RF-39 RNF-08 CA-15: el cronograma organiza por taller y día", async ({ abrir }) => {
     const { page } = await abrir("admin")
     await page.goto("/admin/cronograma")
-    await expect(page.getByText(TALLER).first()).toBeVisible({ timeout: 45_000 })
+    // El nombre del taller también figura en un <select> nativo oculto: se busca la columna.
+    await expect(page.getByRole("columnheader", { name: TALLER })).toBeVisible({ timeout: 45_000 })
   })
 
   test("RF-34 CA-08: el panel muestra métricas de actividad", async ({ abrir }) => {

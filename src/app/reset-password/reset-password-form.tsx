@@ -33,10 +33,8 @@ export function ResetPasswordForm() {
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
+    // Los parámetros de recuperación de la URL ya se leen en el inicializador de `isRecoveryFlow`.
     const client = browserSupabase()
-    if (hasRecoveryUrlParams()) {
-      setIsRecoveryFlow(true)
-    }
     void client.auth.getSession().then(({ data, error: sessionError }) => {
       const valid = !sessionError && !!data.session
       setHasSession(valid)
@@ -57,7 +55,9 @@ export function ResetPasswordForm() {
   }, [])
 
   async function signOutCurrentSession() {
-    await browserSupabase().auth.signOut().catch(() => undefined)
+    await browserSupabase()
+      .auth.signOut()
+      .catch(() => undefined)
     router.replace("/login")
   }
 
@@ -127,11 +127,14 @@ export function ResetPasswordForm() {
             role="alert"
             className="space-y-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"
           >
+            <p className="font-medium">
+              Confirmá que querés cambiar la contraseña de{" "}
+              <strong>{sessionEmail ?? "la sesión actual"}</strong>.
+            </p>
             <p>
-              Detectamos una sesión activa iniciada como{" "}
-              <strong>{sessionEmail ?? "usuario actual"}</strong> sin un enlace de recuperación
-              recién abierto. Si querías cambiar la clave de otra cuenta, cerrá primero esta sesión
-              para no sobrescribir tu propia contraseña.
+              Detectamos una sesión activa sin un enlace de recuperación recién abierto. Si querías
+              cambiar la clave de otra cuenta, cerrá primero esta sesión para no sobrescribir tu
+              propia contraseña.
             </p>
             <label className="flex items-start gap-2 text-xs font-medium">
               <input
@@ -163,37 +166,42 @@ export function ResetPasswordForm() {
             {error}
           </p>
         )}
-        <Field>
-          <FieldLabel htmlFor="new-password">Contraseña nueva</FieldLabel>
-          <Input
-            id="new-password"
-            type="password"
-            autoComplete="new-password"
-            minLength={12}
-            required
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="confirm-password">Repetir contraseña</FieldLabel>
-          <Input
-            id="confirm-password"
-            type="password"
-            autoComplete="new-password"
-            minLength={12}
-            required
-            value={confirmation}
-            onChange={(event) => setConfirmation(event.target.value)}
-          />
-        </Field>
-        <Button
-          type="submit"
-          size="lg"
-          disabled={isSubmitting || (!isRecoveryFlow && !confirmActiveSession)}
-        >
-          {isSubmitting ? "Guardando…" : "Actualizar contraseña"}
-        </Button>
+        {/* Con una sesión normal, los campos aparecen recién después de confirmar (RNF-03). */}
+        {isRecoveryFlow || confirmActiveSession ? (
+          <>
+            <Field>
+              <FieldLabel htmlFor="new-password">Contraseña nueva</FieldLabel>
+              <Input
+                id="new-password"
+                type="password"
+                autoComplete="new-password"
+                minLength={12}
+                required
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="confirm-password">Repetir contraseña</FieldLabel>
+              <Input
+                id="confirm-password"
+                type="password"
+                autoComplete="new-password"
+                minLength={12}
+                required
+                value={confirmation}
+                onChange={(event) => setConfirmation(event.target.value)}
+              />
+            </Field>
+            <Button
+              type="submit"
+              size="lg"
+              disabled={isSubmitting || (!isRecoveryFlow && !confirmActiveSession)}
+            >
+              {isSubmitting ? "Guardando…" : "Actualizar contraseña"}
+            </Button>
+          </>
+        ) : null}
       </FieldGroup>
     </form>
   )

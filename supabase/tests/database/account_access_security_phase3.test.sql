@@ -47,7 +47,8 @@ select is((public.api_authorize_account_provisioning('cliente', '00000000-0000-0
 
 select public.test_account_phase3_actor('00000000-0000-0000-0000-000000007501');
 select is((public.api_authorize_admin_account_create('new-admin@example.test', 'administrador_regular')->>'data')::boolean, true, 'Súper administrador can preflight administrator provisioning');
-select is(jsonb_array_length(public.api_admin_accounts()->'data'), 2, 'Súper administrador can list administrator accounts');
+-- Se cuentan solo las cuentas administradoras del fixture: la base puede traer otras (e2e, demo).
+select is((select count(*)::integer from jsonb_array_elements(public.api_admin_accounts()->'data') a where a->>'id' in ('00000000-0000-0000-0000-000000007501', '00000000-0000-0000-0000-000000007502')), 2, 'Súper administrador can list administrator accounts');
 select is((public.api_admin_recovery_email('00000000-0000-0000-0000-000000007502')->'data'->>'email'), 'phase3-admin@example.test', 'Súper administrador can authorize recovery by target email');
 select lives_ok($$select public.api_record_auth_event('account_password_reset_requested', '00000000-0000-0000-0000-000000007502', 'exitoso', '{"channel":"email"}')$$, 'security audit accepts a password reset event without credentials');
 select throws_ok($$select public.api_record_auth_event('account_password_reset_requested', '00000000-0000-0000-0000-000000007502', 'exitoso', '{"password":"secret"}')$$, '22023', 'Credentials and tokens cannot be audited', 'security audit rejects password material');
@@ -56,8 +57,11 @@ update public.clientes set activo = false where cuenta_id = '00000000-0000-0000-
 select is((select estado::text from public.cuentas where id = '00000000-0000-0000-0000-000000007503'), 'deshabilitada', 'disabling a Cliente disables its principal Cuenta');
 select is((select estado::text from public.cuentas where id = '00000000-0000-0000-0000-000000007504'), 'deshabilitada', 'disabling a Cliente disables linked Cuentas');
 select is((select estado_previo_padre::text from public.cuentas where id = '00000000-0000-0000-0000-000000007504'), 'activa', 'parent cascade preserves linked Cuenta state for reactivation');
+-- Aceptar la invitación lo hace GoTrue (supabase_auth_admin), no service_role: la imagen actual ya no le da UPDATE sobre auth.users.
+reset role;
 update auth.users set email_confirmed_at = now(), encrypted_password = 'phase3-password-hash'
 where id = '00000000-0000-0000-0000-000000007507';
+set local role service_role;
 select is((select estado::text from public.cuentas where id = '00000000-0000-0000-0000-000000007507'), 'deshabilitada', 'accepting an invitation under a disabled parent does not restore access');
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000007504', true);
 select is((select estado::text from public.api_context() where cuenta_id = '00000000-0000-0000-0000-000000007504'), 'deshabilitada', 'api_context denies an account when its parent Cliente is disabled');

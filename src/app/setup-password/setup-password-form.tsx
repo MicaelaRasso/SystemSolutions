@@ -10,19 +10,18 @@ import { browserSupabase } from "@/lib/services/edge-transport"
 
 export function SetupPasswordForm({ invitationUserId }: { invitationUserId: string | null }) {
   const router = useRouter()
-  const [hasInvitationSession, setHasInvitationSession] = useState<boolean | null>(null)
+  const [sessionMatches, setSessionMatches] = useState<boolean | null>(null)
+  // Sin invitación no hay nada que consultar: se deriva en el render en lugar de fijarlo en un efecto.
+  const hasInvitationSession = invitationUserId ? sessionMatches : false
   const [password, setPassword] = useState("")
   const [confirmation, setConfirmation] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
-    if (!invitationUserId) {
-      setHasInvitationSession(false)
-      return
-    }
+    if (!invitationUserId) return
     void browserSupabase().auth.getSession().then(({ data, error: sessionError }) => {
-      setHasInvitationSession(!sessionError && data.session?.user.id === invitationUserId)
+      setSessionMatches(!sessionError && data.session?.user.id === invitationUserId)
     })
   }, [invitationUserId])
 
