@@ -2,41 +2,45 @@
 
 # System Solutions — contexto del proyecto
 
-Front end del sistema de gestión de calibración de válvulas de seguridad para System Solutions SRL
-(cliente), desarrollado por Magne Studios. Idioma del proyecto: español (UI, dominio y comentarios).
+Sistema de gestión de calibración de válvulas de seguridad para System Solutions SRL (cliente),
+desarrollado por Magne Studios. Idioma del proyecto: español (UI, dominio y comentarios).
+Stack: Next.js 16 (Vercel) + Supabase (Postgres, Auth, Storage, RLS) + Supabase Edge Functions.
 
 ## Cómo retomar
 
-1. Leer `planning.md`: es el plan y la bitácora de avance. Las tareas hechas están tachadas `[x]`
-   con una nota en cursiva de lo decidido. La sección 9 tiene los pendientes con el cliente y el
-   supuesto que se tomó mientras tanto.
-2. **Al trabajar, ir marcando en `planning.md` cada tarea que se completa** (pedido explícito del
-   usuario) y agregar la nota de verificación al final de cada fase.
-3. Fuentes: `Contexto/DRF_System_Solutions_v1_1 (1).pdf` (requerimientos RN/RF/RNF/CA),
-   `Contexto/SYS_Certificado Modelo*.pdf` (diseño del certificado, con anotaciones a mano) y
-   `Contexto/SYS_Certificado Modelo_Referencias.pdf` (listas desplegables). Si `Contexto/` no está
-   en el repo, pedirle los PDFs al usuario.
-
-Estado al 2026-09-24: fases 0 a 4 terminadas y verificadas. Sigue la **fase 5** (app de campo y
-certificado), la más crítica.
+1. `correcciones.md` (raíz): correcciones recientes, checklist de prueba en producción por rol,
+   pasos para publicar y decisiones del cliente (D4, N4, etc.). Es lo más actualizado.
+2. `planning.md`: plan original por fases y bitácora. **Al trabajar, ir marcando en `planning.md`
+   cada tarea que se completa** (pedido explícito del usuario) con una nota de verificación.
+3. Dominio: `CONTEXT.md` (glosario) y decisiones en `docs/adr/` (p. ej. 0008 exclusividad de
+   equipo, 0009 offline, 0017 plantillas versionadas). Esquema de base: `docs/database-schema.md`.
+   Integración front/back: `integration.md`.
+4. Fuentes del cliente: `Contexto/DRF_System_Solutions_v1_1 (1).pdf` (requerimientos),
+   `Contexto/SYS_Certificado Modelo*.pdf` (diseño del certificado) y
+   `Contexto/SYS_Certificado Modelo_Referencias.pdf` (listas desplegables).
 
 ## Reglas de arquitectura
 
-- **Solo front end por ahora.** No hay backend: todo corre contra datos simulados en el
-  `localStorage` del navegador. Stack final: Next.js + Supabase (Postgres, Auth, Storage, RLS)
-  + Edge Functions.
-- Las pantallas **nunca** acceden a datos directo: usan los contratos de
-  `src/lib/services/contracts.ts` a través de los hooks de `src/lib/hooks/queries.ts`
-  (TanStack Query). La implementación actual está en `src/lib/services/mock/`; la de Supabase irá
-  en `src/lib/services/supabase/` con las mismas interfaces. Cada contrato indica con un comentario
-  "Futuro: …" su destino real.
-- Los mocks respetan las reglas de negocio que después hará el backend (numeración, filtros por
-  cliente, validaciones) y simulan latencia.
-- Reglas de negocio puras en `src/lib/domain/rules.ts`, con tests en `rules.test.ts`. Tipos en
-  `types.ts`, esquemas Zod de formularios en `schemas.ts`, valores semilla en `catalogos.ts`.
-- Si cambia la forma de los datos del seed, subir `MOCK_DB_VERSION` en
-  `src/lib/services/mock/seed.ts` para que se regenere el `localStorage`.
-- Datos semilla ficticios (empresas y personas inventadas). Contraseña demo: `demo1234`.
+- **El navegador solo habla con Supabase Auth.** Todo dato de negocio pasa por las Edge Functions
+  (`supabase/functions/<dominio>/`, ADR 0013), que llaman a RPC `api_*` de Postgres. Las rutas
+  nuevas se registran en `supabase/functions/_shared/route.ts` (`routeOwner`) y en el handler.
+- Front: clientes HTTP por dominio en `src/lib/api/` (contratos Zod en `src/lib/api/contracts.ts`,
+  agregados en `edgeApi`). Las pantallas usan los hooks de `src/lib/hooks/queries.ts`
+  (TanStack Query); `src/lib/services/` es una capa de compatibilidad que hoy delega en `edge`.
+- **Migraciones:** nunca editar una migración ya aplicada. Cada cambio va en un archivo nuevo de
+  `supabase/migrations/` con `create or replace` partiendo de la **última** definición de la
+  función (muchas RPC se redefinieron varias veces: buscar la más reciente), repitiendo
+  `revoke`/`grant execute ... to service_role`. Errores de permiso: `raise ... errcode =
+  'insufficient_privilege'` (la edge lo traduce a 403, `_shared/errors.ts`).
+- **Offline (taller):** el panel encola operaciones en `src/lib/offline/sync.ts` (IDs e
+  idempotency keys generados en el cliente) y se reenvían por lote a la edge `offline-sync`. Los
+  tipos de operación están cerrados en el RPC de lote; uno nuevo requiere tocar cola, RPC y
+  manejo de conflictos (`sync_conflict_resolution`).
+- Zona horaria del negocio: `America/Argentina/Buenos_Aires` (los "días" se calculan en esa zona).
+- Reglas de negocio puras del front en `src/lib/domain/rules.ts` (tests en `rules.test.ts`); tipos
+  en `types.ts`, esquemas Zod de formularios en `schemas.ts`, traducción de errores en
+  `errores.ts`.
+- Datos de prueba ficticios: `docs/datos-prueba.md` y `npm run datos:demo`.
 
 ## Particularidades técnicas
 
@@ -57,4 +61,8 @@ certificado), la más crítica.
 ## Verificación antes de dar una fase por terminada
 
 `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, y probar el flujo en el navegador
-(también en ancho de celular). Prettier: `npm run format`.
+(también en ancho de celular). Prettier: `npm run format`. Si se tocó la base o las edge functions:
+tests pgTAP (`supabase/tests/database/`, con Supabase local) y e2e (`npm run test:e2e`, carpeta
+`e2e/flujos/`; los helpers del taller están en `e2e/support/taller.ts`).
+
+Publicar: base → edge functions → front, en ese orden (detalle en `correcciones.md`).
