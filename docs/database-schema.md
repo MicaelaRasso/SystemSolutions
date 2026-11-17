@@ -70,9 +70,9 @@ The diagram omits supporting tables and some many-to-many or history links for r
 | --- | --- |
 | `solicitudes_servicio` | Canonical service request and selected asset scope; one request can have multiple visits. |
 | `solicitud_valvulas` | Valve selection for a service request. |
-| `visitas_servicio` | Scheduled or executed visit for a request. |
+| `visitas_servicio` | Scheduled or executed visit for a request. `starts_at` and `ends_at` (estimated end, required, `ends_at > starts_at`) define the reservation; the estimated end does not close the visit (ADR 0024). `started_at` records when the Técnico started it; a Taller Móvil can have only one visit `en_curso` (checked when starting); `requiere_finalizacion` is set by the 23:59 AR automatic closing. |
 | `ordenes_trabajo` | Valve-specific work and outcome within a visit. |
-| `visita_equipos` | Equipment reservation windows used to prevent simultaneous visits. |
+| `visita_equipos` | Equipment reservation windows used to prevent simultaneous visits: `[starts_at, ends_at)` of the visit (ADR 0008), so the same Equipo admits several non-overlapping visits per day. Starting does not change it; the 23:59 AR closing deletes it (releases the Equipo). |
 | `partes_diarios` | Visit's daily report code. |
 | `parte_diario_imagenes` | Associates daily report images with a visit and report code. |
 | `dispositivos_visita` | Device identity and visit association used by field workflows. |

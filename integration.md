@@ -66,8 +66,8 @@ sección y el código de las rutas.
   localmente y hace depender la operación de finalización de los cambios de
   trabajo pendientes.
 - `POST /certificates/:certificateId/corrections` autoriza una corrección para
-  un Certificado cerrado. El cuerpo requiere `provider_id`, `starts_at`,
-  `ends_at` y `reason`. La respuesta identifica el nuevo `request_id`,
+  un Certificado cerrado. El cuerpo requiere `provider_id`, `starts_at` y
+  `ends_at` (fin estimado, posterior al inicio; ADR 0024) y `reason`. La respuesta identifica el nuevo `request_id`,
   `visit_id`, `work_order_id` y `correction_id`. La solicitud, Visita y Orden
   siguen el flujo ordinario; el Certificado nuevo se crea al evaluar la orden
   y conserva el vínculo con el Certificado original.
@@ -78,10 +78,14 @@ sección y el código de las rutas.
 - `GET /conflicts` y `GET /conflicts/:conflictId` permiten a Administradores
   revisar conflictos. `POST /conflicts/:conflictId/resolve` acepta `{action,
   reason}` con `action` igual a `accept`, `reject` o `correction`. La acción
-  `correction` también requiere `provider_id`, `starts_at` y `ends_at`, y permite
+  `correction` también requiere `provider_id`, `starts_at` y `ends_at` (fin estimado), y permite
   `source_certificate_id` cuando el payload original no lo identifica. El
   payload original permanece disponible; sólo operaciones cuyo destino siga
-  abierto y autorizado se pueden aceptar. El dashboard administrativo existente
+  abierto y autorizado se pueden aceptar. Una operación que llega con la visita en
+  `requiere_finalizacion` queda en conflicto con el motivo «The visit was closed at
+  the end of its day and requires finalization» (SQLSTATE 55000, #96) y el
+  reconocimiento del lote trae `backend_status`; el Administrador puede aceptarla
+  (salvo las firmas) o rechazarla. El dashboard administrativo existente
   conecta la consulta y las acciones de resolución; `GET
   /offline/conflict-outcomes` devuelve la decisión al Taller Móvil asignado y el
   panel de sincronización existente la presenta.
@@ -132,7 +136,7 @@ Solicitud de servicio y, cuando corresponde, la Visita de servicio.
 | `GET/PATCH /valves/:id` | `asset-access` | `hierarchy`, `valves` | Disponible para detalle, atributos técnicos y revisión inmutable. |
 | `GET /requests`, `GET /requests/:id`, `POST /requests`, `PATCH /requests/:id`, `POST /requests/:id/schedule` | `service-workflow` | `serviceWorkflow`, `serviceRequests` | Lecturas y mutaciones de Solicitudes de servicio; programar crea o actualiza la Visita canónica. |
 | `GET /visits`, `GET /visits/:id` y comandos `POST /visits/:id/{accept,reject,cancel,start,complete}` | `service-workflow` | `serviceWorkflow`, `visits` | Contrato canónico de Visita de servicio y sus transiciones. |
-| `POST /visits/:id/work-orders`, `PATCH /work-orders/:id` | `service-workflow` | `serviceWorkflow`, `workOrders` | Mutaciones de Orden de trabajo; sólo la Orden individual puede registrar su resultado. |
+| `POST /visits/:id/work-orders`, `POST /visits/:id/valves`, `PATCH /work-orders/:id` | `service-workflow` | `serviceWorkflow`, `workOrders` | Mutaciones de Orden de trabajo; sólo la Orden individual puede registrar su resultado. `valves` da de alta una válvula nueva en campo (A2). |
 | `GET /operations`, `GET /operations/:visitId` | `service-workflow` | `operations` | **Disponible; sólo lectura.** Usa el id de la Visita y envelopes canónicos; `Tarea` es compatibilidad de UI y no una entidad backend. |
 | `POST /attachments` | `service-workflow` | `services.tareas.subirAdjunto` (compatibilidad) | Carga Edge de adjuntos genéricos; no pertenece a `edgeApi.operations`. |
 | `GET /valves/:id/certificates`, `GET/PATCH /certificates/:id`, `GET /certificates/:id/finalized`, `POST /work-orders/:id/certificate-draft` | `certificate-field` | `certificates` | Disponible según el DTO implementado; no implica una pantalla de captura completa. |
@@ -162,8 +166,9 @@ de lectura tiene este sobre estable:
     "yacimiento_id": "<yacimiento-id>",
     "taller_movil_id": "<taller-id-or-null>",
     "starts_at": "<ISO-8601>",
-    "ends_at": "<ISO-8601>",
-    "estado": "solicitada | programada | aceptada | en_curso | completada | cancelada"
+    "started_at": "<ISO-8601-or-null>",
+    "ends_at": "<ISO-8601 (fin estimado; no cierra la visita, ADR 0024)>",
+    "estado": "solicitada | programada | aceptada | en_curso | requiere_finalizacion | completada | cancelada"
   },
   "work_orders": [
     {
@@ -186,10 +191,11 @@ superficie son explícitas:
 | Solicitud → Visita | `POST /requests/:id/schedule` | Un Administrador programa o reasigna la Visita en estado `programada`. |
 | Visita | `POST /visits/:id/accept` | El Taller Móvil asignado pasa `programada` a `aceptada`. |
 | Visita | `POST /visits/:id/reject` | El rechazo devuelve la Visita a `programada` y permite reasignarla. |
-| Visita | `POST /visits/:id/start` | El Taller Móvil asignado pasa `aceptada` a `en_curso`. |
+| Visita | `POST /visits/:id/start` | El Taller Móvil asignado pasa `aceptada` a `en_curso` y registra `started_at`. Falla con 409 («The Taller Móvil already has a visit in progress; complete it before starting another») si el taller ya tiene otra visita `en_curso`: un taller atiende una visita a la vez (ADR 0024). En el lote offline, ese `start_visit` queda en conflicto para el Administrador. |
 | Visita | `POST /visits/:id/complete` | El Taller Móvil asignado pasa `en_curso` a `completada`; la finalización de Certificados es independiente. |
 | Visita | `POST /visits/:id/cancel` | El Cliente propietario cancela antes del día de ejecución. |
-| Orden | `POST /visits/:id/work-orders` | Agrega una Válvula a una Visita `en_curso`, respetando Cliente y acceso del Taller Móvil. |
+| Orden | `POST /visits/:id/work-orders` | Agrega una Válvula a una Visita `en_curso`, respetando Cliente y acceso del Taller Móvil. Con `work_order_id` (UUID del dispositivo) es idempotente; sin conexión, operación `add_work_order` del lote offline. |
+| Orden | `POST /visits/:id/valves` | Alta en campo de una Válvula nueva sobre un Equipo existente (`valvula_id`, `equipo_id`, `work_order_id` del dispositivo y los datos de la ficha); crea válvula, revisión y Orden en una transacción, idempotente. Sin conexión, operación `create_valve`. |
 | Orden | `PATCH /work-orders/:id` | Registra `evaluada` o `no_evaluada`; esta última exige una razón. |
 
 `GET /operations` y `GET /operations/:visitId` sólo leen el contrato canónico

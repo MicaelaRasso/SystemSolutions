@@ -146,6 +146,26 @@ npx supabase db push --remote
 npx supabase functions deploy             # todas: cambió _shared/route.ts
 ```
 
+**Fin estimado, una visita en curso por taller y cierre automático (#94, #95, ADR 0024).**
+Migraciones `20261116120000` (estado nuevo `requiere_finalizacion`, va sola),
+`20261116120100_visit_estimated_end_and_started_at` (`started_at`, estado nuevo en la restricción y
+regla de una visita en curso por taller) y `20261116121000` (cierre automático). La visita lleva
+inicio y **fin estimado** obligatorio (el formulario propone inicio + 1 h, «Hora de fin estimada»):
+el equipo queda reservado en ese horario, así que el mismo equipo admite varias visitas el mismo
+día si no se superponen. El fin estimado no cierra la visita; la completa el técnico. Un Taller
+Móvil tiene **una sola visita en curso a la vez**: iniciar otra falla («El taller ya tiene otra
+visita en curso. Completá esa visita antes de iniciar esta…») y el panel no ofrece el botón; sin conexión, ese inicio llega como conflicto para el Administrador, que
+lo acepta cuando la otra ya no está en curso. No se tocan las reservas existentes ni hay `NOTICE`.
+Para el cierre automático hace falta **pg_cron**, que la migración no activa:
+
+1. Supabase → Database → Extensions → habilitar `pg_cron`.
+2. En el SQL Editor: `select public.schedule_close_expired_visits();` (programa el job
+   `cerrar-visitas-vencidas` a las 02:59 UTC = 23:59 AR; se puede repetir sin duplicarlo).
+3. Verificar: `select jobname, schedule, command from cron.job;`.
+
+Sin pg_cron las visitas en curso no se cierran solas, pero todo lo demás funciona. Se puede correr a
+mano con `select public.close_expired_visits();`.
+
 Después hay que publicar el front. Orden obligatorio: **base → funciones → front**. El front nuevo llama a rutas nuevas, pero si el front sale antes que las funciones, el portal sigue funcionando con una consulta por válvula.
 
 ## Pendientes y decisiones de producto
@@ -153,7 +173,7 @@ Después hay que publicar el front. Orden obligatorio: **base → funciones → 
 | Tema | Estado |
 |------|--------|
 | «Válvula 1» automática | **Decidido (14/11): se saca.** Un equipo sin válvulas no debe generar una válvula sola; hay que avisar en la UI. Está en `api_admin_create_service_request`, cuya última definición es `20261112000001` |
-| Duración de la visita | **Decidido: dura hasta que se cierra**, sin tope. Hoy es fija de 1 h y esa ventana alimenta la regla de no superposición de equipos (`visita_equipos`) |
+| Duración de la visita | **Decidido (e), corregido el 17/11 (#94–#97):** inicio y fin estimado obligatorios (propuesta: +1 h); el equipo se reserva en ese horario y admite otras visitas el mismo día sin superposición; el fin estimado no cierra la visita; un taller tiene una sola visita en curso; a las 23:59 AR un job de pg_cron pasa las visitas en curso a «Requiere finalización» (ADR 0024). Falta habilitar pg_cron en producción (ver «Publicar en producción») |
 | D4: técnico fuera de la nómina | **Decidido: puede firmar cualquier técnico.** Hay que quitar la validación contra la nómina del día (`api_technician_name_is_member`) y el `test.fail` de D4 |
 | N4 / RF-36: el cliente crea solicitudes | **Decidido: solo el admin crea solicitudes.** Hay que bloquear la creación por API para el rol Cliente y quitar el `test.fail` de N4 |
 | Logo borrado | Si un cliente borra su logo, los certificados ya emitidos dejan de mostrarlo. Reemplazarlo no causa el problema |
