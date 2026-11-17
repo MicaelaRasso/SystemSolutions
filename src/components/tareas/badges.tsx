@@ -9,6 +9,7 @@ const ESTILO: Record<EstadoTarea, string> = {
   programada: "bg-sky-100 text-sky-800",
   aceptada: "bg-teal-100 text-teal-800",
   en_curso: "bg-violet-100 text-violet-800",
+  requiere_finalizacion: "bg-orange-100 text-orange-900",
   completada: "bg-emerald-100 text-emerald-800",
   cancelada: "bg-zinc-200 text-zinc-600 line-through",
 }

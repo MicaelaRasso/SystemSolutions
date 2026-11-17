@@ -34,7 +34,8 @@ export async function cargarResumenesDeVisitas(): Promise<Map<string, ResumenVis
   try {
     for (let pagina = 0; pagina < MAX_PAGINAS; pagina += 1) {
       const respuesta = await edgeApi.operations.list({
-        status: ["programada", "aceptada", "en_curso"],
+        // Las vencidas siguen en el panel para cargar las firmas que falten (E4).
+        status: ["programada", "aceptada", "en_curso", "requiere_finalizacion"],
         limit: TAMANO_PAGINA,
         offset: pagina * TAMANO_PAGINA,
       })

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { tareaSchema } from "./schemas"
+import { cierreVisitaVencidaSchema, tareaSchema } from "./schemas"
 
 const BASE = {
   empresaId: "client-1",
@@ -13,6 +13,7 @@ const BASE = {
   fechaSolicitud: "2026-11-02",
   fechaEjecucion: "2026-11-05",
   horario: "",
+  horaFin: "",
   tipo: "Certificación",
   detalle: "Servicio",
   pdRto: "",
@@ -42,5 +43,55 @@ describe("tareaSchema - fechas", () => {
     const datos = { ...BASE, fechaSolicitud: "2026-11-03T01:30:00.000Z" }
     expect(erroresEn("fechaEjecucion", datos)).toEqual([])
     expect(erroresEn("fechaSolicitud", datos)).toHaveLength(1)
+  })
+})
+
+describe("tareaSchema - hora de fin estimada", () => {
+  it("acepta un fin estimado posterior al inicio (o vacío: inicio + 1 h)", () => {
+    expect(erroresEn("horaFin", { ...BASE, horario: "09:00", horaFin: "11:30" })).toEqual([])
+    expect(erroresEn("horaFin", { ...BASE, horario: "09:00", horaFin: "" })).toEqual([])
+    // Sin hora de inicio la visita empieza a las 08:00.
+    expect(erroresEn("horaFin", { ...BASE, horario: "", horaFin: "09:00" })).toEqual([])
+  })
+
+  it("rechaza un fin estimado igual o anterior al inicio", () => {
+    expect(erroresEn("horaFin", { ...BASE, horario: "10:00", horaFin: "10:00" })).toEqual([
+      "La hora de fin estimada debe ser posterior a la de inicio",
+    ])
+    expect(erroresEn("horaFin", { ...BASE, horario: "10:00", horaFin: "09:00" })).toHaveLength(1)
+  })
+})
+
+describe("cierreVisitaVencidaSchema (E4)", () => {
+  const base = {
+    motivo: "El técnico no volvió",
+    tallerId: "",
+    fecha: "",
+    hora: "09:00",
+    horaFin: "10:00",
+  }
+
+  it("exige un fin estimado posterior al inicio", () => {
+    const r = cierreVisitaVencidaSchema.safeParse({ ...base, horaFin: "08:00" })
+    expect(r.success).toBe(false)
+    expect(r.error?.issues[0].path).toEqual(["horaFin"])
+  })
+
+  it("exige el motivo", () => {
+    expect(cierreVisitaVencidaSchema.safeParse({ ...base, motivo: "  " }).success).toBe(false)
+    expect(cierreVisitaVencidaSchema.safeParse(base).success).toBe(true)
+  })
+
+  it("la visita de seguimiento necesita taller, fecha y hora juntos", () => {
+    const sinTaller = cierreVisitaVencidaSchema.safeParse({ ...base, fecha: "2026-11-20" })
+    expect(sinTaller.success).toBe(false)
+    expect(sinTaller.error?.issues[0].path).toEqual(["tallerId"])
+    const sinFecha = cierreVisitaVencidaSchema.safeParse({ ...base, tallerId: "workshop-1" })
+    expect(sinFecha.success).toBe(false)
+    expect(sinFecha.error?.issues[0].path).toEqual(["fecha"])
+    expect(
+      cierreVisitaVencidaSchema.safeParse({ ...base, tallerId: "workshop-1", fecha: "2026-11-20" })
+        .success,
+    ).toBe(true)
   })
 })

@@ -1,6 +1,6 @@
 begin;
 
-select plan(92);
+select plan(94);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000001101', 'workflow-client-a@example.test'),
@@ -472,6 +472,17 @@ set local role service_role;
 select lives_ok(
   $$select public.api_submit_visit_signature(current_setting('app.workflow_primary_visit_id')::uuid, 'tecnico'::public.parte_firma_visita, 'Tecnico A', 'certificate-signatures', 'visits/' || current_setting('app.workflow_primary_visit_id') || '/tecnico/00000000-0000-0000-0000-000000001911.png')$$,
   'a Técnico signature authorizes visit completion'
+);
+-- F1: cualquier técnico puede firmar y figurar como ejecutor, aunque su nombre no esté en la nómina.
+select lives_ok(
+  $$select public.api_update_certificate_draft(current_setting('app.workflow_certificate_id')::uuid, '{"tecnico_ejecutor":"Mario Reemplazo Fuera De Nomina"}'::jsonb)$$,
+  'F1: a Técnico name outside the roster can be set on the certificate draft'
+);
+select is(
+  (select public.api_certificate_validation(c)->'invalid_fields' @> '["tecnico_ejecutor_no_asignado"]'::jsonb
+   from public.certificados c where c.id = current_setting('app.workflow_certificate_id')::uuid),
+  false,
+  'F1: the certificate validation no longer flags a Técnico outside the roster'
 );
 -- El gateway instala la identidad: cambiar solo el header no cambiaba auth.uid().
 select public.test_workflow_set_actor('00000000-0000-0000-0000-000000001104');

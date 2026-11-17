@@ -121,6 +121,7 @@ export function convertirOperacionATarea(operation: OperationView): TareaResumen
       fechaDeTimestamp(stringField(request, "created_at", "createdAt") ?? summary.starts_at),
     fechaEjecucion: fechaDeTimestamp(summary.starts_at),
     horario: horaDeTimestamp(summary.starts_at),
+    horaFin: horaDeTimestamp(summary.ends_at),
     tipo: stringField(metadata, "tipo") ?? summary.tipo ?? "Certificación",
     detalle: stringField(metadata, "detalle") ?? summary.detalle ?? "",
     pdRto: stringField(metadata, "pd_rto", "pdRto") ?? summary.pd_rto ?? undefined,

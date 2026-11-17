@@ -1,4 +1,10 @@
-import { comboTarea, completarDatosTarea, crearTareaPorPantalla, elegirUbicacion } from "../support/admin"
+import {
+  comboTarea,
+  completarDatosTarea,
+  crearTareaPorPantalla,
+  elegirOpcion,
+  elegirUbicacion,
+} from "../support/admin"
 import { sql } from "../support/api"
 import { crearEquipo, nombreUnico } from "../support/datos"
 import { expect, test } from "../support/fixtures"
@@ -85,6 +91,58 @@ test.describe("Tareas y agenda del Administrador", () => {
     await page.getByRole("button", { name: "Crear tarea" }).click()
     await expect(page.getByText(/Solicitud N° \d+/).first()).toBeVisible({ timeout: 45_000 })
     expect(sql(`select count(*) from public.equipos_unidades where nombre = '${nombre}'`)).toBe("1")
+  })
+
+  test("#94 decisión (e): la visita tiene fin estimado y el mismo equipo admite otra visita en otro horario del día", async ({
+    abrir,
+  }) => {
+    const equipo = await crearEquipo(1)
+    const { page } = await abrir("admin")
+    // El formulario propone el fin estimado (inicio + 1 h); se cambia a 10:30.
+    const visitaId = await crearTareaPorPantalla(page, {
+      equipo: equipo.equipo,
+      horario: "08:00",
+      horaFin: "10:30",
+    })
+
+    // La reserva del equipo es [inicio, fin estimado).
+    expect(
+      sql(
+        `select (v.ends_at - v.starts_at) = interval '2 hours 30 minutes'
+           and e.ventana = tstzrange(v.starts_at, v.ends_at, '[)')
+         from public.visita_equipos e join public.visitas_servicio v on v.id = e.visita_id
+         where e.visita_id = '${visitaId}' limit 1`,
+      ),
+    ).toBe("t")
+
+    // Mismo equipo, más tarde el mismo día y sin superponerse: se crea.
+    const segundaId = await crearTareaPorPantalla(page, { equipo: equipo.equipo, horario: "11:00" })
+    expect(segundaId).not.toBe(visitaId)
+
+    // Mismo equipo, superpuesta con la primera: se rechaza (23P01).
+    await page.goto(`/admin/tareas/nueva?fecha=${fechaArgentina()}`)
+    await elegirUbicacion(page)
+    await elegirOpcion(page, comboTarea(page, /^Equipo/), equipo.equipo)
+    await completarDatosTarea(page, { horario: "09:00" })
+    await page.getByRole("button", { name: "Crear tarea" }).click()
+    await expect(
+      page.getByText("El equipo ya tiene otra visita en ese horario. Elige otro día u horario.").first(),
+    ).toBeVisible({ timeout: 30_000 })
+    await expect(page).toHaveURL(/\/admin\/tareas\/nueva/)
+  })
+
+  test("#94: la hora de fin estimada tiene que ser posterior al inicio", async ({ abrir }) => {
+    const equipo = await crearEquipo(1)
+    const { page } = await abrir("admin")
+    await page.goto(`/admin/tareas/nueva?fecha=${fechaArgentina()}`)
+    await elegirUbicacion(page)
+    await elegirOpcion(page, comboTarea(page, /^Equipo/), equipo.equipo)
+    await completarDatosTarea(page, { horario: "10:00", horaFin: "09:00" })
+    await page.getByRole("button", { name: "Crear tarea" }).click()
+    await expect(
+      page.getByText("La hora de fin estimada debe ser posterior a la de inicio"),
+    ).toBeVisible()
+    await expect(page).toHaveURL(/\/admin\/tareas\/nueva/)
   })
 
   test("RF-39 RNF-08 CA-15: el cronograma organiza por taller y día", async ({ abrir }) => {

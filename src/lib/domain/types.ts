@@ -152,7 +152,16 @@ export interface NominaJornada {
 // Tareas
 // ---------------------------------------------------------------------------
 
-export type EstadoTarea = "pendiente" | "asignada" | "programada" | "aceptada" | "en_curso" | "completada" | "cancelada"
+export type EstadoTarea =
+  | "pendiente"
+  | "asignada"
+  | "programada"
+  | "aceptada"
+  | "en_curso"
+  /** Vencida a las 23:59 (AR) del día de inicio sin completarse (decisión (e)). */
+  | "requiere_finalizacion"
+  | "completada"
+  | "cancelada"
 
 export interface Adjunto {
   id: ID
@@ -175,7 +184,10 @@ export interface Tarea {
   telefono: string
   fechaSolicitud: string
   fechaEjecucion: string
+  /** Hora de inicio de la visita (HH:MM, hora argentina). */
   horario?: string
+  /** Hora de fin estimada (HH:MM): reserva el equipo hasta esa hora; no cierra la visita. */
+  horaFin?: string
   tipo: string
   detalle: string
   pdRto?: string

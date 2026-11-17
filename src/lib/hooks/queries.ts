@@ -9,6 +9,7 @@ import { hierarchyInvalidations, hierarchyQueryKeys } from "@/lib/api/hierarchy"
 import { operationQueryKeys } from "@/lib/api/operations"
 import { serviceWorkflowQueryKeys } from "@/lib/api/service-workflow"
 import { traducirMensajeError } from "@/lib/domain/errores"
+import { ventanaVisita } from "@/lib/domain/rules"
 import type {
   Adjunto,
   Certificado,
@@ -158,15 +159,17 @@ function serviceSelection(data: Pick<TareaInput, "equipoId" | "yacimientoId">) {
   }
 }
 
-function visitWindow(date: string, time?: string) {
-  const start = new Date(`${date}T${time || "08:00"}:00-03:00`)
-  if (Number.isNaN(start.getTime())) throw new Error("La fecha de ejecución no es válida")
-  return {
-    startsAt: start.toISOString(),
-    endsAt: new Date(start.getTime() + 60 * 60 * 1000).toISOString(),
-  }
+/**
+ * Inicio y fin estimado de la visita en hora argentina (-03:00). Sin hora de inicio, 08:00; sin
+ * fin, inicio + 1 h. El fin estimado reserva el equipo (ADR 0008) pero no cierra la visita.
+ */
+function visitWindow(date: string, time?: string, endTime?: string) {
+  if (Number.isNaN(new Date(`${date}T00:00:00-03:00`).getTime()))
+    throw new Error("La fecha de ejecución no es válida")
+  return ventanaVisita(date, time || "08:00", endTime)
 }
 
+/** Mismo horario (en Argentina) y misma duración de la visita, trasladados a otra fecha. */
 function visitWindowOnDate(date: string, startsAt: string, endsAt: string) {
   const time = new Intl.DateTimeFormat("en-GB", {
     hour: "2-digit",
@@ -212,9 +215,12 @@ export async function guardarSolicitudYVisita(
   if (changesAssignment && !actionReason)
     throw new Error("Indica el motivo del cambio de asignación")
 
-  const desiredWindow = operation ? visitWindow(data.fechaEjecucion, data.horario) : undefined
+  const desiredWindow = operation
+    ? visitWindow(data.fechaEjecucion, data.horario, data.horaFin)
+    : undefined
   const scheduleChanged = !!desiredWindow && (
-    new Date(desiredWindow.startsAt).getTime() !== new Date(operation!.operation.starts_at).getTime()
+    new Date(desiredWindow.startsAt).getTime() !== new Date(operation!.operation.starts_at).getTime() ||
+    new Date(desiredWindow.endsAt).getTime() !== new Date(operation!.operation.ends_at).getTime()
   )
   const metadata = {
     contacto: data.contacto.trim(),
@@ -249,7 +255,7 @@ export async function guardarSolicitudYVisita(
         ...serviceSelection(data),
         metadata,
         visit: data.tallerId
-          ? { tallerMovilId: data.tallerId, ...visitWindow(data.fechaEjecucion, data.horario) }
+          ? { tallerMovilId: data.tallerId, ...visitWindow(data.fechaEjecucion, data.horario, data.horaFin) }
           : undefined,
       })
       const operationId = created.scheduled_visit?.visit.id
@@ -261,7 +267,7 @@ export async function guardarSolicitudYVisita(
     if (!data.tallerId) return undefined
     const scheduled = await edgeApi.serviceWorkflow.schedule(createdRequestId, {
       tallerMovilId: data.tallerId,
-      ...visitWindow(data.fechaEjecucion, data.horario),
+      ...visitWindow(data.fechaEjecucion, data.horario, data.horaFin),
     })
     const operationId = stringField(scheduled.visit, "id")
     return operationId ? edgeApi.operations.get(operationId) : undefined
@@ -375,6 +381,28 @@ export async function reasignarTarea(id: ID, tallerId: ID | undefined, fecha: st
 export async function cancelarVisita(id: ID, reason: string) {
   await edgeApi.serviceWorkflow.cancelVisitAsAdministrator(id, { reason })
   return edgeApi.operations.get(id)
+}
+
+/**
+ * Cierre administrativo de una visita en «Requiere finalización» (E4). Con fecha, las válvulas
+ * sin evaluar van a una visita de seguimiento con ese taller, inicio y fin estimado (hora
+ * argentina).
+ */
+export async function cerrarVisitaVencida(
+  id: ID,
+  datos: { motivo: string; tallerId?: string; fecha?: string; hora?: string; horaFin?: string },
+) {
+  const seguimiento =
+    datos.fecha && datos.tallerId
+      ? {
+          tallerMovilId: datos.tallerId,
+          ...ventanaVisita(datos.fecha, datos.hora || "09:00", datos.horaFin),
+        }
+      : { tallerMovilId: null, startsAt: null, endsAt: null }
+  return edgeApi.serviceWorkflow.closeVisitAsAdministrator(id, {
+    reason: datos.motivo,
+    ...seguimiento,
+  })
 }
 
 export async function reabrirVisita(id: ID) {

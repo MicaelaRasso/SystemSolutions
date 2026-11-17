@@ -1,12 +1,13 @@
 "use client"
 
 import { zodResolver } from "@hookform/resolvers/zod"
-import { FileUp, Paperclip, X } from "lucide-react"
+import { FileUp, Paperclip, TriangleAlert, X } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useRef, useState } from "react"
 import { Controller, useForm, useWatch } from "react-hook-form"
 import { toast } from "sonner"
 
+import { ValvulaDialog } from "@/components/estructura/dialogs"
 import { DatePicker } from "@/components/common/date-picker"
 import { CampoTexto } from "@/components/common/form-dialog"
 import { useMotivo } from "@/components/common/motivo-dialog"
@@ -29,10 +30,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { abrirAdjunto } from "@/lib/adjuntos"
 import { TIPOS_TAREA } from "@/lib/domain/catalogos"
-import { ESTADO_TAREA_LABEL } from "@/lib/domain/rules"
+import { ESTADO_TAREA_LABEL, horaFinPropuesta } from "@/lib/domain/rules"
 import { tareaSchema, type TareaInput } from "@/lib/domain/schemas"
 import type { Adjunto, EstadoTarea } from "@/lib/domain/types"
 import { hoyIso } from "@/lib/fechas"
@@ -43,6 +45,7 @@ import {
   mensajeError,
   subirAdjunto,
   usaSupabase,
+  useArbol,
   useCatalogo,
   useServiceMutation,
   useTalleres,
@@ -76,6 +79,8 @@ function valoresIniciales(
     fechaSolicitud: tarea?.fechaSolicitud ?? hoyIso(),
     fechaEjecucion: tarea?.fechaEjecucion ?? preset?.fecha ?? "",
     horario: tarea?.horario ?? "",
+    // Fin estimado: el guardado o inicio + 1 h (el usuario lo puede cambiar).
+    horaFin: tarea?.horaFin ?? horaFinPropuesta(tarea?.horario || "08:00"),
     tipo: tarea?.tipo ?? TIPOS_TAREA[0],
     detalle: tarea?.detalle ?? "",
     pdRto: tarea?.pdRto ?? "",
@@ -129,12 +134,22 @@ export function TareaForm({
       ],
     })
 
+  // D2: un equipo sin válvulas no puede ser parte de una tarea (el backend lo rechaza).
+  const arbol = useArbol(empresaId)
+  const equipoSinValvulas =
+    !operation && !!equipoId && !!arbol.data
+      ? arbol.data
+          .flatMap((y) => y.plantas.flatMap((p) => p.equipos))
+          .some((e) => e.id === equipoId && e.valvulas.length === 0)
+      : false
+
   const guardar = useServiceMutation<TareaInput, TareaResumen | OperationRead | undefined>(
     async (data: TareaInput) => {
       const payload: NuevaTarea = {
         ...data,
         tallerId: data.tallerId || undefined,
         horario: vacioAUndefined(data.horario),
+        horaFin: vacioAUndefined(data.horaFin ?? ""),
         pdRto: vacioAUndefined(data.pdRto),
         ordenTrabajo: vacioAUndefined(data.ordenTrabajo),
         contacto: data.contacto.trim(),
@@ -224,6 +239,31 @@ export function TareaForm({
               equipoId: errors.equipoId?.message,
             }}
           />
+          {equipoSinValvulas && (
+            <div
+              role="alert"
+              className="flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100"
+            >
+              <p className="flex items-start gap-2">
+                <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+                Este equipo no tiene válvulas cargadas. Cargá al menos una para poder crear la
+                tarea.
+              </p>
+              {/* Los diálogos viven en un portal, pero sus eventos suben hasta el <form> de la
+                  tarea: el envío de un alta no debe enviar la tarea. */}
+              <div className="contents" onSubmit={(e) => e.stopPropagation()}>
+                <ValvulaDialog
+                  empresaId={empresaId}
+                  equipoId={equipoId}
+                  trigger={
+                    <Button type="button" variant="outline" size="sm">
+                      Cargar válvulas
+                    </Button>
+                  }
+                />
+              </div>
+            </div>
+          )}
           {operation && (
             <p className="text-sm text-muted-foreground">
               La ubicación y las válvulas de una tarea existente no se modifican desde la
@@ -265,7 +305,36 @@ export function TareaForm({
                 </Field>
               )}
             />
-            <CampoTexto form={form} name="horario" label="Horario" type="time" />
+            <Field data-invalid={!!errors.horario}>
+              <FieldLabel htmlFor="horario">Hora de inicio</FieldLabel>
+              <Input
+                id="horario"
+                type="time"
+                aria-invalid={!!errors.horario}
+                {...form.register("horario", {
+                  // Al cambiar el inicio se vuelve a proponer el fin estimado (inicio + 1 h).
+                  onChange: (event: { target: { value: string } }) =>
+                    form.setValue("horaFin", horaFinPropuesta(event.target.value || "08:00"), {
+                      shouldDirty: true,
+                      shouldValidate: form.formState.isSubmitted,
+                    }),
+                })}
+              />
+              <FieldError errors={[errors.horario]} />
+            </Field>
+            <Field data-invalid={!!errors.horaFin}>
+              <FieldLabel htmlFor="horaFin">Hora de fin estimada</FieldLabel>
+              <Input
+                id="horaFin"
+                type="time"
+                aria-invalid={!!errors.horaFin}
+                {...form.register("horaFin")}
+              />
+              <FieldDescription>
+                Reserva el equipo hasta esa hora. No cierra la visita: la completa el técnico.
+              </FieldDescription>
+              <FieldError errors={[errors.horaFin]} />
+            </Field>
             <Controller
               control={form.control}
               name="tallerId"
@@ -473,7 +542,12 @@ export function TareaForm({
         <div className="grid grid-cols-2 gap-2 sm:flex">
           <Button
             type="submit"
-            disabled={guardar.isPending || subiendo || (editando && !isDirty && !adjuntosCambiados)}
+            disabled={
+              guardar.isPending ||
+              subiendo ||
+              equipoSinValvulas ||
+              (editando && !isDirty && !adjuntosCambiados)
+            }
           >
             {guardar.isPending ? "Guardando…" : editando ? "Guardar cambios" : "Crear tarea"}
           </Button>

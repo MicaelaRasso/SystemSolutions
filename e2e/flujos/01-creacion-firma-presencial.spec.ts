@@ -7,6 +7,7 @@ import { TECNICO } from "../support/semilla"
 import {
   abrirVisita,
   completarCaptura,
+  completarVisita,
   estadoVisita,
   firmarCliente,
   firmarTecnico,
@@ -110,7 +111,7 @@ test.describe("Flujo 1: creación, captura en tablet y firma presencial", () => 
     await test.step("firma el representante y luego el técnico; se completa la visita", async () => {
       await firmarCliente(page, tarjeta, flujo.representante)
       const seccion = await firmarTecnico(page, tarjeta)
-      await seccion.getByRole("button", { name: "Completar visita" }).click()
+      await completarVisita(page, seccion)
       await expect(estadoVisita(page).first()).toContainText("Visita completada", { timeout: 30_000 })
     })
 

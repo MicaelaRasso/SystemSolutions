@@ -203,6 +203,46 @@ const isContextEquipo = (value: unknown): value is Record<string, unknown> =>
   isNonEmptyString(value.planta_id) &&
   isString(value.nombre)
 
+const FIELD_VALVE_TEXT_FIELDS = [
+  "nombre",
+  "precinto",
+  "servicio",
+  "marca",
+  "numero_serie",
+  "modelo",
+  "tipo",
+  "pv",
+  "diametro_entrada",
+  "diametro_salida",
+  "rosca",
+  "notas",
+] as const
+const FIELD_VALVE_NUMBER_FIELDS = ["presion_operacion", "temperatura_operacion"] as const
+
+/** Valida los datos de una válvula dada de alta en campo: los mismos campos que carga el admin. */
+export const fieldValveData = (value: unknown): Record<string, unknown> => {
+  if (!isRecord(value)) throw new HttpError(400, "Valve data is required")
+  const data: Record<string, unknown> = {}
+  for (const key of FIELD_VALVE_TEXT_FIELDS) {
+    const field = value[key]
+    if (field === undefined || field === null) continue
+    if (typeof field !== "string" || field.length > 500)
+      throw new HttpError(400, "Valve fields must be text")
+    data[key] = field
+  }
+  for (const key of FIELD_VALVE_NUMBER_FIELDS) {
+    const field = value[key]
+    if (field === undefined || field === null || field === "") continue
+    const number = typeof field === "number" ? field : Number(String(field).replace(",", "."))
+    if (!Number.isFinite(number))
+      throw new HttpError(400, "Operating pressure and temperature must be numbers")
+    data[key] = number
+  }
+  if (typeof data.nombre !== "string" || !data.nombre.trim())
+    throw new HttpError(400, "A valve TAG is required")
+  return data
+}
+
 const invalidRpcResponse = (): never => {
   throw new HttpError(502, "Invalid operation response")
 }
@@ -627,6 +667,37 @@ export const serviceWorkflowHandler: RouteHandler = async ({
     })
   if (
     segments[0] === "visits" && request.method === "POST" &&
+    segments[1] && segments[2] === "close-administrator"
+  ) {
+    // E4: cierre administrativo de una visita en «Requiere finalización». El taller, el inicio y el
+    // fin estimado son para la visita de seguimiento de las válvulas sin evaluar (el RPC los exige
+    // si hay).
+    const reason = typeof body.reason === "string" ? body.reason.trim() : ""
+    if (!reason || reason.length > 1000)
+      throw new HttpError(400, "A closing reason is required (1 to 1000 characters)")
+    const providerId = body.taller_movil_id ?? null
+    if (providerId !== null && (typeof providerId !== "string" || !isUuid(providerId)))
+      throw new HttpError(400, "taller_movil_id must be a UUID")
+    const startsAt = body.starts_at ?? null
+    if (startsAt !== null && (typeof startsAt !== "string" || Number.isNaN(Date.parse(startsAt))))
+      throw new HttpError(400, "starts_at must be a valid timestamp")
+    const endsAt = body.ends_at ?? null
+    if (
+      endsAt !== null &&
+      (typeof endsAt !== "string" || Number.isNaN(Date.parse(endsAt)) ||
+        (typeof startsAt === "string" && Date.parse(endsAt) <= Date.parse(startsAt)))
+    )
+      throw new HttpError(400, "ends_at must be later than starts_at")
+    return db.rpc("api_admin_close_visit_requiring_finalization", {
+      visit_id: segments[1],
+      action_reason: reason,
+      provider_id: providerId,
+      visit_starts_at: startsAt,
+      visit_ends_at: endsAt,
+    })
+  }
+  if (
+    segments[0] === "visits" && request.method === "POST" &&
     segments[1] && segments[2] === "cancel-administrator"
   )
     return db.rpc("api_admin_cancel_visit", {
@@ -709,11 +780,39 @@ export const serviceWorkflowHandler: RouteHandler = async ({
     request.method === "POST" &&
     segments[1] &&
     segments[2] === "work-orders"
-  )
-    return db.rpc("api_add_work_order", {
+  ) {
+    // A1: el panel del taller manda el id de la orden generado en el dispositivo (idempotente).
+    if (body.work_order_id === undefined || body.work_order_id === null)
+      return db.rpc("api_add_work_order", {
+        visit_id: segments[1],
+        target_valvula: body.valvula_id,
+      })
+    if (typeof body.work_order_id !== "string" || !isUuid(body.work_order_id))
+      throw new HttpError(400, "work_order_id must be a UUID")
+    return db.rpc("api_add_work_order_with_id", {
       visit_id: segments[1],
       target_valvula: body.valvula_id,
+      target_work_order: body.work_order_id,
     })
+  }
+  if (
+    segments[0] === "visits" &&
+    request.method === "POST" &&
+    segments[1] &&
+    segments[2] === "valves"
+  ) {
+    // A2: alta de una válvula nueva en campo (válvula, revisión y orden en una transacción).
+    const ids = [body.valvula_id, body.equipo_id, body.work_order_id]
+    if (!ids.every((id) => typeof id === "string" && isUuid(id)))
+      throw new HttpError(400, "valvula_id, equipo_id and work_order_id must be UUIDs")
+    return db.rpc("api_technician_create_valvula", {
+      visit_id: segments[1],
+      target_valvula: body.valvula_id,
+      target_equipo: body.equipo_id,
+      target_work_order: body.work_order_id,
+      valve_data: fieldValveData(body.valvula),
+    })
+  }
   if (segments[0] === "work-orders" && request.method === "PATCH" && segments[1])
     return db.rpc("api_update_work_order", {
       work_order_id: segments[1],

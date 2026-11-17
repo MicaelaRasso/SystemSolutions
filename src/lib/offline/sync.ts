@@ -20,6 +20,25 @@ export function esFirmaYaRegistrada(error: unknown): boolean {
   )
 }
 
+/**
+ * Motivo crudo del backend cuando una operación llega después del cierre automático de la visita
+ * (E3, #96): la visita quedó en «Requiere finalización» y la operación pasa a conflicto para el
+ * Administrador.
+ */
+export const MOTIVO_VISITA_VENCIDA =
+  "The visit was closed at the end of its day and requires finalization"
+
+/** Indica si un error (o su mensaje) dice que la visita venció y requiere finalización. */
+export function esVisitaVencida(error: unknown): boolean {
+  const mensaje =
+    error instanceof Error ? error.message : typeof error === "string" ? error : undefined
+  if (!mensaje) return false
+  return (
+    mensaje.includes(MOTIVO_VISITA_VENCIDA) ||
+    mensaje.includes(traducirMensajeError(MOTIVO_VISITA_VENCIDA))
+  )
+}
+
 /** Estado del recibo de una firma local que el servidor ya tenía registrada. */
 export const RECIBO_FIRMA_YA_REGISTRADA = "ya_registrada"
 
@@ -214,21 +233,44 @@ export function refreshedVisitCatalogs(input: {
   }
 }
 
+/**
+ * Antes de descargar un working set nuevo se sincronizan los inicios offline pendientes (y los
+ * cierres pendientes, que liberan al taller). Un Taller Móvil atiende una visita a la vez y el
+ * servidor rechaza iniciar otra mientras una sigue en curso, así que las visitas se envían en el
+ * orden en que se trabajaron: primero la que tiene el inicio o el cierre pendiente más antiguo.
+ * Así, «completé A y empecé B sin conexión» llega como A completada y después B iniciada.
+ *
+ * Si un inicio no se pudo confirmar (sin respuesta o con error transitorio) se corta el refresco
+ * para no cambiar el catálogo antes de fijarlo. Un inicio que quedó en conflicto ya está en manos
+ * del Administrador (reintentarlo no lo cambia) y no bloquea el refresco.
+ */
 export async function syncPendingVisitStartsBeforeRefresh(
   store: WorkingSetStore,
   syncVisit: (visitId: string) => Promise<OperacionOffline[]>,
 ): Promise<void> {
   const visits = await store.listVisits()
+  const pendientes: { visitId: string; desde: string; inicios: OperacionOffline[] }[] = []
   for (const visit of visits) {
     const operations = await store.listOperations(visit.id)
-    const pendingStarts = operations.filter(
-      (operation) => operation.kind === "start_visit" && operation.estado !== "sincronizada",
+    const sinSincronizar = operations.filter(
+      (operation) =>
+        (operation.kind === "start_visit" || operation.kind === "complete_visit") &&
+        operation.estado !== "sincronizada" &&
+        operation.estado !== "conflicto",
     )
-    if (pendingStarts.length === 0) continue
-    const remaining = await syncVisit(visit.id)
-    for (const operation of pendingStarts) {
+    if (sinSincronizar.length === 0) continue
+    pendientes.push({
+      visitId: visit.id,
+      desde: sinSincronizar.map((operation) => operation.createdAt).sort()[0],
+      inicios: sinSincronizar.filter((operation) => operation.kind === "start_visit"),
+    })
+  }
+  pendientes.sort((a, b) => a.desde.localeCompare(b.desde) || a.visitId.localeCompare(b.visitId))
+  for (const { visitId, inicios } of pendientes) {
+    const remaining = await syncVisit(visitId)
+    for (const operation of inicios) {
       const result = remaining.find(({ operationId }) => operationId === operation.operationId)
-      if (result?.estado !== "sincronizada")
+      if (result?.estado !== "sincronizada" && result?.estado !== "conflicto")
         throw new Error("No se pudo confirmar el inicio offline antes de descargar el catálogo")
     }
   }
@@ -382,6 +424,103 @@ export function resolverEvidenciaDelBorrador<T extends object>(
   if (actual === undefined) return datos
   const evidencia = resolverEvidencia(actual, referencias)
   return evidencia === actual ? datos : { ...datos, evidencia_fotografica: evidencia }
+}
+
+/**
+ * Operaciones que agregan una Orden de trabajo a la visita desde el campo (A1/A2). El payload lleva
+ * `work_order_id` (generado en el dispositivo) y `valvula` con los datos para mostrarla offline.
+ */
+export const OPERACIONES_ALTA_DE_ORDEN: ReadonlySet<string> = new Set([
+  "add_work_order",
+  "create_valve",
+])
+
+/** Orden de trabajo agregada en el dispositivo que el servidor todavía no devolvió. */
+export interface OrdenAgregadaLocal {
+  id: string
+  visita_id: string
+  valvula_id: string
+  estado: "pendiente"
+  no_evaluada_razon: null
+  valvula_nombre?: string
+  equipo_nombre?: string
+  valvula?: Record<string, unknown>
+  alta_local: true
+}
+
+/** Orden que devolvió el servidor al sincronizar el alta (recibo de la operación). */
+export type OrdenDelRecibo = { id: string } & Record<string, unknown>
+
+const textoOpcional = (valor: unknown) =>
+  typeof valor === "string" && valor.trim() !== "" ? valor.trim() : undefined
+
+/**
+ * Órdenes de la visita más las agregadas en el dispositivo (alta optimista). Las que el servidor ya
+ * devuelve no se repiten; las que quedaron en conflicto no se muestran (las resuelve el
+ * Administrador). Una alta sincronizada cuyo payload se compactó se arma con el recibo.
+ */
+export function ordenesConAltasLocales<T extends { id: string }>(
+  ordenes: T[],
+  operaciones: OperacionOffline[],
+): Array<T | OrdenAgregadaLocal | OrdenDelRecibo> {
+  const ids = new Set(ordenes.map((orden) => orden.id))
+  const agregadas: Array<OrdenAgregadaLocal | OrdenDelRecibo> = []
+  const altas = operaciones
+    .filter(
+      (operacion) => OPERACIONES_ALTA_DE_ORDEN.has(operacion.kind) && operacion.estado !== "conflicto",
+    )
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.operationId.localeCompare(b.operationId))
+  for (const operacion of altas) {
+    if (operacion.estado === "sincronizada") {
+      const resultado = operacion.receipt?.serverResult
+      const orden = esRegistro(resultado) ? resultado.work_order : undefined
+      if (!esRegistro(orden) || typeof orden.id !== "string" || ids.has(orden.id)) continue
+      ids.add(orden.id)
+      agregadas.push(orden as OrdenDelRecibo)
+      continue
+    }
+    const { work_order_id: id, valvula_id: valvulaId, valvula } = operacion.payload
+    if (typeof id !== "string" || typeof valvulaId !== "string" || ids.has(id)) continue
+    ids.add(id)
+    const datosValvula = esRegistro(valvula) ? valvula : undefined
+    agregadas.push({
+      id,
+      visita_id: operacion.visitId,
+      valvula_id: valvulaId,
+      estado: "pendiente",
+      no_evaluada_razon: null,
+      valvula_nombre:
+        textoOpcional(operacion.payload.valvula_nombre) ?? textoOpcional(datosValvula?.nombre),
+      equipo_nombre: textoOpcional(operacion.payload.equipo_nombre),
+      valvula: datosValvula
+        ? {
+            id: valvulaId,
+            // `create_valve` lleva el equipo elegido aparte de los datos de la válvula.
+            ...(typeof operacion.payload.equipo_id === "string"
+              ? { equipo_id: operacion.payload.equipo_id }
+              : {}),
+            ...datosValvula,
+          }
+        : undefined,
+      alta_local: true,
+    })
+  }
+  return [...ordenes, ...agregadas]
+}
+
+/**
+ * Operaciones de alta todavía no sincronizadas de una orden: lo que se encole sobre esa orden
+ * (resultado, borrador) tiene que esperar a que el servidor la cree.
+ */
+export function dependenciasDeOrden(operaciones: OperacionOffline[], workOrderId: string): string[] {
+  return operaciones
+    .filter(
+      (operacion) =>
+        OPERACIONES_ALTA_DE_ORDEN.has(operacion.kind) &&
+        operacion.estado !== "sincronizada" &&
+        operacion.payload.work_order_id === workOrderId,
+    )
+    .map((operacion) => operacion.operationId)
 }
 
 export const migratePendingOperation = (operation: OperacionOffline): OperacionOffline => {
@@ -802,6 +941,7 @@ export class OfflineSyncCoordinator {
       }
 
       let acknowledged = false
+      let visitaVencida = false
       for (const operation of sendable) {
         const result = response.operations.find((item) => item.operation_id === operation.operationId)
         if (!result) {
@@ -820,9 +960,11 @@ export class OfflineSyncCoordinator {
           continue
         }
         if (result.estado === "conflicto") {
+          // No se reintenta: queda para el Administrador (incluido el cierre por vencimiento).
           operation.estado = "conflicto"
           operation.lastError = result.error_message ?? "Conflicto de sincronización"
           delete operation.nextRetryAt
+          if (esVisitaVencida(result.error_message)) visitaVencida = true
           await this.store.saveOperation(operation)
           continue
         }
@@ -854,8 +996,10 @@ export class OfflineSyncCoordinator {
         visit.backendStatus = String(
           (response.visit_acknowledgement as Record<string, unknown>).backend_status ?? visit.backendStatus ?? "",
         )
-        await this.store.saveVisit(visit)
       }
+      // La visita venció en el servidor: el panel lo muestra aunque el lote no traiga el estado.
+      if (visit && visitaVencida) visit.backendStatus = "requiere_finalizacion"
+      if (visit && (response.visit_acknowledgement || visitaVencida)) await this.store.saveVisit(visit)
       if (!acknowledged && !aislar) break
     }
 

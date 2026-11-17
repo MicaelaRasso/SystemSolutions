@@ -24,6 +24,8 @@ export const OPERATION_STATUSES = [
   "programada",
   "aceptada",
   "en_curso",
+  // Decisión (e): visita iniciada que venció a las 23:59 (AR) sin completarse.
+  "requiere_finalizacion",
   "completada",
   "cancelada",
 ] as const
@@ -204,6 +206,7 @@ export const routeOwner = (method: string, route: string[]): FunctionName | null
         "cancel",
         "cancel-administrator",
         "reopen-administrator",
+        "close-administrator",
         "assign",
         "unassign",
         "reassign",
@@ -211,6 +214,7 @@ export const routeOwner = (method: string, route: string[]): FunctionName | null
         "start",
         "complete",
         "work-orders",
+        "valves",
       ].includes(route[2])) ||
     (method === "PATCH" && route[0] === "work-orders" && route.length === 2) ||
     (method === "GET" && route[0] === "operations" && (route.length === 1 || route.length === 2)) ||

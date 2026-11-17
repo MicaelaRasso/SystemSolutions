@@ -1,6 +1,6 @@
 begin;
 
-select plan(34);
+select plan(35);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000001801', 'visit-admin-client@example.test'),
@@ -103,6 +103,7 @@ select is((public.api_assign_visit(current_setting('app.visit_admin_id')::uuid, 
 select public.test_visit_admin_set_actor('00000000-0000-0000-0000-000000001802');
 select is((public.api_reassign_visit(current_setting('app.visit_admin_id')::uuid, '00000000-0000-0000-0000-000000001803'::uuid, 'Cambio de cobertura', '2099-03-11 09:00:00+00'::timestamptz, '2099-03-11 10:00:00+00'::timestamptz)->'visit'->>'taller_movil_id'), '00000000-0000-0000-0000-000000001803', 'an administrator reassigns and reschedules a pre-work visit');
 select is((select ends_at from public.visitas_servicio where id = current_setting('app.visit_admin_id')::uuid), '2099-03-11 10:00:00+00'::timestamptz, 'reassignment updates the scheduled window when requested');
+select is((select ventana from public.visita_equipos where visita_id = current_setting('app.visit_admin_id')::uuid), tstzrange('2099-03-11 09:00:00+00'::timestamptz, '2099-03-11 10:00:00+00'::timestamptz, '[)'), 'reassignment moves the equipment reservation to the new window');
 select is((select count(*) from public.ordenes_trabajo where visita_id = current_setting('app.visit_admin_id')::uuid), 1::bigint, 'reassignment retains the Orden de trabajo');
 select throws_ok(
   $$select public.api_reassign_visit(current_setting('app.visit_admin_id')::uuid, '00000000-0000-0000-0000-000000001803'::uuid, 'Same provider', null, null)$$,

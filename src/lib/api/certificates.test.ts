@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 
 import type { EdgeAccessClient } from "../services/edge"
+import { visitSignatureDtoSchema } from "./contracts"
 import { createCertificatesApi } from "./certificates"
 
 const sourceId = "11111111-1111-4111-8111-111111116314"
@@ -114,5 +115,21 @@ describe("historial de varias Válvulas en un pedido", () => {
 
     await expect(api.valveHistories([])).resolves.toEqual({ histories: [], failed_valve_ids: [] })
     expect(request).not.toHaveBeenCalled()
+  })
+})
+
+describe("firma de una visita en «Requiere finalización» (E4)", () => {
+  it("informa si la firma completó la visita vencida", () => {
+    expect(
+      visitSignatureDtoSchema.parse({
+        signature_id: "signature-1",
+        finalized_certificates: [],
+        visit_completed: true,
+      }).visit_completed,
+    ).toBe(true)
+    expect(
+      visitSignatureDtoSchema.parse({ signature_id: "signature-1", finalized_certificates: [] })
+        .visit_completed,
+    ).toBeUndefined()
   })
 })

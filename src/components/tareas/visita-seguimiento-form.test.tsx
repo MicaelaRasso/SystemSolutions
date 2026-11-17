@@ -67,6 +67,11 @@ describe("ventanaSeguimiento", () => {
       startsAt: "2026-11-20T13:00:00.000Z",
       endsAt: "2026-11-20T14:00:00.000Z",
     })
+    expect(ventanaSeguimiento("2026-11-20", "10:00", "12:15")).toEqual({
+      startsAt: "2026-11-20T13:00:00.000Z",
+      endsAt: "2026-11-20T15:15:00.000Z",
+    })
+    expect(ventanaSeguimiento("2026-11-20", "10:00", "09:00")).toBeUndefined()
   })
 
   it("devuelve undefined si la fecha u hora no son válidas", () => {

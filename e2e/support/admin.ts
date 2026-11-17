@@ -36,12 +36,15 @@ export type DatosTareaUi = {
   telefono?: string
   detalle?: string
   horario?: string
+  /** Hora de fin estimada; si falta queda la propuesta (inicio + 1 h). */
+  horaFin?: string
   fecha?: string
   conTaller?: boolean
 }
 
 export async function completarDatosTarea(page: Page, datos: Omit<DatosTareaUi, "equipo">) {
   await page.locator('input[name="horario"]').fill(datos.horario ?? "09:30")
+  if (datos.horaFin) await page.locator('input[name="horaFin"]').fill(datos.horaFin)
   if (datos.conTaller !== false) {
     await elegirOpcion(page, comboTarea(page, /^Taller/), TALLER)
   }

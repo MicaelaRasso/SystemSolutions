@@ -20,12 +20,14 @@ export function ConfirmDialog({
   titulo,
   descripcion,
   confirmar = "Eliminar",
+  variante = "destructive",
   onConfirm,
 }: {
   trigger: React.ReactNode
   titulo: string
   descripcion: React.ReactNode
   confirmar?: string
+  variante?: "destructive" | "default"
   onConfirm: () => Promise<unknown>
 }) {
   const [open, setOpen] = useState(false)
@@ -53,7 +55,7 @@ export function ConfirmDialog({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pendiente}>Cancelar</AlertDialogCancel>
-          <Button variant="destructive" onClick={confirmarAccion} disabled={pendiente}>
+          <Button variant={variante} onClick={confirmarAccion} disabled={pendiente}>
             {pendiente ? "Procesando…" : confirmar}
           </Button>
         </AlertDialogFooter>

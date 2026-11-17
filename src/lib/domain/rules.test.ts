@@ -6,7 +6,9 @@ import {
   camposSinResolver,
   estadoFirma,
   estadoPatron,
+  finEstimadoValido,
   formatNroCertificado,
+  horaFinPropuesta,
   nombreArchivoCertificado,
   normalizarEstadoTarea,
   permisoImpresionCertificado,
@@ -14,6 +16,7 @@ import {
   puedeDescargar,
   puedeVerCertificado,
   rolesPermitidos,
+  ventanaVisita,
   vigencia,
 } from "./rules"
 import type { ArbolYacimiento, Firma } from "./types"
@@ -238,5 +241,34 @@ describe("vista e impresión del certificado (RN-04, RN-05, RN-06, CA-05)", () =
     expect(permisoImpresionCertificado({ rol: "taller", firmas: completas }, hoy)).toMatchObject({
       puedeImprimir: false,
     })
+  })
+})
+
+describe("horario de la visita (inicio y fin estimado)", () => {
+  it("propone el fin una hora después del inicio, sin pasar de las 23:59", () => {
+    expect(horaFinPropuesta("09:00")).toBe("10:00")
+    expect(horaFinPropuesta("09:45")).toBe("10:45")
+    expect(horaFinPropuesta("23:30")).toBe("23:59")
+    expect(horaFinPropuesta("")).toBe("")
+  })
+
+  it("exige que el fin estimado sea posterior al inicio", () => {
+    expect(finEstimadoValido("09:00", "09:30")).toBe(true)
+    expect(finEstimadoValido("09:00", "09:00")).toBe(false)
+    expect(finEstimadoValido("10:00", "09:00")).toBe(false)
+    expect(finEstimadoValido("10:00", "")).toBe(false)
+  })
+
+  it("arma la ventana en hora argentina, con inicio + 1 h si no hay fin", () => {
+    expect(ventanaVisita("2026-11-20", "10:00", "12:30")).toEqual({
+      startsAt: "2026-11-20T13:00:00.000Z",
+      endsAt: "2026-11-20T15:30:00.000Z",
+    })
+    expect(ventanaVisita("2026-11-20", "10:00")).toEqual({
+      startsAt: "2026-11-20T13:00:00.000Z",
+      endsAt: "2026-11-20T14:00:00.000Z",
+    })
+    expect(() => ventanaVisita("2026-11-20", "10:00", "09:00")).toThrow(/posterior/)
+    expect(() => ventanaVisita("", "10:00", "11:00")).toThrow(/no es válido/)
   })
 })

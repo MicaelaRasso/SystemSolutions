@@ -17,6 +17,18 @@ function text(value: unknown) {
   return typeof value === "string" && value.trim() ? value : undefined
 }
 
+/**
+ * Aviso después de firmar. En una visita en «Requiere finalización» (E4) los certificados se
+ * emiten cuando la visita se cierra (por el Técnico o por el Administrador).
+ */
+export function mensajeFirmaRecibida(estadoVisita: unknown, finalizados: number) {
+  if (finalizados > 0)
+    return `Firma recibida. Se emitieron ${finalizados} certificado(s) de la visita.`
+  if (estadoVisita === "requiere_finalizacion")
+    return "Firma recibida. La visita todavía se está cerrando: los certificados se emitirán cuando se complete."
+  return "Firma recibida. Los certificados elegibles se finalizarán en el backend."
+}
+
 export function FirmaPendientePanel() {
   const visits = useEdgePendingClientSignatureVisits()
   const upload = useUploadEdgeVisitSignature()
@@ -130,9 +142,12 @@ export function FirmaPendientePanel() {
                           },
                         },
                         {
-                          onSuccess: async () => {
+                          onSuccess: async (resultado) => {
                             setMessage(
-                              "Firma recibida. Los certificados elegibles se finalizarán en el backend.",
+                              mensajeFirmaRecibida(
+                                visit.visit.estado,
+                                resultado.finalized_certificates.length,
+                              ),
                             )
                             setFiles((current) => ({ ...current, [visit.visit.id]: undefined }))
                             await visits.refetch()

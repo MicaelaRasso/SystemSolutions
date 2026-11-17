@@ -5,6 +5,7 @@ import { fechaArgentina } from "./semilla"
 import {
   abrirVisita,
   completarCaptura,
+  completarVisita,
   estadoVisita,
   firmarCliente,
   firmarTecnico,
@@ -66,7 +67,7 @@ export async function capturarSinConexion(
   await guardarBorrador(page, orden)
   await firmarClienteSinConexion(page, tarjeta, datos.representante)
   const seccion = await firmarTecnico(page, tarjeta)
-  await seccion.getByRole("button", { name: "Completar visita" }).click()
+  await completarVisita(page, seccion)
   await expect(estadoVisita(page).first()).toContainText("completada localmente", { timeout: 30_000 })
   return orden
 }

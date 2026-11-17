@@ -1,6 +1,6 @@
 begin;
 
-select plan(43);
+select plan(44);
 
 -- Fixtures: Clientes en distintos estados de cuenta, un Administrador y un Taller Móvil.
 insert into auth.users (id, email) values
@@ -44,7 +44,9 @@ insert into public.equipos_unidades (id, planta_id, nombre) values
   ('00000000-0000-0000-0000-000000002131', '00000000-0000-0000-0000-000000002121', 'Fix Equipo 1'),
   ('00000000-0000-0000-0000-000000002132', '00000000-0000-0000-0000-000000002122', 'Fix Equipo 2'),
   ('00000000-0000-0000-0000-000000002133', '00000000-0000-0000-0000-000000002123', 'Fix Equipo 3'),
-  ('00000000-0000-0000-0000-000000002134', '00000000-0000-0000-0000-000000002124', 'Fix Equipo 4');
+  ('00000000-0000-0000-0000-000000002134', '00000000-0000-0000-0000-000000002124', 'Fix Equipo 4'),
+  -- D1: equipo sin válvulas; ya no se le crea una «Válvula 1» automática.
+  ('00000000-0000-0000-0000-000000002135', '00000000-0000-0000-0000-000000002121', 'Fix Equipo sin válvulas');
 insert into public.valvulas (id, equipo_id, nombre) values
   ('00000000-0000-0000-0000-000000002141', '00000000-0000-0000-0000-000000002131', 'V-FIX-1'),
   ('00000000-0000-0000-0000-000000002142', '00000000-0000-0000-0000-000000002131', 'V-FIX-2'),
@@ -85,6 +87,11 @@ select throws_ok(
 select throws_ok(
   $$select public.api_admin_create_service_request('00000000-0000-0000-0000-000000002104'::uuid, '00000000-0000-0000-0000-000000002114'::uuid, '[{"kind":"equipo","id":"00000000-0000-0000-0000-000000002134"}]'::jsonb)$$,
   '23503', 'Cliente not found', 'S3: an inactive Cliente is still rejected');
+
+-- D1: un equipo sin válvulas se rechaza y no se le crea una «Válvula 1» automática.
+select throws_ok(
+  $$select public.api_admin_create_service_request('00000000-0000-0000-0000-000000002101'::uuid, '00000000-0000-0000-0000-000000002111'::uuid, '[{"kind":"equipo","id":"00000000-0000-0000-0000-000000002135"}]'::jsonb)$$,
+  '22023', 'The selected Equipo has no Válvulas', 'D1: an equipo without valves is rejected instead of getting an automatic valve');
 
 -- S4: un fallo al programar revierte la solicitud y su metadata.
 select throws_ok(

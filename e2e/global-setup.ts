@@ -1,4 +1,5 @@
 import { asegurarContenedorPermitido, asegurarUrlLocal, CONTENEDOR_DB, SUPABASE_URL } from "./support/entorno"
+import { liberarTallerSemilla } from "./support/datos"
 import { prepararSemilla } from "./support/semilla"
 
 /** Aborta antes de tocar datos si el destino no es el stack local, y deja la semilla lista. */
@@ -10,4 +11,6 @@ export default async function globalSetup() {
   const corrida = Date.now().toString(36).slice(-5).toUpperCase()
   process.env.E2E_CORRIDA = corrida
   await prepararSemilla(corrida)
+  // Un taller atiende una visita a la vez: sin visitas en curso que hayan quedado de otra corrida.
+  liberarTallerSemilla()
 }

@@ -12,6 +12,7 @@ const estadoLabel: Record<string, string> = {
   programada: "Programada",
   aceptada: "Aceptada",
   en_curso: "En curso",
+  requiere_finalizacion: "Requiere finalización",
   completada: "Completada",
   cancelada: "Cancelada",
 }

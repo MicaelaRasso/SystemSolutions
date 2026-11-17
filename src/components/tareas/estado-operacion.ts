@@ -7,6 +7,7 @@ export const ESTADO_OPERACION_A_TAREA: Record<OperationStatus, EstadoTarea> = {
   programada: "programada",
   aceptada: "aceptada",
   en_curso: "en_curso",
+  requiere_finalizacion: "requiere_finalizacion",
   completada: "completada",
   cancelada: "cancelada",
 }

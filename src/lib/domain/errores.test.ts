@@ -8,7 +8,13 @@ describe("traducirMensajeError", () => {
       traducirMensajeError(
         'conflicting key value violates exclusion constraint "visita_equipos_no_simultaneous_equipment"',
       ),
-    ).toMatch(/equipo ya tiene otra visita/i)
+    ).toBe("El equipo ya tiene otra visita en ese horario. Elige otro día u horario.")
+  })
+
+  it("traduce el rechazo de un equipo sin válvulas", () => {
+    expect(traducirMensajeError("The selected Equipo has no Válvulas")).toMatch(
+      /sin válvulas|no tiene válvulas/i,
+    )
   })
 
   it("traduce cualquier otra restricción de exclusión como superposición", () => {
@@ -28,6 +34,17 @@ describe("traducirMensajeError", () => {
     ["A visit requires a valid date and time window", /fecha u horario/],
     ["Only a cancelled visit can be restored", /cancelada/],
     ["The schedule is unchanged", /cambios/],
+    ["Válvulas can be added only while the visit is in progress", /en curso/],
+    ["An added Válvula must belong to the same Cliente", /mismo Cliente/],
+    ["The Taller Móvil requires active Yacimiento access", /acceso al yacimiento/],
+    ["Válvula not found", /válvula/i],
+    ["The work order id is already used by another Orden de trabajo", /orden/i],
+    ["Válvulas can be created only while the visit is in progress", /en curso/],
+    ["A created Válvula must belong to the visit Cliente", /Cliente de la visita/],
+    ["Equipo not found", /equipo/i],
+    ["The Válvula id is already used by another Válvula", /otra válvula/i],
+    ["Asset name or tag must be alphanumeric", /TAG/],
+    ["Operating pressure and temperature must be numbers", /número/],
   ])("traduce el mensaje conocido %s", (mensaje, esperado) => {
     const traducido = traducirMensajeError(mensaje)
     expect(traducido).not.toBe(mensaje)
@@ -84,6 +101,48 @@ describe("traducirMensajeError", () => {
         "An Administrador cannot accept a visit-signature operation; reject it or authorize a certificate correction",
       ),
     ).toMatch(/Rechazar/)
+  })
+
+  it.each([
+    [
+      "The visit was closed at the end of its day and requires finalization",
+      /venció.*Requiere finalización/,
+    ],
+    [
+      "Correction resolution requires a Taller Móvil and visit start/end times",
+      /taller.*inicio y fin/i,
+    ],
+  ])("traduce el conflicto de una visita vencida y la corrección (E3) %s", (mensaje, esperado) => {
+    const traducido = traducirMensajeError(mensaje)
+    expect(traducido).not.toBe(mensaje)
+    expect(traducido).toMatch(esperado)
+  })
+
+  it.each([
+    ["Only an active Administrador can close a visit that requires finalization", /Administrador/],
+    ["A closing reason of 1 to 1000 characters is required", /motivo/],
+    ["A closing reason is required (1 to 1000 characters)", /motivo/],
+    [
+      "Only a visit that requires finalization can be closed by an Administrador",
+      /Requiere finalización/,
+    ],
+    ["Resolve the synchronization conflicts of this visit before closing it", /conflictos/],
+    [
+      "A follow-up visit for the unevaluated Válvulas requires a Taller Móvil and start/end times",
+      /taller.*horario estimado.*seguimiento/i,
+    ],
+  ])("traduce el cierre administrativo de una visita vencida (E4) %s", (mensaje, esperado) => {
+    const traducido = traducirMensajeError(mensaje)
+    expect(traducido).not.toBe(mensaje)
+    expect(traducido).toMatch(esperado)
+  })
+
+  it("pide completar la visita en curso antes de iniciar otra del mismo taller", () => {
+    expect(
+      traducirMensajeError(
+        "The Taller Móvil already has a visit in progress; complete it before starting another",
+      ),
+    ).toMatch(/otra visita en curso.*Completá/)
   })
 
   it("conserva los mensajes desconocidos y los que ya están en español", () => {

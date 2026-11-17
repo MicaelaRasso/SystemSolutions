@@ -23,7 +23,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
 import { edgeApi } from "@/lib/api"
 import { useEdgeServiceRequests, useEdgeVisits, useEdgeYacimientos } from "@/lib/api/hooks"
-import { ESTADO_TAREA_LABEL } from "@/lib/domain/rules"
+import { ESTADO_TAREA_LABEL, horaFinPropuesta, ventanaVisita } from "@/lib/domain/rules"
 import type { EstadoTarea } from "@/lib/domain/types"
 import { fmt, hoyIso } from "@/lib/fechas"
 import { usaSupabase, useEmpresas, useOperaciones, useTalleres } from "@/lib/hooks/queries"
@@ -390,6 +390,8 @@ export function SolicitudSinVisita({
 }) {
   const [fecha, setFecha] = useState(fechaInicial ?? "")
   const [hora, setHora] = useState(horaInicial ?? "08:00")
+  // Fin estimado: inicio + 1 h, editable. Reserva el equipo; no cierra la visita.
+  const [horaFin, setHoraFin] = useState(horaFinPropuesta(horaInicial ?? "08:00"))
   const [tallerId, setTallerId] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
@@ -400,11 +402,9 @@ export function SolicitudSinVisita({
     try {
       const startsAt = new Date(`${fecha}T${hora}:00-03:00`)
       if (Number.isNaN(startsAt.getTime())) throw new Error("Elegí fecha y hora válidas")
-      const endsAt = new Date(startsAt.getTime() + 60 * 60 * 1000)
       await edgeApi.serviceWorkflow.schedule(requestId, {
         tallerMovilId: tallerId,
-        startsAt: startsAt.toISOString(),
-        endsAt: endsAt.toISOString(),
+        ...ventanaVisita(fecha, hora, horaFin),
       })
       onScheduled()
     } catch (caught) {
@@ -434,7 +434,18 @@ export function SolicitudSinVisita({
           type="time"
           aria-label={`Hora de visita para solicitud ${numero}`}
           value={hora}
-          onChange={(event) => setHora(event.target.value)}
+          onChange={(event) => {
+            setHora(event.target.value)
+            setHoraFin(horaFinPropuesta(event.target.value))
+          }}
+          className="w-full sm:w-32"
+        />
+        <Input
+          type="time"
+          aria-label={`Hora de fin estimada para solicitud ${numero}`}
+          title="Hora de fin estimada"
+          value={horaFin}
+          onChange={(event) => setHoraFin(event.target.value)}
           className="w-full sm:w-32"
         />
         <Select value={tallerId} onValueChange={(v) => v && setTallerId(v)}>
@@ -452,7 +463,7 @@ export function SolicitudSinVisita({
         <Button
           type="button"
           className="w-full sm:w-auto"
-          disabled={busy || !fecha || !tallerId}
+          disabled={busy || !fecha || !tallerId || !horaFin}
           onClick={() => void schedule()}
         >
           {busy ? "Programando…" : "Programar visita"}

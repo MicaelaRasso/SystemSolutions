@@ -270,6 +270,45 @@ describe("offline-sync visit identity validation", () => {
     })
   })
 
+  it("sends field valve additions through the visit batch, in queue order (A1/A2)", async () => {
+    const operations = [
+      {
+        operation_id: operationId,
+        kind: "add_work_order",
+        payload: { work_order_id: mediaId, valvula_id: visitId },
+      },
+      {
+        operation_id: mediaId,
+        kind: "create_valve",
+        payload: {
+          work_order_id: operationId,
+          valvula_id: deviceId,
+          equipo_id: visitId,
+          valvula: { nombre: "PSV-9" },
+        },
+      },
+    ]
+    const rpc = vi.fn().mockResolvedValue({ data: { visit_id: visitId, operations: [] }, error: null })
+
+    await handler(
+      context(
+        new Request(`https://example.test/functions/v1/offline-sync/visits/${visitId}/sync`, {
+          method: "POST",
+        }),
+        ["visits", visitId, "sync"],
+        rpc,
+        { device_id: deviceId, operations },
+      ),
+    )
+
+    expect(rpc).toHaveBeenCalledTimes(1)
+    expect(rpc).toHaveBeenCalledWith("api_sync_visit_batch", {
+      target_visit: visitId,
+      target_device: deviceId,
+      operations,
+    })
+  })
+
   it("preserves selected Técnico signature identity in the device-bound sync batch", async () => {
     const operations = [
       {
@@ -301,6 +340,152 @@ describe("offline-sync visit identity validation", () => {
       target_visit: visitId,
       target_device: deviceId,
       operations,
+    })
+  })
+})
+
+describe("offline-sync late operations on a visit that requires finalization (E3)", () => {
+  const closedReason = "The visit was closed at the end of its day and requires finalization"
+
+  it("returns each conflict with its reason, in queue order, across Parte diario groups", async () => {
+    const pdOperationId = "00000000-0000-0000-0000-000000000005"
+    const operations = [
+      { operation_id: operationId, kind: "work_order_outcome", payload: {} },
+      { operation_id: pdOperationId, kind: "set_part_diario", payload: { codigo: "PD1" } },
+      { operation_id: mediaId, kind: "complete_visit", payload: {} },
+    ]
+    const conflict = (id: string) => ({
+      operation_id: id,
+      estado: "conflicto",
+      error_code: "55000",
+      error_message: closedReason,
+    })
+    const ack = {
+      visit_id: visitId,
+      estado: "conflicto",
+      backend_status: "requiere_finalizacion",
+    }
+    const rpc = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: { visit_id: visitId, operations: [conflict(operationId)], visit_acknowledgement: ack },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { visit_id: visitId, operations: [conflict(pdOperationId)], visit_acknowledgement: ack },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { visit_id: visitId, operations: [conflict(mediaId)], visit_acknowledgement: ack },
+        error: null,
+      })
+
+    const result = await handler(
+      context(
+        new Request(`https://example.test/functions/v1/offline-sync/visits/${visitId}/sync`, {
+          method: "POST",
+        }),
+        ["visits", visitId, "sync"],
+        rpc,
+        { device_id: deviceId, operations },
+      ),
+    )
+
+    expect(rpc).toHaveBeenCalledTimes(3)
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      "api_sync_visit_batch",
+      "api_sync_visit_part_diario_batch",
+      "api_sync_visit_batch",
+    ])
+    expect(result).toMatchObject({
+      data: {
+        visit_id: visitId,
+        operations: [conflict(operationId), conflict(pdOperationId), conflict(mediaId)],
+        visit_acknowledgement: ack,
+      },
+      error: null,
+    })
+  })
+})
+
+describe("offline-sync conflict resolution", () => {
+  const conflictId = "00000000-0000-0000-0000-000000000006"
+  const providerId = "00000000-0000-0000-0000-000000000007"
+  const certificateId = "00000000-0000-0000-0000-000000000008"
+  const resolve = (rpc: ReturnType<typeof vi.fn>, body: Record<string, unknown>) =>
+    handler(
+      context(
+        new Request(
+          `https://example.test/functions/v1/offline-sync/conflicts/${conflictId}/resolve`,
+          { method: "POST" },
+        ),
+        ["conflicts", conflictId, "resolve"],
+        rpc,
+        body,
+      ),
+    )
+
+  it("authorizes a correction with the start and estimated end of the visit", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { resolution: "correction_authorized" }, error: null })
+
+    await resolve(rpc, {
+      action: "correction",
+      reason: "Corregir certificado",
+      source_certificate_id: certificateId,
+      provider_id: providerId,
+      starts_at: "2099-05-01T12:00:00.000Z",
+      ends_at: "2099-05-01T13:00:00.000Z",
+    })
+
+    expect(rpc).toHaveBeenCalledWith("api_resolve_sync_conflict", {
+      p_target_conflict: conflictId,
+      p_resolution_action: "correction",
+      p_action_reason: "Corregir certificado",
+      correction_source_certificate_id: certificateId,
+      correction_provider_id: providerId,
+      correction_starts_at: "2099-05-01T12:00:00.000Z",
+      correction_ends_at: "2099-05-01T13:00:00.000Z",
+    })
+  })
+
+  it("rejects a correction whose end time is not after its start", async () => {
+    const rpc = vi.fn()
+    await expect(
+      resolve(rpc, {
+        action: "correction",
+        reason: "Corregir certificado",
+        provider_id: providerId,
+        starts_at: "2099-05-01T12:00:00.000Z",
+        ends_at: "2099-05-01T10:00:00.000Z",
+      }),
+    ).rejects.toThrow("ends_at must be later than starts_at")
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it("still requires a Taller Móvil and start/end times for a correction", async () => {
+    const rpc = vi.fn()
+    await expect(
+      resolve(rpc, { action: "correction", reason: "Corregir", provider_id: providerId }),
+    ).rejects.toThrow("A valid starts_at timestamp is required for correction")
+    await expect(
+      resolve(rpc, { action: "correction", reason: "Corregir", starts_at: "2099-05-01T12:00:00Z" }),
+    ).rejects.toThrow("A valid provider_id is required for correction")
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it("accepts a late operation of a visit that requires finalization", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { resolution: "accepted" }, error: null })
+
+    await resolve(rpc, { action: "accept", reason: "Trabajo hecho antes del vencimiento" })
+
+    expect(rpc).toHaveBeenCalledWith("api_resolve_sync_conflict", {
+      p_target_conflict: conflictId,
+      p_resolution_action: "accept",
+      p_action_reason: "Trabajo hecho antes del vencimiento",
+      correction_source_certificate_id: null,
+      correction_provider_id: null,
+      correction_starts_at: null,
+      correction_ends_at: null,
     })
   })
 })

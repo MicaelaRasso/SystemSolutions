@@ -40,6 +40,7 @@ import {
   puedeEditarProgramacion,
   puedeEvaluarOrden,
 } from "./estado-operacion"
+import { CierreVisitaVencida } from "./cierre-visita-vencida"
 import { VisitaSeguimientoForm } from "./visita-seguimiento-form"
 
 export function TareaDetalle({ id }: { id: string }) {
@@ -194,6 +195,9 @@ export function TareaDetalle({ id }: { id: string }) {
         <p className="text-sm text-muted-foreground">
           La Visita de servicio ya no admite cambios de programación o selección.
         </p>
+      )}
+      {supabase && operacion.data?.visit.visit.estado === "requiere_finalizacion" && (
+        <CierreVisitaVencida operation={operacion.data} />
       )}
       {supabase && operacion.data && <OrdenesTrabajo operation={operacion.data} />}
       {supabase && operacion.data?.visit.visit.estado === "completada" && (

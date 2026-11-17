@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Info } from "lucide-react"
-import { Controller, useForm } from "react-hook-form"
+import { Controller, useForm, type UseFormReturn } from "react-hook-form"
 
 import { Combobox } from "@/components/common/combobox"
 import { CampoTexto, FormDialog, PieFormulario as Pie } from "@/components/common/form-dialog"
@@ -380,7 +380,7 @@ function valvulaDesdeInput(data: ValvulaInput): Omit<Valvula, "id" | "equipoId">
   }
 }
 
-function inputDesdeValvula(v?: Valvula): ValvulaInput {
+export function inputDesdeValvula(v?: Valvula): ValvulaInput {
   return {
     tag: v?.tag ?? "",
     precinto: v?.precinto ?? "",
@@ -466,54 +466,6 @@ function ValvulaForm({
     },
   )
 
-  const combo = (
-    name: "diamEntrada" | "diamSalida",
-    label: string,
-    opciones: string[] | undefined,
-  ) => (
-    <Controller
-      control={form.control}
-      name={name}
-      render={({ field }) => (
-        <Field>
-          <FieldLabel htmlFor={name}>{label}</FieldLabel>
-          <Combobox
-            id={name}
-            value={field.value}
-            onChange={field.onChange}
-            opciones={opciones ?? []}
-            placeholder="Seleccionar medida"
-            buscar="Buscar medida…"
-          />
-        </Field>
-      )}
-    />
-  )
-
-  const select = (name: "rosca" | "tipo", label: string, opciones: string[] | undefined) => (
-    <Controller
-      control={form.control}
-      name={name}
-      render={({ field }) => (
-        <Field>
-          <FieldLabel htmlFor={name}>{label}</FieldLabel>
-          <Select value={field.value} onValueChange={(v) => v && field.onChange(v)}>
-            <SelectTrigger id={name} className="w-full">
-              <SelectValue placeholder="Seleccionar" />
-            </SelectTrigger>
-            <SelectContent>
-              {(opciones ?? []).map((o) => (
-                <SelectItem key={o} value={o}>
-                  {o}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-      )}
-    />
-  )
-
   const valores = (q: typeof rosca) => q.data?.map((o) => o.valor)
 
   return (
@@ -537,43 +489,125 @@ function ValvulaForm({
           </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-3">
-          <CampoTexto form={form} name="tag" label="TAG" placeholder="PSV-2752" autoFocus />
-          <CampoTexto form={form} name="precinto" label="Precinto" />
-          <CampoTexto form={form} name="servicio" label="Servicio" placeholder="GAS COMBUSTIBLE" />
-          <CampoTexto form={form} name="marca" label="Marca" />
-          <CampoTexto form={form} name="nroSerie" label="N° de serie" />
-          <CampoTexto form={form} name="modelo" label="Modelo" />
-          {select("tipo", "Tipo de funcionamiento", valores(tipo))}
-          <CampoTexto form={form} name="pv" label="PV (variable de proceso)" placeholder="GAS" />
-          {select("rosca", "Rosca", valores(rosca))}
-          {combo("diamEntrada", "Ø Entrada / #", valores(diamEntrada))}
-          {combo("diamSalida", "Ø Salida / #", valores(diamSalida))}
-          <div className="grid grid-cols-2 gap-4">
-            <CampoTexto
-              form={form}
-              name="presionOperacion"
-              label="P. operación"
-              inputMode="decimal"
-              placeholder="kg/cm²"
-            />
-            <CampoTexto
-              form={form}
-              name="temperaturaOperacion"
-              label="T° operación"
-              inputMode="decimal"
-              placeholder="°C"
-            />
-          </div>
-        </div>
-
-        <Field>
-          <FieldLabel htmlFor="notas">Notas</FieldLabel>
-          <Textarea id="notas" rows={2} {...form.register("notas")} />
-        </Field>
+        <CamposValvula
+          form={form}
+          opciones={{
+            tipo: valores(tipo),
+            rosca: valores(rosca),
+            diamEntrada: valores(diamEntrada),
+            diamSalida: valores(diamSalida),
+          }}
+        />
 
         <Pie pendiente={guardar.isPending} cerrar={cerrar} crear={!valvula} />
       </FieldGroup>
     </form>
+  )
+}
+
+/** Opciones de los desplegables de la válvula (catálogos editables desde /admin/catalogos). */
+export type OpcionesValvula = {
+  tipo?: string[]
+  rosca?: string[]
+  diamEntrada?: string[]
+  diamSalida?: string[]
+}
+
+/**
+ * Campos de la ficha de la válvula. Los comparten el alta del Administrador y el alta en campo del
+ * taller (A2), que pasa las opciones descargadas para trabajar sin conexión.
+ */
+export function CamposValvula({
+  form,
+  opciones,
+}: {
+  form: UseFormReturn<ValvulaInput>
+  opciones: OpcionesValvula
+}) {
+  const combo = (
+    name: "diamEntrada" | "diamSalida",
+    label: string,
+    valores: string[] | undefined,
+  ) => (
+    <Controller
+      control={form.control}
+      name={name}
+      render={({ field }) => (
+        <Field>
+          <FieldLabel htmlFor={name}>{label}</FieldLabel>
+          <Combobox
+            id={name}
+            value={field.value}
+            onChange={field.onChange}
+            opciones={valores ?? []}
+            placeholder="Seleccionar medida"
+            buscar="Buscar medida…"
+          />
+        </Field>
+      )}
+    />
+  )
+
+  const select = (name: "rosca" | "tipo", label: string, valores: string[] | undefined) => (
+    <Controller
+      control={form.control}
+      name={name}
+      render={({ field }) => (
+        <Field>
+          <FieldLabel htmlFor={name}>{label}</FieldLabel>
+          <Select value={field.value} onValueChange={(v) => v && field.onChange(v)}>
+            <SelectTrigger id={name} className="w-full">
+              <SelectValue placeholder="Seleccionar" />
+            </SelectTrigger>
+            <SelectContent>
+              {(valores ?? []).map((o) => (
+                <SelectItem key={o} value={o}>
+                  {o}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+      )}
+    />
+  )
+
+  return (
+    <>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <CampoTexto form={form} name="tag" label="TAG" placeholder="PSV-2752" autoFocus />
+        <CampoTexto form={form} name="precinto" label="Precinto" />
+        <CampoTexto form={form} name="servicio" label="Servicio" placeholder="GAS COMBUSTIBLE" />
+        <CampoTexto form={form} name="marca" label="Marca" />
+        <CampoTexto form={form} name="nroSerie" label="N° de serie" />
+        <CampoTexto form={form} name="modelo" label="Modelo" />
+        {select("tipo", "Tipo de funcionamiento", opciones.tipo)}
+        <CampoTexto form={form} name="pv" label="PV (variable de proceso)" placeholder="GAS" />
+        {select("rosca", "Rosca", opciones.rosca)}
+        {combo("diamEntrada", "Ø Entrada / #", opciones.diamEntrada)}
+        {combo("diamSalida", "Ø Salida / #", opciones.diamSalida)}
+        <div className="grid grid-cols-2 gap-4">
+          <CampoTexto
+            form={form}
+            name="presionOperacion"
+            label="P. operación"
+            inputMode="decimal"
+            placeholder="kg/cm²"
+          />
+          <CampoTexto
+            form={form}
+            name="temperaturaOperacion"
+            label="T° operación"
+            inputMode="decimal"
+            placeholder="°C"
+          />
+        </div>
+      </div>
+
+      <Field>
+        <FieldLabel htmlFor="notas">Notas</FieldLabel>
+        <Textarea id="notas" rows={2} {...form.register("notas")} />
+      </Field>
+    </>
   )
 }

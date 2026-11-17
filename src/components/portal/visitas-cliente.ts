@@ -25,6 +25,7 @@ export interface VisitaCliente {
   id: string
   /** Día de la visita en Argentina, AAAA-MM-DD. */
   fecha: string
+  /** Inicio y fin estimado en Argentina (HH:MM–HH:MM). */
   horario: string
   inicio: string
   yacimientoId: string
@@ -42,6 +43,8 @@ export const ESTADOS_PENDIENTES: OperationStatus[] = [
   "programada",
   "aceptada",
   "en_curso",
+  // Vencida sin completar: puede faltar la firma del Cliente, que la firma desde el portal.
+  "requiere_finalizacion",
 ]
 export const ESTADOS_HISTORICOS: OperationStatus[] = ["completada", "cancelada"]
 
@@ -51,6 +54,7 @@ export const COLOR_ESTADO_VISITA: Record<OperationStatus, string> = {
   programada: "#0284c7",
   aceptada: "#0d9488",
   en_curso: "#7c3aed",
+  requiere_finalizacion: "#ea580c",
   completada: "#059669",
   cancelada: "#a1a1aa",
 }

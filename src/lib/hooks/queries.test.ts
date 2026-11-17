@@ -16,6 +16,7 @@ const { edgeApi } = vi.hoisted(() => ({
       reassignVisit: vi.fn(),
       rescheduleVisit: vi.fn(),
       createAdministrativeRequestWithVisit: vi.fn(),
+      closeVisitAsAdministrator: vi.fn(),
     },
     identity: { context: vi.fn() },
     operations: { get: vi.fn() },
@@ -25,7 +26,14 @@ const { edgeApi } = vi.hoisted(() => ({
 vi.mock("@/lib/api", () => ({ edgeApi }))
 vi.mock("@/lib/services", () => ({ services: {} }))
 
-import { INVALIDAR_TAREAS, consultaEmpresa, guardarSolicitudYVisita, type OperationRead } from "./queries"
+import {
+  INVALIDAR_TAREAS,
+  cerrarVisitaVencida,
+  consultaEmpresa,
+  guardarSolicitudYVisita,
+  reasignarVisita,
+  type OperationRead,
+} from "./queries"
 
 function operacion(tallerId?: string): OperationRead {
   return {
@@ -253,6 +261,45 @@ describe("guardarSolicitudYVisita (alta)", () => {
   })
 })
 
+describe("reasignarVisita", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it("mueve la visita a otra fecha conservando su horario y su duración estimada", async () => {
+    edgeApi.operations.get.mockResolvedValue(operacion("workshop-1"))
+
+    await reasignarVisita("visit-2", "workshop-2", "2026-10-23", "Cambio de día")
+
+    expect(edgeApi.serviceWorkflow.reassignVisit).toHaveBeenCalledWith("visit-2", {
+      tallerMovilId: "workshop-2",
+      reason: "Cambio de día",
+      startsAt: "2026-10-23T11:00:00.000Z",
+      endsAt: "2026-10-23T12:00:00.000Z",
+    })
+  })
+
+  it("traslada una duración estimada de varias horas", async () => {
+    edgeApi.operations.get.mockResolvedValue({
+      operation: {
+        id: "visit-3",
+        starts_at: "2026-10-20T11:00:00.000Z",
+        ends_at: "2026-10-20T15:00:00.000Z",
+        taller_movil: { id: "workshop-1" },
+      },
+    })
+
+    await reasignarVisita("visit-3", "workshop-1", "2026-10-24", "Cambio de día")
+
+    expect(edgeApi.serviceWorkflow.reassignVisit).toHaveBeenCalledWith("visit-3", {
+      tallerMovilId: "workshop-1",
+      reason: "Cambio de día",
+      startsAt: "2026-10-24T11:00:00.000Z",
+      endsAt: "2026-10-24T15:00:00.000Z",
+    })
+  })
+})
+
 describe("INVALIDAR_TAREAS", () => {
   it("incluye las consultas de service-workflow (solicitudes y visitas)", () => {
     expect(INVALIDAR_TAREAS).toContainEqual(["edge", "service-workflow"])
@@ -263,5 +310,45 @@ describe("consultaEmpresa", () => {
   it("no consulta sin id: evita el GET clients/ (403) mientras carga la cuenta del Cliente", () => {
     expect(consultaEmpresa("").enabled).toBe(false)
     expect(consultaEmpresa("client-1").enabled).toBe(true)
+  })
+})
+
+describe("cerrarVisitaVencida (E4)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    edgeApi.serviceWorkflow.closeVisitAsAdministrator.mockResolvedValue({
+      visit: { id: "visit-4", estado: "completada" },
+      work_orders: [],
+      follow_up_visit_id: "visit-5",
+      incomplete_certificate_ids: ["cert-1"],
+    })
+  })
+
+  it("manda el motivo y la visita de seguimiento con su inicio y fin estimado en hora argentina", async () => {
+    await expect(
+      cerrarVisitaVencida("visit-4", {
+        motivo: "El técnico no volvió",
+        tallerId: "workshop-1",
+        fecha: "2026-11-20",
+        hora: "09:00",
+        horaFin: "11:00",
+      }),
+    ).resolves.toMatchObject({ follow_up_visit_id: "visit-5", incomplete_certificate_ids: ["cert-1"] })
+    expect(edgeApi.serviceWorkflow.closeVisitAsAdministrator).toHaveBeenCalledWith("visit-4", {
+      reason: "El técnico no volvió",
+      tallerMovilId: "workshop-1",
+      startsAt: "2026-11-20T12:00:00.000Z",
+      endsAt: "2026-11-20T14:00:00.000Z",
+    })
+  })
+
+  it("sin fecha no manda visita de seguimiento", async () => {
+    await cerrarVisitaVencida("visit-4", { motivo: "Sin pendientes", tallerId: "workshop-1" })
+    expect(edgeApi.serviceWorkflow.closeVisitAsAdministrator).toHaveBeenCalledWith("visit-4", {
+      reason: "Sin pendientes",
+      tallerMovilId: null,
+      startsAt: null,
+      endsAt: null,
+    })
   })
 })

@@ -1,6 +1,6 @@
 begin;
 
-select plan(15);
+select plan(17);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000001901', 'follow-up-client@example.test'),
@@ -85,6 +85,8 @@ select set_config('app.follow_up_visit_id', (public.api_create_followup_visit(
 
 select is((select solicitud_id from public.visitas_servicio where id = current_setting('app.follow_up_visit_id')::uuid), current_setting('app.follow_up_request_id')::uuid, 'the follow-up visit retains the original Solicitud');
 select is((select count(*) from public.ordenes_trabajo where visita_id = current_setting('app.follow_up_visit_id')::uuid), 1::bigint, 'the new visit contains only the selected valve');
+select is((select ends_at from public.visitas_servicio where id = current_setting('app.follow_up_visit_id')::uuid), '2099-03-11 10:00:00+00'::timestamptz, 'the follow-up visit keeps its estimated end (decision e)');
+select is((select ventana from public.visita_equipos where visita_id = current_setting('app.follow_up_visit_id')::uuid), tstzrange('2099-03-11 09:00:00+00'::timestamptz, '2099-03-11 10:00:00+00'::timestamptz, '[)'), 'the follow-up visit reserves its Equipo between start and estimated end');
 select is((select count(*) from public.ordenes_trabajo where visita_id = current_setting('app.follow_up_source_visit_id')::uuid), 2::bigint, 'the earlier work orders remain with the earlier visit');
 select is((select estado from public.ordenes_trabajo where visita_id = current_setting('app.follow_up_source_visit_id')::uuid and valvula_id = '00000000-0000-0000-0000-000000001908'), 'no_evaluada', 'the earlier outcome is preserved');
 select throws_ok(

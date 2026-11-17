@@ -7,8 +7,9 @@ export type TecnicoAsignado = {
 }
 
 /**
- * Nombre completo del técnico. La firma del Técnico se valida contra «nombre apellido» de la
- * nómina (`api_technician_name_is_member`), así que el selector debe ofrecer el nombre completo.
+ * Nombre completo del técnico («nombre apellido»), que es lo que se ofrece en el selector y se
+ * imprime en el certificado. El backend ya no lo valida contra la nómina: puede firmar cualquier
+ * técnico, incluido un reemplazante.
  */
 export function nombreDeTecnico(persona: TecnicoAsignado): string {
   const completo = persona.name ?? [persona.nombre, persona.apellido].filter(Boolean).join(" ")

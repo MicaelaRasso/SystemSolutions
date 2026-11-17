@@ -62,13 +62,23 @@ const client = (payload: unknown) => {
 }
 
 describe("canonical operations contracts", () => {
-  it.each(["solicitada", "programada", "aceptada", "en_curso", "completada", "cancelada"])(
-    "accepts canonical status %s",
-    (status) => {
-      expect(operationStatusSchema.parse(status)).toBe(status)
-      expect(operationSummarySchema.safeParse({ ...operation, estado: status }).success).toBe(true)
-    },
-  )
+  it.each([
+    "solicitada",
+    "programada",
+    "aceptada",
+    "en_curso",
+    "requiere_finalizacion",
+    "completada",
+    "cancelada",
+  ])("accepts canonical status %s", (status) => {
+    expect(operationStatusSchema.parse(status)).toBe(status)
+    expect(operationSummarySchema.safeParse({ ...operation, estado: status }).success).toBe(true)
+  })
+
+  it("requires the estimated end of the visit", () => {
+    expect(operationSummarySchema.safeParse({ ...operation, ends_at: null }).success).toBe(false)
+    expect(operationSummarySchema.safeParse(operation).success).toBe(true)
+  })
 
   it("validates the exact list and detail envelopes", () => {
     expect(operationListDtoSchema.parse(list)).toEqual(list)

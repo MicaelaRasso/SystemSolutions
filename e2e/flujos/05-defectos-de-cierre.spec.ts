@@ -5,6 +5,7 @@ import { activarPlantillaDeMigracion, activarPlantillaSinD1, SEGUNDO_TECNICO, TE
 import {
   abrirVisita,
   completarCaptura,
+  completarVisita,
   dibujarFirma,
   esperarAgendaEstable,
   estadoVisita,
@@ -46,7 +47,7 @@ test.describe("Defectos conocidos del cierre de visita", () => {
       await esperarAgendaEstable(page)
       await omitirFirmaCliente(tarjeta)
       const seccion = await firmarTecnico(page, tarjeta)
-      await seccion.getByRole("button", { name: "Completar visita" }).click()
+      await completarVisita(page, seccion)
       await expect(estadoVisita(page).first()).toContainText("Visita completada", { timeout: 15_000 })
     } finally {
       await activarPlantillaSinD1(nombreUnico("post-D1"))
@@ -64,7 +65,7 @@ test.describe("Defectos conocidos del cierre de visita", () => {
 
     // Primer intento: la válvula evaluada todavía no tiene certificado completo y el cierre falla.
     const seccion = await firmarTecnico(page, tarjeta)
-    await seccion.getByRole("button", { name: "Completar visita" }).click()
+    await completarVisita(page, seccion)
     // El mensaje se muestra traducido (S5): se acepta el original y la traducción.
     await expect(estadoVisita(page).first()).toContainText(/certificate|certificado/, { timeout: 20_000 })
 
@@ -72,8 +73,20 @@ test.describe("Defectos conocidos del cierre de visita", () => {
     await completarCaptura(page, orden, { fotos: false })
     await guardarBorrador(page, orden)
     await esperarAgendaEstable(page)
-    await seccionFirmaTecnico(tarjeta).getByRole("button", { name: "Completar visita" }).click()
+    await completarVisita(page, seccionFirmaTecnico(tarjeta))
     await expect(estadoVisita(page).first()).toContainText("Visita completada", { timeout: 15_000 })
+  })
+
+  test("B1: cancelar la confirmación no completa la visita", async ({ abrir }) => {
+    const { page, tarjeta } = await visitaLista(abrir)
+    const seccion = await firmarTecnico(page, tarjeta)
+    await seccion.getByRole("button", { name: "Completar visita" }).click()
+    const dialogo = page.getByRole("alertdialog")
+    await expect(dialogo).toBeVisible()
+    await dialogo.getByRole("button", { name: "Cancelar" }).click()
+    await expect(dialogo).toBeHidden()
+    await expect(estadoVisita(page).first()).not.toContainText("Visita completada")
+    await expect(seccion.getByRole("button", { name: "Completar visita" })).toBeEnabled()
   })
 
   test("RF-23 RN-15 CA-13: el selector de técnico ofrece nombre y apellido de la nómina [D3]", async ({ abrir }) => {
@@ -91,16 +104,15 @@ test.describe("Defectos conocidos del cierre de visita", () => {
     await selector.selectOption(nombre)
     await esperarAgendaEstable(page)
     await dibujarFirma(page, seccion)
-    await seccion.getByRole("button", { name: "Completar visita" }).click()
+    await completarVisita(page, seccion)
     await expect(estadoVisita(page).first()).toContainText("Visita completada", { timeout: 15_000 })
   })
 
-  test("RF-25 RN-15: un técnico reemplazante fuera de la nómina puede firmar el cierre [D4]", async ({ abrir }) => {
+  test("RF-25 RN-15: un técnico reemplazante fuera de la nómina puede firmar el cierre [F1]", async ({ abrir }) => {
     const { page, tarjeta } = await visitaLista(abrir)
     const seccion = await firmarTecnico(page, tarjeta, "Mario Reemplazo")
-    await seccion.getByRole("button", { name: "Completar visita" }).click()
-    // D4: la pantalla ofrece «Otro técnico / Reemplazo» y el backend responde 403.
-    test.fail(true, "D4: un reemplazo fuera de nómina da 403")
+    await completarVisita(page, seccion)
+    // F1: cualquier técnico puede firmar, incluido un reemplazante fuera de la nómina.
     await expect(estadoVisita(page).first()).toContainText("Visita completada", { timeout: 15_000 })
   })
 
@@ -140,7 +152,7 @@ test.describe("Defectos conocidos del cierre de visita", () => {
     await esperarAgendaEstable(page)
     await omitirFirmaCliente(tarjeta)
     const seccion = await firmarTecnico(page, tarjeta)
-    await seccion.getByRole("button", { name: "Completar visita" }).click()
+    await completarVisita(page, seccion)
     const estado = estadoVisita(page).first()
     await expect(estado).not.toHaveText("", { timeout: 20_000 })
     await expect(estado).toContainText(/certificate|certificado/, { timeout: 20_000 })

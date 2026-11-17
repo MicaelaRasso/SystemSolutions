@@ -4,6 +4,8 @@
 
 import { z } from "zod"
 
+import { finEstimadoValido, MENSAJE_FIN_ESTIMADO } from "./rules"
+
 const requerido = (campo: string) => z.string().trim().min(1, `${campo} es obligatorio`)
 const opcional = z.string().trim()
 
@@ -133,15 +135,59 @@ export const tareaSchema = z
       z.literal(""),
       z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Formato HH:MM"),
     ]),
+    /** Fin estimado de la visita (HH:MM). Vacío = inicio + 1 h. No cierra la visita (decisión (e)). */
+    horaFin: z
+      .union([z.literal(""), z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Formato HH:MM")])
+      .optional(),
     tipo: requerido("El tipo de tarea"),
     detalle: requerido("El detalle del trabajo"),
     pdRto: opcional,
     ordenTrabajo: opcional,
     condiciones: z.array(z.string()),
-    estado: z.enum(["pendiente", "asignada", "programada", "aceptada", "en_curso", "completada", "cancelada"]),
+    estado: z.enum([
+      "pendiente",
+      "asignada",
+      "programada",
+      "aceptada",
+      "en_curso",
+      "requiere_finalizacion",
+      "completada",
+      "cancelada",
+    ]),
   })
   .refine((t) => t.fechaEjecucion >= t.fechaSolicitud, {
     path: ["fechaEjecucion"],
     message: "No puede ser anterior a la fecha de solicitud",
   })
+  .refine((t) => !t.horaFin || finEstimadoValido(t.horario || "08:00", t.horaFin), {
+    path: ["horaFin"],
+    message: MENSAJE_FIN_ESTIMADO,
+  })
 export type TareaInput = z.infer<typeof tareaSchema>
+
+/**
+ * Cierre administrativo de una visita en «Requiere finalización» (E4). La visita de seguimiento
+ * para las válvulas sin evaluar es opcional en el formulario: si se completa, van taller, fecha,
+ * hora de inicio y hora de fin estimada.
+ */
+export const cierreVisitaVencidaSchema = z
+  .object({
+    motivo: requerido("El motivo").max(1000, "Hasta 1000 caracteres"),
+    tallerId: z.string(),
+    fecha: z.union([z.literal(""), fechaIso("La fecha")]),
+    hora: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Formato HH:MM"),
+    horaFin: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Formato HH:MM"),
+  })
+  .refine((c) => finEstimadoValido(c.hora, c.horaFin), {
+    path: ["horaFin"],
+    message: MENSAJE_FIN_ESTIMADO,
+  })
+  .refine((c) => !c.fecha || c.tallerId, {
+    path: ["tallerId"],
+    message: "Elegí el taller de la visita de seguimiento",
+  })
+  .refine((c) => !c.tallerId || c.fecha, {
+    path: ["fecha"],
+    message: "Elegí la fecha de la visita de seguimiento",
+  })
+export type CierreVisitaVencidaInput = z.infer<typeof cierreVisitaVencidaSchema>

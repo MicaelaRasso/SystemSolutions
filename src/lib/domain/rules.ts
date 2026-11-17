@@ -311,6 +311,7 @@ export const ESTADO_TAREA_LABEL: Record<EstadoTarea, string> = {
   programada: "Programada",
   aceptada: "Aceptada",
   en_curso: "En curso",
+  requiere_finalizacion: "Requiere finalización",
   completada: "Completada",
   cancelada: "Cancelada",
 }
@@ -323,4 +324,56 @@ export function normalizarEstadoTarea(estado: EstadoTarea, tallerId?: ID): Estad
   if (!tallerId && (estado === "asignada" || estado === "en_curso")) return "pendiente"
   if (tallerId && estado === "pendiente") return "asignada"
   return estado
+}
+
+// ---------------------------------------------------------------------------
+// Horario de la visita (decisión (e), corregida el 2026-11-17)
+// ---------------------------------------------------------------------------
+
+/** Duración que se propone para una visita nueva: el fin estimado arranca en inicio + 1 h. */
+export const DURACION_VISITA_PROPUESTA_MIN = 60
+
+const HORA_HH_MM = /^([01]\d|2[0-3]):([0-5]\d)$/
+
+function minutosDelDia(hora: string): number | undefined {
+  const partes = HORA_HH_MM.exec(hora)
+  return partes ? Number(partes[1]) * 60 + Number(partes[2]) : undefined
+}
+
+function horaDesdeMinutos(minutos: number): string {
+  return `${String(Math.floor(minutos / 60)).padStart(2, "0")}:${String(minutos % 60).padStart(2, "0")}`
+}
+
+/**
+ * Fin estimado que se propone para una visita que empieza a `horaInicio` (HH:MM): una hora
+ * después, sin pasar de las 23:59 porque la visita termina el mismo día. Vacío si la hora no es
+ * válida.
+ */
+export function horaFinPropuesta(horaInicio: string): string {
+  const inicio = minutosDelDia(horaInicio)
+  if (inicio === undefined) return ""
+  return horaDesdeMinutos(Math.min(inicio + DURACION_VISITA_PROPUESTA_MIN, 23 * 60 + 59))
+}
+
+/** El fin estimado (HH:MM) es posterior al inicio, el mismo día. */
+export function finEstimadoValido(horaInicio: string, horaFin: string): boolean {
+  const inicio = minutosDelDia(horaInicio)
+  const fin = minutosDelDia(horaFin)
+  return inicio !== undefined && fin !== undefined && fin > inicio
+}
+
+export const MENSAJE_FIN_ESTIMADO = "La hora de fin estimada debe ser posterior a la de inicio"
+
+/**
+ * Inicio y fin estimado de una visita en hora argentina (-03:00), en ISO. El fin estimado no
+ * cierra la visita: solo define la reserva del equipo (ADR 0008). Sin `horaFin`, inicio + 1 h.
+ */
+export function ventanaVisita(fecha: string, horaInicio: string, horaFin?: string) {
+  const fin = horaFin || horaFinPropuesta(horaInicio)
+  const startsAt = new Date(`${fecha}T${horaInicio}:00-03:00`)
+  const endsAt = new Date(`${fecha}T${fin}:00-03:00`)
+  if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime()))
+    throw new Error("La fecha u horario de la visita no es válido")
+  if (!finEstimadoValido(horaInicio, fin)) throw new Error(MENSAJE_FIN_ESTIMADO)
+  return { startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString() }
 }

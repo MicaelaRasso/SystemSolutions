@@ -278,6 +278,9 @@ export const operationStatusSchema = z.enum([
   "programada",
   "aceptada",
   "en_curso",
+  // Decisión (e): una visita iniciada que no se completó antes de las 23:59 (AR) del día en que
+  // empezó pasa a este estado por el cierre automático; quedan firmas o borradores por resolver.
+  "requiere_finalizacion",
   "completada",
   "cancelada",
 ])
@@ -332,7 +335,10 @@ export type CreateAdministrativeServiceRequestInput = z.infer<
   typeof createAdministrativeServiceRequestInputSchema
 >
 
-/** Alta administrativa atómica: solicitud, metadata y (con taller) su visita en una transacción. */
+/**
+ * Alta administrativa atómica: solicitud, metadata y (con taller) su visita en una transacción.
+ * La visita lleva inicio y fin estimado (decisión (e)): reserva el equipo en ese horario.
+ */
 export const createAdministrativeRequestWithVisitInputSchema =
   createAdministrativeServiceRequestInputSchema.extend({
     metadata: z.record(z.string(), z.unknown()),
@@ -390,6 +396,7 @@ export const pendingClientSignatureVisitsDtoSchema = z.object({
 export type PendingClientSignatureVisitsDto = z.infer<typeof pendingClientSignatureVisitsDtoSchema>
 
 export const visitTransitionDtoSchema = z.object({ visit: visitRowSchema }).or(visitDtoSchema)
+/** Programación de una visita: inicio y fin estimado (el fin no cierra la visita, decisión (e)). */
 export const scheduleVisitInputSchema = z.object({
   tallerMovilId: edgeIdSchema,
   startsAt: edgeTimestampSchema,
@@ -421,6 +428,23 @@ export const visitRescheduleInputSchema = z.object({
   endsAt: edgeTimestampSchema,
 })
 export type VisitRescheduleInput = z.infer<typeof visitRescheduleInputSchema>
+/**
+ * Cierre administrativo de una visita en «Requiere finalización» (E4): motivo obligatorio; taller,
+ * inicio y fin estimado de la visita de seguimiento cuando quedan válvulas sin evaluar.
+ */
+export const closeVisitAsAdministratorInputSchema = visitAdministrationInputSchema.extend({
+  reason: z.string().trim().min(1).max(1000),
+  tallerMovilId: edgeIdSchema.nullable().optional(),
+  startsAt: edgeTimestampSchema.nullable().optional(),
+  endsAt: edgeTimestampSchema.nullable().optional(),
+})
+export type CloseVisitAsAdministratorInput = z.infer<typeof closeVisitAsAdministratorInputSchema>
+export const closeVisitAsAdministratorDtoSchema = visitDtoSchema.extend({
+  follow_up_visit_id: edgeIdSchema.nullable(),
+  incomplete_certificate_ids: z.array(edgeIdSchema),
+  already_closed: z.boolean().optional(),
+})
+export type CloseVisitAsAdministratorDto = z.infer<typeof closeVisitAsAdministratorDtoSchema>
 export type VisitAdministrationInput = z.infer<typeof visitAdministrationInputSchema>
 export type VisitAssignmentInput = z.infer<typeof visitAssignmentInputSchema>
 
@@ -430,6 +454,37 @@ export const updateWorkOrderInputSchema = z.object({
 })
 export type UpdateWorkOrderInput = z.infer<typeof updateWorkOrderInputSchema>
 export const workOrderDtoSchema = z.object({ work_order: workOrderDetailDtoSchema })
+
+/** Datos de una válvula dada de alta en campo: los mismos que carga el Administrador (A2). */
+export const fieldValveDataSchema = z.object({
+  nombre: z.string().trim().min(1),
+  precinto: z.string().nullable().optional(),
+  servicio: z.string().nullable().optional(),
+  marca: z.string().nullable().optional(),
+  numero_serie: z.string().nullable().optional(),
+  modelo: z.string().nullable().optional(),
+  tipo: z.string().nullable().optional(),
+  pv: z.string().nullable().optional(),
+  diametro_entrada: z.string().nullable().optional(),
+  diametro_salida: z.string().nullable().optional(),
+  rosca: z.string().nullable().optional(),
+  presion_operacion: z.number().nullable().optional(),
+  temperatura_operacion: z.number().nullable().optional(),
+  notas: z.string().nullable().optional(),
+})
+export type FieldValveData = z.infer<typeof fieldValveDataSchema>
+
+export const createFieldValveInputSchema = z.object({
+  valvulaId: edgeIdSchema,
+  equipoId: edgeIdSchema,
+  workOrderId: edgeIdSchema,
+  valvula: fieldValveDataSchema,
+})
+export type CreateFieldValveInput = z.infer<typeof createFieldValveInputSchema>
+
+export const fieldValveDtoSchema = workOrderDtoSchema.extend({
+  valvula: edgeRecordSchema.optional(),
+})
 
 export const certificateDraftDtoSchema = z.object({
   certificate: certificateRowSchema,
@@ -514,6 +569,8 @@ export interface VisitSignatureUploadInput {
 export const visitSignatureDtoSchema = z.object({
   signature_id: edgeIdSchema,
   finalized_certificates: z.array(certificateRowSchema),
+  /** E4: la firma completó una visita en «Requiere finalización» que ya estaba lista. */
+  visit_completed: z.boolean().optional(),
 })
 
 export const visitParteDiarioImageDtoSchema = z
@@ -558,6 +615,8 @@ export const offlineOperationInputSchema = z.object({
     "complete_visit",
     "set_part_diario",
     "attach_part_diario_image",
+    "add_work_order",
+    "create_valve",
   ]),
   payload: z.record(z.string(), z.unknown()),
   idempotencyKey: edgeIdSchema.optional(),
@@ -625,6 +684,8 @@ export const offlineWorkingSetDtoSchema = z.object({
         work_orders: z.array(workOrderRowSchema),
         context: yacimientoTreeDtoSchema,
         certificate_catalogs: certificateCaptureCatalogsSchema.optional(),
+        // Yacimientos del mismo Cliente con acceso del taller: buscador y alta sin conexión (A3).
+        client_yacimientos: z.array(yacimientoTreeDtoSchema).optional(),
       })
       .passthrough(),
   ),

@@ -13,6 +13,8 @@ import {
   updateServiceRequestInputSchema,
   updateWorkOrderInputSchema,
   visitAdministrationInputSchema,
+  closeVisitAsAdministratorInputSchema,
+  closeVisitAsAdministratorDtoSchema,
   visitAssignmentInputSchema,
   visitRescheduleInputSchema,
   visitDtoSchema,
@@ -21,6 +23,9 @@ import {
   visitTransitionDtoSchema,
   workOrderDtoSchema,
   certificateDraftDtoSchema,
+  createFieldValveInputSchema,
+  fieldValveDtoSchema,
+  type CreateFieldValveInput,
   type CreateServiceRequestInput,
   type CreateAdministrativeServiceRequestInput,
   type CreateAdministrativeRequestWithVisitInput,
@@ -29,6 +34,7 @@ import {
   type UpdateServiceRequestInput,
   type UpdateWorkOrderInput,
   type VisitAssignmentInput,
+  type CloseVisitAsAdministratorInput,
   type VisitRescheduleInput,
 } from "./contracts"
 
@@ -276,6 +282,24 @@ export function createServiceWorkflowApi(edge: EdgeAccessClient) {
       })
     },
 
+    /** Cierra con motivo una visita en «Requiere finalización» (E4). */
+    async closeVisitAsAdministrator(visitId: string, input: CloseVisitAsAdministratorInput) {
+      const data = closeVisitAsAdministratorInputSchema.parse(input)
+      return edge.request(
+        `visits/${encodeURIComponent(visitId)}/close-administrator`,
+        closeVisitAsAdministratorDtoSchema,
+        {
+          method: "POST",
+          body: json({
+            reason: data.reason,
+            taller_movil_id: data.tallerMovilId ?? null,
+            starts_at: data.startsAt ?? null,
+            ends_at: data.endsAt ?? null,
+          }),
+        },
+      )
+    },
+
     async reopenVisitAsAdministrator(visitId: string) {
       return edge.request(`visits/${visitId}/reopen-administrator`, visitTransitionDtoSchema, {
         method: "POST",
@@ -283,10 +307,28 @@ export function createServiceWorkflowApi(edge: EdgeAccessClient) {
       })
     },
 
-    addWorkOrder(visitId: string, valvulaId: string) {
+    /** Agrega una válvula a la visita; `workOrderId` es el id generado en el dispositivo (A1). */
+    addWorkOrder(visitId: string, valvulaId: string, workOrderId?: string) {
       return edge.request(`visits/${visitId}/work-orders`, workOrderDtoSchema, {
         method: "POST",
-        body: json({ valvula_id: valvulaId }),
+        body: json({
+          valvula_id: valvulaId,
+          ...(workOrderId ? { work_order_id: workOrderId } : {}),
+        }),
+      })
+    },
+
+    /** Alta en campo de una válvula nueva con su revisión y su orden de trabajo (A2). */
+    async createFieldValve(visitId: string, input: CreateFieldValveInput) {
+      const data = createFieldValveInputSchema.parse(input)
+      return edge.request(`visits/${visitId}/valves`, fieldValveDtoSchema, {
+        method: "POST",
+        body: json({
+          valvula_id: data.valvulaId,
+          equipo_id: data.equipoId,
+          work_order_id: data.workOrderId,
+          valvula: data.valvula,
+        }),
       })
     },
 

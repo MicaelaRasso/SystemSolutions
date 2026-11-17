@@ -19,6 +19,7 @@ import {
   CertificateCaptureForm,
   type EstadoFotoEvidencia,
 } from "@/components/certificados/certificate-capture-form"
+import { ConfirmDialog } from "@/components/common/confirm-dialog"
 import { SelectNativo } from "@/components/common/select-nativo"
 import { ErrorState } from "@/components/common/states"
 import { Badge } from "@/components/ui/badge"
@@ -49,7 +50,9 @@ import {
   IndexedDbOfflineStore,
   OfflineSyncCoordinator,
   certificateCatalogsForVisit,
+  dependenciasDeOrden,
   esFirmaYaRegistrada,
+  ordenesConAltasLocales,
   pinVisitCertificateCatalogs,
   queueOfflineSignatureCapture,
   referenciasDeEvidencia,
@@ -69,8 +72,9 @@ import {
   resumenGuardado,
 } from "./resumenes-visitas"
 import { tituloDeVisita, type ResumenVisita, type TituloVisita } from "./visita-titulo"
-import { visitaIniciada } from "./estado-visita"
+import { otraVisitaEnCurso, visitaIniciada, visitaRequiereFinalizacion } from "./estado-visita"
 import { nombreDeTecnico, type TecnicoAsignado } from "./tecnicos"
+import { AgregarValvula } from "./agregar-valvula"
 import { fmtFechaHoraArgentina } from "@/lib/format"
 
 type StoredVisitContext = VisitDto & {
@@ -216,6 +220,11 @@ export function workOrderName(
 type Aviso = { texto: string; lugar: "general" | "cliente" | "cierre"; error?: boolean }
 
 /** Texto en español de un error capturado, con el motivo del servidor traducido. */
+/** Aviso cuando el taller ya tiene otra visita en curso (una visita a la vez). */
+function mensajeOtraVisitaEnCurso(titulo: string) {
+  return `Hay otra visita en curso (${titulo}). Completala antes de iniciar esta: el taller atiende una visita a la vez.`
+}
+
 function textoDeError(caught: unknown, porDefecto: string) {
   return caught instanceof Error && caught.message
     ? traducirMensajeError(caught.message)
@@ -236,6 +245,29 @@ async function pendingStartOperationIds(store: IndexedDbOfflineStore, visitId: s
   return (await store.listOperations(visitId))
     .filter((operation) => operation.kind === "start_visit" && operation.estado !== "sincronizada")
     .map((operation) => operation.operationId)
+}
+
+/**
+ * Dependencias de lo que se encola sobre una orden: el inicio de la visita y, si la orden se agregó
+ * en el dispositivo, su alta (A1).
+ */
+async function pendingOrderOperationIds(
+  store: IndexedDbOfflineStore,
+  visitId: string,
+  workOrderId: string,
+) {
+  const operations = await store.listOperations(visitId)
+  return [
+    ...operations
+      .filter((operation) => operation.kind === "start_visit" && operation.estado !== "sincronizada")
+      .map((operation) => operation.operationId),
+    ...dependenciasDeOrden(operations, workOrderId),
+  ]
+}
+
+/** Órdenes de la visita más las agregadas en el dispositivo que el servidor todavía no devolvió. */
+function visitWorkOrders(visit: VisitaOffline, operations: OperacionOffline[]) {
+  return ordenesConAltasLocales(contextOf(visit).work_orders ?? [], operations) as CachedWorkOrder[]
 }
 
 async function pendingCompletionOperationIds(store: IndexedDbOfflineStore, visitId: string) {
@@ -486,17 +518,23 @@ export function VisitasPanel() {
           </p>
         ) : null}
         <div className="grid gap-4 xl:grid-cols-2">
-          {visits.map((visit) => (
+          {visits.map((visit) => {
+            // Un taller atiende una visita a la vez: no se ofrece iniciar otra mientras una sigue
+            // en curso (el servidor también lo rechaza).
+            const enCurso = otraVisitaEnCurso(visits, visit.id)
+            return (
             <VisitCard
               key={visit.id}
               visit={visit}
               resumen={resumenes.get(visit.id)}
+              otraEnCurso={enCurso ? visitLabel(enCurso, resumenes.get(enCurso.id)).titulo : undefined}
               operations={operations[visit.id] ?? []}
               open={selectedId === visit.id}
               onOpen={() => setSelectedId(selectedId === visit.id ? undefined : visit.id)}
               onChanged={refresh}
             />
-          ))}
+            )
+          })}
         </div>
       </section>
       {selected ? <div className="sr-only">Visita seleccionada: {visitLabel(selected, resumenes.get(selected.id)).titulo}</div> : null}
@@ -507,6 +545,7 @@ export function VisitasPanel() {
 function VisitCard({
   visit,
   resumen,
+  otraEnCurso,
   operations,
   open,
   onOpen,
@@ -514,19 +553,29 @@ function VisitCard({
 }: {
   visit: VisitaOffline
   resumen?: ResumenVisita
+  /** Título de otra visita del taller que sigue en curso: bloquea el inicio de esta. */
+  otraEnCurso?: string
   operations: OperacionOffline[]
   open: boolean
   onOpen: () => void
   onChanged: () => Promise<void>
 }) {
   const store = useMemo(() => new IndexedDbOfflineStore(), [])
-  const context = contextOf(visit)
   const rotulo = visitLabel(visit, resumen)
   const [attachments, setAttachments] = useState<Awaited<ReturnType<typeof edgeApi.serviceWorkflow.visitAttachments>>>([])
   const [attachmentsError, setAttachmentsError] = useState<string | null>(null)
   const [loadingAttachments, setLoadingAttachments] = useState(false)
   const pending = operations.filter((operation) => operation.estado !== "sincronizada")
   const conflicts = operations.filter((operation) => operation.estado === "conflicto")
+  // Motivos de los conflictos, traducidos y sin repetir (p. ej. la visita venció, E3).
+  const conflictReasons = [
+    ...new Set(
+      conflicts.map((operation) =>
+        traducirMensajeError(operation.lastError ?? "Conflicto de sincronización"),
+      ),
+    ),
+  ]
+  const vencida = visitaRequiereFinalizacion(visit, contextOf(visit).visit?.estado)
   const failed = operations.filter((operation) => operation.estado === "fallida")
   // Motivos de los cambios fallidos, traducidos y sin repetir.
   const failedReasons = [
@@ -601,37 +650,40 @@ function VisitCard({
               {rotulo.referencia ? ` · ${rotulo.referencia}` : null}
             </CardDescription>
           </div>
-          <Badge
-            variant={
-              conflicts.length
-                ? "destructive"
-                : visit.estadoLocal === "completada_local"
-                  ? "secondary"
-                  : "outline"
-            }
-          >
-            {conflicts.length
-              ? "Conflicto"
-              : visit.estadoLocal === "completada_local"
-                ? "Completada localmente"
-                : pending.length
-                  ? "Pendiente de sincronización"
-                  : "Disponible"}
-          </Badge>
+          <div className="flex flex-wrap gap-1">
+            {vencida ? <Badge variant="secondary">Requiere finalización</Badge> : null}
+            <Badge
+              variant={
+                conflicts.length
+                  ? "destructive"
+                  : visit.estadoLocal === "completada_local"
+                    ? "secondary"
+                    : "outline"
+              }
+            >
+              {conflicts.length
+                ? "Conflicto"
+                : visit.estadoLocal === "completada_local" && !vencida
+                  ? "Completada localmente"
+                  : pending.length
+                    ? "Pendiente de sincronización"
+                    : "Disponible"}
+            </Badge>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <ContactoVisita rotulo={rotulo} />
         <div className="flex flex-wrap gap-2 text-sm">
-          <span>{context.work_orders?.length ?? 0} Órdenes de trabajo</span>
+          <span>{visitWorkOrders(visit, operations).length} Órdenes de trabajo</span>
           {pending.length ? <span>· {pending.length} cambio(s) local(es)</span> : null}
         </div>
         {conflicts.length ? (
           <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
             Conflicto de sincronización: se conservan los datos locales para resolución
             administrativa.
-            {conflicts.map((operation) => (
-              <p key={operation.operationId}>{operation.lastError}</p>
+            {conflictReasons.map((reason) => (
+              <p key={reason}>{reason}</p>
             ))}
           </div>
         ) : null}
@@ -685,6 +737,8 @@ function VisitCard({
         {open ? (
           <VisitEditor
             visit={visit}
+            otraEnCurso={otraEnCurso}
+            operations={operations}
             store={store}
             pdSugerido={codigoPdSugerido(resumen ?? resumenGuardado(visit.context))}
             onChanged={onChanged}
@@ -697,11 +751,17 @@ function VisitCard({
 
 function VisitEditor({
   visit,
+  otraEnCurso,
+  operations,
   store,
   pdSugerido = "",
   onChanged,
 }: {
   visit: VisitaOffline
+  /** Título de otra visita del taller que sigue en curso: bloquea el inicio de esta. */
+  otraEnCurso?: string
+  /** Cola local de la visita: incluye las válvulas agregadas sin conexión (alta optimista). */
+  operations: OperacionOffline[]
   store: IndexedDbOfflineStore
   /** PD/RTO de la tarea, normalizado: se ofrece mientras la visita no tenga un PD guardado (D12). */
   pdSugerido?: string
@@ -750,6 +810,16 @@ function VisitEditor({
   const [openingPdImage, setOpeningPdImage] = useState<string | null>(null)
   const pdObjectUrls = useRef<string[]>([])
   const context = contextOf(visit)
+  const workOrders = useMemo(() => visitWorkOrders(visit, operations), [visit, operations])
+  const valvulasEnLaVisita = useMemo(
+    () =>
+      new Set(
+        workOrders
+          .map((order) => order.valvula_id)
+          .filter((id): id is string => typeof id === "string"),
+      ),
+    [workOrders],
+  )
   const visitRow = context.visit as
     | {
         signatures?: { parte?: string; nombre_firmante?: string }[]
@@ -769,9 +839,14 @@ function VisitEditor({
     visit,
     context.certificate_catalogs ?? catalogsQuery.data,
   )
-  const closed = visit.estadoLocal === "completada_local"
+  // E4: la visita venció en el servidor. El trabajo de campo queda bloqueado y solo se cargan en
+  // línea las firmas que falten; lo demás lo resuelve el Administrador.
+  const vencida = visitaRequiereFinalizacion(visit, context.visit?.estado)
+  const closed = visit.estadoLocal === "completada_local" || vencida
   const clientSignatureStepDone = clientSignatureSaved || clientSignatureSkipped
   const started = visitaIniciada(visit, context.visit?.estado)
+  // Los pasos de firma siguen habilitados en una visita vencida (aunque se haya cerrado localmente).
+  const signingLocked = vencida ? completing : closed
 
   // La firma del Cliente ya registrada se refleja durante el render; el efecto solo consulta la
   // cola local cuando todavía no existe.
@@ -1054,6 +1129,7 @@ function VisitEditor({
 
   const start = async () => {
     try {
+      if (otraEnCurso) throw new Error(mensajeOtraVisitaEnCurso(otraEnCurso))
       const localVisit = (await store.getVisit(visit.id)) ?? visit
       const downloadedCatalogs =
         (contextOf(localVisit) as StoredVisitContext).certificate_catalogs ??
@@ -1095,7 +1171,7 @@ function VisitEditor({
       }
       await onChanged()
     } catch (caught) {
-      setMessage(caught instanceof Error ? caught.message : "No se pudo iniciar la visita")
+      setMessage(textoDeError(caught, "No se pudo iniciar la visita"))
     }
   }
 
@@ -1110,6 +1186,10 @@ function VisitEditor({
   }
 
   const captureClientSignature = async () => {
+    if (vencida && !navigator.onLine) {
+      avisarCliente("Conectate para firmar: en una visita vencida las firmas se registran en línea.", true)
+      return
+    }
     const signerName = clientSigner.trim()
     if (!/^\S+\s+\S+/.test(signerName) || !clientSignature) {
       avisarCliente("Ingresá el nombre y apellido del representante y registrá su firma.", true)
@@ -1180,7 +1260,7 @@ function VisitEditor({
     try {
       if (!navigator.onLine) {
         const blocker = visitCompletionBlocker(
-          context.work_orders ?? [],
+          visitWorkOrders(visit, await store.listOperations(visit.id)),
           await store.listOperations(visit.id),
         )
         if (blocker) {
@@ -1257,6 +1337,53 @@ function VisitEditor({
     }
   }
 
+  /**
+   * E4: firma del Técnico en una visita en «Requiere finalización». Se registra en línea; si la
+   * visita ya cumple las condiciones de cierre, el servidor la completa.
+   */
+  const signExpiredVisit = async () => {
+    if (!navigator.onLine) {
+      avisarCierre("Conectate para firmar: en una visita vencida las firmas se registran en línea.", true)
+      return
+    }
+    if (!clientSignatureStepDone) {
+      avisarCierre("Registrá la firma del Cliente o indicá que no hay un representante presente.", true)
+      return
+    }
+    if (!technician.trim() || !technicianSignature) {
+      avisarCierre("Seleccioná el Técnico y registrá su firma.", true)
+      return
+    }
+    setCompleting(true)
+    avisarCierre("Registrando la firma…")
+    try {
+      const file = dataUrlToFile(technicianSignature, `firma-tecnico-${visit.id}.png`)
+      let completada = false
+      try {
+        const result = await edgeApi.certificates.uploadVisitSignature(visit.id, {
+          party: "tecnico",
+          signerName: technician,
+          file,
+        })
+        completada = result.visit_completed === true
+      } catch (caught) {
+        if (!esFirmaYaRegistrada(caught)) throw caught
+      }
+      setTechnicianSignatureUploaded(true)
+      if (!completada) completada = await visitaYaCompletada(visit.id)
+      avisarCierre(
+        completada
+          ? "Firma registrada: la visita quedó completada."
+          : "Firma registrada. La visita queda para que el Administrador la cierre (faltan resultados o borradores por resolver).",
+      )
+      await onChanged()
+    } catch (caught) {
+      avisarCierre(textoDeError(caught, "No se pudo registrar la firma del Técnico"), true)
+    } finally {
+      setCompleting(false)
+    }
+  }
+
   const completeIncompleteVisit = async () => {
     const reasonText = incompleteReason.trim()
     if (!reasonText) {
@@ -1286,13 +1413,13 @@ function VisitEditor({
           latestOutcomeByOrder.set(op.payload.work_order_id, op.payload.outcome)
         }
       }
-      const remainingOrders = (context.work_orders ?? []).filter((order) => {
+      const remainingOrders = visitWorkOrders(visit, pendingOps).filter((order) => {
         const effectiveOutcome = latestOutcomeByOrder.get(order.id) ?? order.estado ?? "pendiente"
         return effectiveOutcome === "pendiente"
       })
-      const startDeps = await pendingStartOperationIds(store, visit.id)
       for (const order of remainingOrders) {
-        if (navigator.onLine) {
+        // Una orden agregada sin conexión todavía no existe en el servidor: su resultado se encola.
+        if (navigator.onLine && !(order as { alta_local?: boolean }).alta_local) {
           await edgeApi.workOrders.updateWorkOrder(order.id, {
             outcome: "no_evaluada",
             notEvaluatedReason: reasonText,
@@ -1307,7 +1434,7 @@ function VisitEditor({
               outcome: "no_evaluada",
               not_evaluated_reason: reasonText,
             },
-            startDeps,
+            await pendingOrderOperationIds(store, visit.id, order.id),
           )
         }
       }
@@ -1369,10 +1496,15 @@ function VisitEditor({
             type="button"
             className="max-sm:w-full"
             onClick={() => void start()}
-            disabled={!context.certificate_catalogs || closed}
+            disabled={!context.certificate_catalogs || closed || !!otraEnCurso}
           >
             Iniciar Visita de servicio
           </Button>
+          {otraEnCurso ? (
+            <p role="status" className="text-xs text-amber-700 dark:text-amber-300">
+              {mensajeOtraVisitaEnCurso(otraEnCurso)}
+            </p>
+          ) : null}
           {!context.certificate_catalogs ? (
             <p className="text-xs text-muted-foreground">
               Actualizá la agenda mientras estás online para descargar el catálogo de repuestos.
@@ -1513,7 +1645,23 @@ function VisitEditor({
         </Card>
       ) : null}
       <div className="space-y-3">
-        {(context.work_orders ?? []).map((order) => (
+        {started ? (
+          <AgregarValvula
+            visit={visit}
+            store={store}
+            coordinator={coordinator}
+            valvulasEnLaVisita={valvulasEnLaVisita}
+            opciones={{
+              tipo: catalogs?.tipo?.map((option) => option.label),
+              rosca: catalogs?.rosca?.map((option) => option.label),
+              diamEntrada: catalogs?.diam_entrada?.map((option) => option.label),
+              diamSalida: catalogs?.diam_salida?.map((option) => option.label),
+            }}
+            disabled={closed}
+            onChanged={onChanged}
+          />
+        ) : null}
+        {workOrders.map((order) => (
           <WorkOrderEditor
             key={order.id}
             order={order}
@@ -1530,14 +1678,22 @@ function VisitEditor({
       </div>
       {started ? <Card size="sm">
         <CardHeader>
-          <CardTitle className="text-sm">Cierre de la Visita de servicio</CardTitle>
+          <CardTitle className="text-sm">
+            {vencida ? "Finalización de la visita vencida" : "Cierre de la Visita de servicio"}
+          </CardTitle>
           <CardDescription>
-            La firma del Cliente es opcional durante la visita. Si está presente, firma antes que el
-            Técnico; si no, podrá firmar luego desde su cuenta.
+            {vencida
+              ? "La visita venció a las 23:59 del día en que se inició y quedó en «Requiere finalización». Cargá con conexión las firmas que falten: si la visita está completa, se cierra sola; si no, la cierra el Administrador. El trabajo de campo ya no se edita desde acá."
+              : "La firma del Cliente es opcional durante la visita. Si está presente, firma antes que el Técnico; si no, podrá firmar luego desde su cuenta."}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {!clientSignatureStepDone ? (
+          {vencida && hasTechnicianSignature ? (
+            <p className="rounded-md border bg-muted/30 p-3 text-sm">
+              Firma del Técnico registrada. Falta que el Administrador cierre la visita
+              {existingClientSignature ? "." : "; el Cliente puede firmar desde su cuenta."}
+            </p>
+          ) : !clientSignatureStepDone ? (
             <section aria-label="Firma del Cliente" className="space-y-3 rounded-md border p-3">
               <h3 className="font-medium">Paso 1 · Firma opcional del Cliente o representante</h3>
               <Label htmlFor={`client-signer-${visit.id}`}>Nombre y apellido</Label>
@@ -1546,7 +1702,7 @@ function VisitEditor({
                 value={clientSigner}
                 onChange={(event) => setClientSigner(event.target.value)}
                 placeholder="Nombre y apellido"
-                disabled={closed || !started || savingClientSignature}
+                disabled={signingLocked || !started || savingClientSignature}
               />
               <SignaturePad title="Firma del Cliente" onChange={setClientSignature} />
               <p className="text-xs text-muted-foreground">
@@ -1557,7 +1713,7 @@ function VisitEditor({
                 type="button"
                 className="max-sm:w-full"
                 onClick={() => void captureClientSignature()}
-                disabled={closed || !started || savingClientSignature}
+                disabled={signingLocked || !started || savingClientSignature}
               >
                 {savingClientSignature ? "Guardando firma…" : "Registrar firma del Cliente y continuar"}
               </Button>
@@ -1569,7 +1725,7 @@ function VisitEditor({
                   setClientSignatureSkipped(true)
                   avisarCliente("Se omitió la firma presencial. El Cliente podrá firmar luego desde su cuenta.")
                 }}
-                disabled={closed || !started || savingClientSignature}
+                disabled={signingLocked || !started || savingClientSignature}
               >
                 No hay representante presente · Continuar
               </Button>
@@ -1584,7 +1740,7 @@ function VisitEditor({
             </p>
           )}
           {avisoEn("cliente")}
-          {clientSignatureStepDone ? (
+          {clientSignatureStepDone && !(vencida && hasTechnicianSignature) ? (
             <section aria-label="Firma del Técnico" className="space-y-3 rounded-md border p-3">
               <h3 className="font-medium">Paso 2 · Firma del Técnico</h3>
               <Label htmlFor={`technician-${visit.id}`}>Técnico ejecutor</Label>
@@ -1603,7 +1759,7 @@ function VisitEditor({
                       setCustomTechnician(false)
                       setTechnician(val)
                     }}
-                    disabled={closed || !started}
+                    disabled={signingLocked || !started}
                   >
                     <option value="">Seleccionar Técnico</option>
                     {technicians.map((person) => (
@@ -1619,7 +1775,7 @@ function VisitEditor({
                       value={technician}
                       onChange={(event) => setTechnician(event.target.value)}
                       placeholder="Nombre y apellido del técnico reemplazante"
-                      disabled={closed || !started}
+                      disabled={signingLocked || !started}
                     />
                   ) : null}
                 </div>
@@ -1629,50 +1785,79 @@ function VisitEditor({
                   value={technician}
                   onChange={(event) => setTechnician(event.target.value)}
                   placeholder="Nombre del Técnico ejecutor"
-                  disabled={closed || !started}
+                  disabled={signingLocked || !started}
                 />
               )}
               <SignaturePad title="Firma del Técnico" onChange={setTechnicianSignature} />
-              <Button
-                className="max-sm:w-full"
-                onClick={() => void complete()}
-                disabled={closed || !started || savingIncomplete || completing}
-                aria-busy={completing}
-              >
-                {closed ? "Visita cerrada" : completing ? "Completando visita…" : "Completar visita"}
-              </Button>
-              {avisoEn("cierre")}
-              <div className="space-y-2 rounded-md border border-dashed bg-muted/20 p-3">
-                <p className="text-xs font-medium">
-                  ¿No llegaron a revisar todas las válvulas en el día?
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Al marcar «Visita no terminada», las válvulas que sigan pendientes se registran
-                  como no evaluadas con este motivo para que el Administrador reprograme otro día
-                  bajo la misma solicitud.
-                </p>
-                <Input
-                  id={`incomplete-reason-${visit.id}`}
-                  value={incompleteReason}
-                  onChange={(event) => setIncompleteReason(event.target.value)}
-                  placeholder="Motivo para reprogramar las válvulas faltantes"
-                  disabled={closed || !started || savingIncomplete || completing}
+              {vencida ? (
+                <>
+                  <Button
+                    type="button"
+                    className="max-sm:w-full"
+                    onClick={() => void signExpiredVisit()}
+                    disabled={completing}
+                    aria-busy={completing}
+                  >
+                    {completing ? "Registrando firma…" : "Registrar firma del Técnico"}
+                  </Button>
+                  {avisoEn("cierre")}
+                </>
+              ) : (
+                <>
+                <ConfirmDialog
+                  titulo="¿Completar la visita?"
+                  descripcion="Se cierra la visita, quedan emitidos las firmas y los certificados, y no se puede deshacer."
+                  confirmar="Completar visita"
+                  variante="default"
+                  onConfirm={complete}
+                  trigger={
+                    <Button
+                      className="max-sm:w-full"
+                      disabled={closed || !started || savingIncomplete || completing}
+                      aria-busy={completing}
+                    >
+                      {closed
+                        ? "Visita cerrada"
+                        : completing
+                          ? "Completando visita…"
+                          : "Completar visita"}
+                    </Button>
+                  }
                 />
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="max-sm:w-full"
-                  onClick={() => void completeIncompleteVisit()}
-                  disabled={closed || !started || savingIncomplete || completing}
-                >
-                  {savingIncomplete
-                    ? "Cerrando visita…"
-                    : "Visita no terminada (reprogramar faltantes)"}
-                </Button>
-              </div>
+                {avisoEn("cierre")}
+                <div className="space-y-2 rounded-md border border-dashed bg-muted/20 p-3">
+                  <p className="text-xs font-medium">
+                    ¿No llegaron a revisar todas las válvulas en el día?
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Al marcar «Visita no terminada», las válvulas que sigan pendientes se registran
+                    como no evaluadas con este motivo para que el Administrador reprograme otro día
+                    bajo la misma solicitud.
+                  </p>
+                  <Input
+                    id={`incomplete-reason-${visit.id}`}
+                    value={incompleteReason}
+                    onChange={(event) => setIncompleteReason(event.target.value)}
+                    placeholder="Motivo para reprogramar las válvulas faltantes"
+                    disabled={closed || !started || savingIncomplete || completing}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="max-sm:w-full"
+                    onClick={() => void completeIncompleteVisit()}
+                    disabled={closed || !started || savingIncomplete || completing}
+                  >
+                    {savingIncomplete
+                      ? "Cerrando visita…"
+                      : "Visita no terminada (reprogramar faltantes)"}
+                  </Button>
+                </div>
+                </>
+              )}
             </section>
           ) : null}
-          {closed ? (
+          {closed && !vencida ? (
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
               <Lock className="size-4" /> Los borradores están cerrados; la sincronización se
               muestra por separado.
@@ -1708,6 +1893,10 @@ function WorkOrderEditor({
 }) {
   const [reason, setReason] = useState(order.no_evaluada_razon ?? "")
   const [outcome, setOutcome] = useState(order.estado ?? "pendiente")
+  // Orden agregada en el dispositivo que el servidor todavía no creó: lo que se cargue sobre ella se
+  // encola detrás de su alta, aunque haya conexión.
+  const ordenLocal = (order as { alta_local?: boolean }).alta_local === true
+  const directo = () => navigator.onLine && !ordenLocal
   const [certificateId, setCertificateId] = useState<string>(
     order.certificate_id ?? "",
   )
@@ -1815,13 +2004,13 @@ function WorkOrderEditor({
   const updateOutcome = async (outcome: "evaluada" | "no_evaluada") => {
     if (disabled) return
     try {
-      if (navigator.onLine) {
+      if (directo()) {
         await edgeApi.workOrders.updateWorkOrder(order.id, {
           outcome,
           notEvaluatedReason: outcome === "no_evaluada" ? reason : undefined,
         })
       } else {
-        const dependencies = await pendingStartOperationIds(store, visit.id)
+        const dependencies = await pendingOrderOperationIds(store, visit.id, order.id)
         await coordinator.queue(visit.id, deviceId(), "work_order_outcome", {
           work_order_id: order.id,
           outcome,
@@ -1842,7 +2031,7 @@ function WorkOrderEditor({
 
   const startDraft = async () => {
     try {
-      if (navigator.onLine) {
+      if (directo()) {
         const result = await edgeApi.certificates.startCertificateDraft(order.id)
         setCertificateId(result.certificate.id)
         setLocalCertificate(result.certificate)
@@ -1879,7 +2068,7 @@ function WorkOrderEditor({
                 }
               : null,
           },
-          await pendingStartOperationIds(store, visit.id),
+          await pendingOrderOperationIds(store, visit.id, order.id),
         )
       }
       onMessage("Borrador de certificado iniciado.")
@@ -1898,7 +2087,7 @@ function WorkOrderEditor({
       // `{ media_id }`, para no pisar la evidencia que el servidor ya registró (P2).
       const operations = await store.listOperations(visit.id)
       const payload = resolverEvidenciaDelBorrador(entrada, referenciasDeEvidencia(operations))
-      if (navigator.onLine) await edgeApi.certificates.updateDraft(certificateId, payload)
+      if (directo()) await edgeApi.certificates.updateDraft(certificateId, payload)
       else {
         const priorOperations = operations
           .filter(
@@ -1908,7 +2097,7 @@ function WorkOrderEditor({
           )
           .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
         const previous = priorOperations.at(-1)
-        const dependencies = await pendingStartOperationIds(store, visit.id)
+        const dependencies = await pendingOrderOperationIds(store, visit.id, order.id)
         if (previous) dependencies.push(previous.operationId)
         await coordinator.queue(
           visit.id,
@@ -1963,7 +2152,7 @@ function WorkOrderEditor({
           category: section,
           content_type: file.type,
         },
-        await pendingStartOperationIds(store, visit.id),
+        await pendingOrderOperationIds(store, visit.id, order.id),
         { mediaIds: [mediaId] },
       )
       const previousUrl = evidenceUrls.current[section]

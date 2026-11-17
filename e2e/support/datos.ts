@@ -102,6 +102,7 @@ export async function programarVisita(
       body: {
         taller_movil_id: tallerId,
         starts_at: inicio.toISOString(),
+        // Fin estimado: una hora. Reserva el equipo en ese horario; no cierra la visita.
         ends_at: new Date(inicio.getTime() + 3_600_000).toISOString(),
       },
     },
@@ -111,6 +112,7 @@ export async function programarVisita(
 
 /** Equipo nuevo, visita programada para hoy y aceptada por el taller. */
 export async function visitaAceptada(cantidadValvulas: number, metadatos: MetadatosTarea = {}) {
+  liberarTallerSemilla()
   const visita = await programarVisita(await crearEquipo(cantidadValvulas), metadatos)
   await edge("taller", "service-workflow", `visits/${visita.visitaId}/accept`, {
     method: "POST",
@@ -126,4 +128,31 @@ export function certificadoDeValvula(visitaId: string, valvulaId: string): strin
   )
   if (!id) throw new Error(`La válvula ${valvulaId} todavía no tiene certificado`)
   return id
+}
+
+/**
+ * Simula que la visita en curso se inició ayer y corre el cierre automático (el job de pg_cron de
+ * las 23:59 AR, #95). Devuelve cuántas visitas cerró la corrida.
+ */
+export function vencerVisita(visitaId: string): number {
+  sql(
+    `update public.visitas_servicio set started_at = now() - interval '1 day'
+     where id = '${visitaId}' and estado = 'en_curso'`,
+  )
+  return Number(sql("select public.close_expired_visits()"))
+}
+
+/**
+ * Un Taller Móvil atiende una visita a la vez: el servidor no deja iniciar otra mientras una sigue
+ * en curso y el panel del taller lo bloquea. Las pruebas comparten el taller sembrado, así que antes
+ * de preparar la visita de una prueba se cierran, como lo haría el job de las 23:59 AR, las que
+ * hayan quedado en curso (de pruebas anteriores o de otras corridas sobre la misma base).
+ */
+export function liberarTallerSemilla(): number {
+  const { tallerId } = leerSemilla()
+  sql(
+    `update public.visitas_servicio set started_at = now() - interval '1 day'
+     where taller_movil_id = '${tallerId}' and estado = 'en_curso'`,
+  )
+  return Number(sql("select public.close_expired_visits()"))
 }

@@ -43,7 +43,7 @@ const visita = (parcial: Record<string, unknown> = {}, ordenes = ["val-1", "val-
   }) as VisitDto
 
 describe("aVisitaCliente", () => {
-  it("usa la fecha y el horario de Argentina y resuelve locación y equipo", () => {
+  it("usa la fecha y el horario estimado de Argentina y resuelve locación y equipo", () => {
     expect(aVisitaCliente(visita(), contexto)).toEqual({
       id: "v-1",
       fecha: "2026-10-09",
@@ -104,6 +104,10 @@ const lista: VisitaCliente[] = [
   ),
   aVisitaCliente(visita({ id: "d", estado: "en_curso", yacimiento_id: "y-2" }, []), contexto),
   aVisitaCliente(
+    visita({ id: "f", estado: "requiere_finalizacion", starts_at: "2026-10-05T12:00:00Z" }),
+    contexto,
+  ),
+  aVisitaCliente(
     visita({
       id: "e",
       estado: "solicitada",
@@ -117,7 +121,8 @@ const lista: VisitaCliente[] = [
 describe("separarTurnos (RF-35)", () => {
   it("pendientes en orden cronológico e histórico del más reciente al más antiguo", () => {
     const { pendientes, historico } = separarTurnos(lista)
-    expect(pendientes.map((v) => v.id)).toEqual(["d", "e", "a"])
+    // «Requiere finalización» sigue pendiente: puede faltar la firma del Cliente.
+    expect(pendientes.map((v) => v.id)).toEqual(["f", "d", "e", "a"])
     expect(historico.map((v) => v.id)).toEqual(["c", "b"])
   })
 })
@@ -125,10 +130,10 @@ describe("separarTurnos (RF-35)", () => {
 describe("filtrarVisitas", () => {
   it("filtra por yacimiento, planta y rango de fechas inclusivo", () => {
     expect(filtrarVisitas(lista, { yacimientoId: "y-2" }).map((v) => v.id)).toEqual(["d"])
-    expect(filtrarVisitas(lista, { plantaId: "p-1" })).toHaveLength(4)
+    expect(filtrarVisitas(lista, { plantaId: "p-1" })).toHaveLength(5)
     expect(
       filtrarVisitas(lista, { desde: "2026-10-12", hasta: "2026-10-20" }).map((v) => v.id),
     ).toEqual(["a", "e"])
-    expect(filtrarVisitas(lista, {})).toHaveLength(5)
+    expect(filtrarVisitas(lista, {})).toHaveLength(6)
   })
 })

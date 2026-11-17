@@ -8,17 +8,19 @@ import { Button } from "@/components/ui/button"
 import { useCreateEdgeFollowupVisit, useEdgeVisits } from "@/lib/api/hooks"
 import { mensajeError, useTalleres } from "@/lib/hooks/queries"
 import type { OperationRead } from "@/lib/hooks/queries"
+import { finEstimadoValido, horaFinPropuesta, MENSAJE_FIN_ESTIMADO } from "@/lib/domain/rules"
 
-const DURACION_VISITA_MS = 60 * 60 * 1000
-
-/** Ventana de una hora interpretada en hora argentina (-03:00), como el resto de la app. */
-export function ventanaSeguimiento(date: string, time: string) {
+/**
+ * Inicio y fin estimado de la visita interpretados en hora argentina (-03:00), como el resto de la
+ * app. El fin estimado reserva el equipo pero no cierra la visita (decisión (e)). Sin fin, una hora.
+ */
+export function ventanaSeguimiento(date: string, time: string, endTime?: string) {
+  const fin = endTime || horaFinPropuesta(time)
   const starts = new Date(`${date}T${time}:00-03:00`)
-  if (Number.isNaN(starts.getTime())) return undefined
-  return {
-    startsAt: starts.toISOString(),
-    endsAt: new Date(starts.getTime() + DURACION_VISITA_MS).toISOString(),
-  }
+  const ends = new Date(`${date}T${fin}:00-03:00`)
+  if (Number.isNaN(starts.getTime()) || Number.isNaN(ends.getTime())) return undefined
+  if (!finEstimadoValido(time, fin)) return undefined
+  return { startsAt: starts.toISOString(), endsAt: ends.toISOString() }
 }
 
 /** Se evalúa solo al enviar, fuera del render. */
@@ -36,9 +38,16 @@ export function VisitaSeguimientoForm({ operation }: { operation: OperationRead 
   )
   const [date, setDate] = useState("")
   const [time, setTime] = useState("09:00")
+  const [endTime, setEndTime] = useState(horaFinPropuesta("09:00"))
   const requestId = String(operation.visit.visit.solicitud_id ?? "")
   const sourceVisitId = String(operation.visit.visit.id ?? "")
-  const activeStatuses = new Set(["solicitada", "programada", "aceptada", "en_curso"])
+  const activeStatuses = new Set([
+    "solicitada",
+    "programada",
+    "aceptada",
+    "en_curso",
+    "requiere_finalizacion",
+  ])
   const alreadyAssigned = new Set(
     (visits.data ?? [])
       .filter(
@@ -68,11 +77,15 @@ export function VisitaSeguimientoForm({ operation }: { operation: OperationRead 
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!date || !time || !tallerMovilId || valveIds.length === 0) {
+    if (!date || !time || !endTime || !tallerMovilId || valveIds.length === 0) {
       toast.error("Selecciona las válvulas, el Taller Móvil y la fecha de la visita")
       return
     }
-    const ventana = ventanaSeguimiento(date, time)
+    if (!finEstimadoValido(time, endTime)) {
+      toast.error(MENSAJE_FIN_ESTIMADO)
+      return
+    }
+    const ventana = ventanaSeguimiento(date, time, endTime)
     if (!ventana || !esFutura(ventana.startsAt)) {
       toast.error("La visita debe programarse para una fecha futura")
       return
@@ -159,7 +172,7 @@ export function VisitaSeguimientoForm({ operation }: { operation: OperationRead 
               ))}
           </select>
         </label>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           <label className="grid gap-1 text-sm">
             Fecha
             <input
@@ -176,14 +189,27 @@ export function VisitaSeguimientoForm({ operation }: { operation: OperationRead 
               required
               type="time"
               value={time}
-              onChange={(event) => setTime(event.target.value)}
+              onChange={(event) => {
+                setTime(event.target.value)
+                setEndTime(horaFinPropuesta(event.target.value))
+              }}
+              className="h-9 rounded-md border bg-background px-3"
+            />
+          </label>
+          <label className="grid gap-1 text-sm">
+            Hora de fin estimada
+            <input
+              required
+              type="time"
+              value={endTime}
+              onChange={(event) => setEndTime(event.target.value)}
               className="h-9 rounded-md border bg-background px-3"
             />
           </label>
         </div>
         <p className="text-xs text-muted-foreground sm:col-span-2">
-          Se reserva una ventana inicial de una hora; luego puede ajustarse desde la administración
-          de visitas.
+          El equipo queda reservado entre el inicio y el fin estimado (se propone una hora). El fin
+          estimado no cierra la visita: la completa el técnico.
         </p>
         <div className="sm:col-span-2">
           <Button

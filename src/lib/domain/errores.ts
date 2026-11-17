@@ -69,12 +69,14 @@ const MENSAJES: Readonly<Record<string, string>> = {
   "Only an in-progress visit can be completed": "Solo se puede completar una visita en curso.",
   "An offline operation dependency is not synchronized":
     "Hay un cambio previo de la visita que todavía no se sincronizó.",
+  "The selected Equipo has no Válvulas":
+    "El equipo no tiene válvulas cargadas. Cargá al menos una antes de crear la tarea.",
   "A Técnico signature is required to complete a visit":
     "Falta la firma del Técnico para completar la visita.",
   "The Técnico is not assigned to this visit Taller Móvil":
-    "El técnico no figura en la nómina del taller para el día de la visita.",
+    "Tu cuenta no pertenece al taller asignado a esta visita.",
   "The Técnico is not assigned to the visit Taller Móvil":
-    "El técnico no figura en la nómina del taller para el día de la visita.",
+    "Tu cuenta no pertenece al taller asignado a esta visita.",
   "An in-person Cliente signature must be captured before the Técnico signature":
     "Primero hay que registrar la firma presencial del Cliente y después la del Técnico.",
   "Certificate drafts can be started only while the visit is in progress":
@@ -82,6 +84,47 @@ const MENSAJES: Readonly<Record<string, string>> = {
   "Certificate capture is closed": "La captura del certificado ya está cerrada.",
   "An expired certificate cannot be downloaded by the Cliente":
     "El certificado está vencido y ya no se puede descargar.",
+  // Válvulas agregadas o dadas de alta en campo (A1/A2)
+  "Válvulas can be added only while the visit is in progress":
+    "Solo se pueden agregar válvulas con la visita en curso.",
+  "An added Válvula must belong to the same Cliente":
+    "La válvula tiene que ser del mismo Cliente que la visita.",
+  "The Taller Móvil requires active Yacimiento access":
+    "El taller no tiene acceso al yacimiento de esa válvula.",
+  "Válvula not found": "No se encontró la válvula.",
+  "The work order id is already used by another Orden de trabajo":
+    "Esa orden de trabajo ya existe con otra válvula. Volvé a agregar la válvula.",
+  // Visita en «Requiere finalización» (E3/E4)
+  "The visit was closed at the end of its day and requires finalization":
+    "La visita venció a las 23:59 y quedó en «Requiere finalización»: el cambio quedó en conflicto para que lo revise el Administrador.",
+  "Only an active Administrador can close a visit that requires finalization":
+    "Solo un Administrador activo puede cerrar una visita que requiere finalización.",
+  "A closing reason of 1 to 1000 characters is required":
+    "Indicá el motivo del cierre (hasta 1000 caracteres).",
+  "A closing reason is required (1 to 1000 characters)":
+    "Indicá el motivo del cierre (hasta 1000 caracteres).",
+  "Only a visit that requires finalization can be closed by an Administrador":
+    "Solo se puede cerrar así una visita en «Requiere finalización».",
+  "Resolve the synchronization conflicts of this visit before closing it":
+    "La visita tiene conflictos de sincronización sin resolver: resolvelos antes de cerrarla.",
+  "A follow-up visit for the unevaluated Válvulas requires a Taller Móvil and start/end times":
+    "Quedan válvulas sin evaluar: elegí el taller, la fecha y el horario estimado de la visita de seguimiento.",
+  "Correction resolution requires a Taller Móvil and visit start/end times":
+    "Para autorizar la corrección hay que indicar el taller móvil y el inicio y fin estimado de la visita.",
+  // Un Taller Móvil es una sola cuadrilla: una visita en curso a la vez.
+  "The Taller Móvil already has a visit in progress; complete it before starting another":
+    "El taller ya tiene otra visita en curso. Completá esa visita antes de iniciar esta: un taller atiende una visita a la vez.",
+  "Válvulas can be created only while the visit is in progress":
+    "Solo se pueden dar de alta válvulas con la visita en curso.",
+  "A created Válvula must belong to the visit Cliente":
+    "El equipo elegido no es del Cliente de la visita.",
+  "Equipo not found": "No se encontró el equipo elegido.",
+  "The Válvula id is already used by another Válvula":
+    "Ese identificador ya pertenece a otra válvula. Volvé a cargar el alta.",
+  "Asset name or tag must be alphanumeric":
+    "El TAG debe empezar con una letra o un número y usar solo letras, números, espacios, puntos, guiones o barras.",
+  "Operating pressure and temperature must be numbers":
+    "La presión y la temperatura de operación tienen que ser números.",
   // Fotos y Parte Diario
   "Unsupported storage content type":
     "El formato de la imagen no es compatible. Usá una foto JPG, PNG o WEBP.",
@@ -96,6 +139,7 @@ const MENSAJES: Readonly<Record<string, string>> = {
 /** Restricciones con nombre propio, detectadas dentro del mensaje de Postgres. */
 const RESTRICCIONES: ReadonlyArray<readonly [string, string]> = [
   [
+    // 23P01: la visita reserva el equipo entre su inicio y su fin estimado (ADR 0008).
     "visita_equipos_no_simultaneous_equipment",
     "El equipo ya tiene otra visita en ese horario. Elige otro día u horario.",
   ],

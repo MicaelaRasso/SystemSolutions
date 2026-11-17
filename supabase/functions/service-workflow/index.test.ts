@@ -182,6 +182,26 @@ describe("service-workflow operations read routes", () => {
     })
   })
 
+  it("accepts the requiere_finalizacion status (decision e)", async () => {
+    const envelope = {
+      ...listEnvelope,
+      items: [{ ...operation, estado: "requiere_finalizacion" }],
+    }
+    const rpc = vi.fn().mockResolvedValue({ data: envelope, error: null })
+    const request = new Request(
+      "https://example.test/functions/v1/service-workflow/operations?status=requiere_finalizacion&limit=1&offset=0",
+    )
+
+    await expect(handler(context(request, ["operations"], rpc))).resolves.toEqual({
+      data: envelope,
+      error: null,
+    })
+    expect(rpc).toHaveBeenCalledWith(
+      "api_operations",
+      expect.objectContaining({ status_filter: "requiere_finalizacion" }),
+    )
+  })
+
   it("accepts the contact and planta fields added to the operation summary", async () => {
     const extended = {
       ...operation,
@@ -541,6 +561,39 @@ describe("service-workflow mutation routes", () => {
       },
     },
     {
+      name: "closes a visit that requires finalization with a follow-up visit (E4)",
+      method: "POST",
+      route: ["visits", operationId, "close-administrator"],
+      body: {
+        reason: "El técnico no volvió a firmar",
+        taller_movil_id: clientId,
+        starts_at: "2099-01-05T09:00:00Z",
+        ends_at: "2099-01-05T10:00:00Z",
+      },
+      rpcName: "api_admin_close_visit_requiring_finalization",
+      rpcArgs: {
+        visit_id: operationId,
+        action_reason: "El técnico no volvió a firmar",
+        provider_id: clientId,
+        visit_starts_at: "2099-01-05T09:00:00Z",
+        visit_ends_at: "2099-01-05T10:00:00Z",
+      },
+    },
+    {
+      name: "closes a visit that requires finalization without valves to follow up (E4)",
+      method: "POST",
+      route: ["visits", operationId, "close-administrator"],
+      body: { reason: "Firmas resueltas por otra vía" },
+      rpcName: "api_admin_close_visit_requiring_finalization",
+      rpcArgs: {
+        visit_id: operationId,
+        action_reason: "Firmas resueltas por otra vía",
+        provider_id: null,
+        visit_starts_at: null,
+        visit_ends_at: null,
+      },
+    },
+    {
       name: "reopens a visit as an administrator",
       method: "POST",
       route: ["visits", operationId, "reopen-administrator"],
@@ -601,6 +654,14 @@ describe("service-workflow mutation routes", () => {
       rpcArgs: { visit_id: operationId, target_valvula: clientId },
     },
     {
+      name: "adds a work order with the id generated on the device",
+      method: "POST",
+      route: ["visits", operationId, "work-orders"],
+      body: { valvula_id: clientId, work_order_id: deviceId },
+      rpcName: "api_add_work_order_with_id",
+      rpcArgs: { visit_id: operationId, target_valvula: clientId, target_work_order: deviceId },
+    },
+    {
       name: "updates a work order outcome",
       method: "PATCH",
       route: ["work-orders", operationId],
@@ -639,6 +700,87 @@ describe("service-workflow mutation routes", () => {
     await expect(handler(context(request, route, rpc, {}))).rejects.toThrow(
       "A valid replacement catalog version and device_id are required",
     )
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it("creates a field valve with its revision and work order through one RPC", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { work_order: { id: deviceId } }, error: null })
+    const route = ["visits", operationId, "valves"]
+    const request = new Request(
+      `https://example.test/functions/v1/service-workflow/${route.join("/")}`,
+      { method: "POST" },
+    )
+    const valvula = { nombre: "PSV-9", marca: "Crosby", presion_operacion: 12.5 }
+
+    await expect(
+      handler(
+        context(request, route, rpc, {
+          valvula_id: clientId,
+          equipo_id: replacementCatalogVersionId,
+          work_order_id: deviceId,
+          valvula,
+        }),
+      ),
+    ).resolves.toEqual({ data: { work_order: { id: deviceId } }, error: null })
+    expect(rpc).toHaveBeenCalledWith("api_technician_create_valvula", {
+      visit_id: operationId,
+      target_valvula: clientId,
+      target_equipo: replacementCatalogVersionId,
+      target_work_order: deviceId,
+      valve_data: valvula,
+    })
+  })
+
+  it.each([
+    [{ valvula_id: "x", equipo_id: clientId, work_order_id: deviceId, valvula: { nombre: "PSV" } }, "valvula_id, equipo_id and work_order_id must be UUIDs"],
+    [{ valvula_id: clientId, equipo_id: clientId, work_order_id: deviceId, valvula: { nombre: " " } }, "A valve TAG is required"],
+    [{ valvula_id: clientId, equipo_id: clientId, work_order_id: deviceId, valvula: { nombre: "PSV", presion_operacion: "doce" } }, "Operating pressure and temperature must be numbers"],
+    [{ valvula_id: clientId, equipo_id: clientId, work_order_id: deviceId, valvula: { nombre: "PSV", marca: 3 } }, "Valve fields must be text"],
+  ])("rejects an invalid field valve %#", async (body, message) => {
+    const rpc = vi.fn()
+    const route = ["visits", operationId, "valves"]
+    const request = new Request(
+      `https://example.test/functions/v1/service-workflow/${route.join("/")}`,
+      { method: "POST" },
+    )
+
+    await expect(handler(context(request, route, rpc, body))).rejects.toThrow(message)
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [{}, "A closing reason is required"],
+    [{ reason: "   " }, "A closing reason is required"],
+    [{ reason: "x".repeat(1001) }, "A closing reason is required"],
+    [{ reason: "Cierre", taller_movil_id: "taller" }, "taller_movil_id must be a UUID"],
+    [{ reason: "Cierre", starts_at: "mañana" }, "starts_at must be a valid timestamp"],
+    [
+      { reason: "Cierre", starts_at: "2099-01-05T10:00:00Z", ends_at: "2099-01-05T09:00:00Z" },
+      "ends_at must be later than starts_at",
+    ],
+  ])("rejects an invalid administrative closing %#", async (body, message) => {
+    const rpc = vi.fn()
+    const route = ["visits", operationId, "close-administrator"]
+    const request = new Request(
+      `https://example.test/functions/v1/service-workflow/${route.join("/")}`,
+      { method: "POST" },
+    )
+
+    await expect(handler(context(request, route, rpc, body))).rejects.toThrow(message)
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it("rejects a field work order whose device id is not a UUID", async () => {
+    const rpc = vi.fn()
+    const route = ["visits", operationId, "work-orders"]
+    const request = new Request(
+      `https://example.test/functions/v1/service-workflow/${route.join("/")}`,
+      { method: "POST" },
+    )
+
+    await expect(
+      handler(context(request, route, rpc, { valvula_id: clientId, work_order_id: "local-1" })),
+    ).rejects.toThrow("work_order_id must be a UUID")
     expect(rpc).not.toHaveBeenCalled()
   })
 

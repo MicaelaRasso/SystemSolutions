@@ -1,6 +1,6 @@
 begin;
 
-select plan(18);
+select plan(20);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000009101', 'catalog-freeze-client@example.test'),
@@ -146,6 +146,13 @@ select throws_ok(
 );
 
 select public.test_catalog_freeze_set_actor('00000000-0000-0000-0000-000000009102');
+-- Decisión (e): la visita iniciada sin conexión toma la hora del dispositivo como `started_at`
+-- (acotada a [aceptación, ahora]); la aceptación se adelanta un día para poder verificarlo.
+reset role;
+update public.visitas_servicio set accepted_at = now() - interval '1 day'
+where id = current_setting('app.catalog_freeze_visit_id')::uuid;
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
 select is(
   (public.api_sync_visit_batch(
     current_setting('app.catalog_freeze_visit_id')::uuid,
@@ -158,12 +165,24 @@ select is(
       ),
       'schema_version', 2,
       'dependencies', '[]'::jsonb,
-      'device_timestamp', now()
+      'device_timestamp', now() - interval '5 minutes'
     )),
     current_setting('app.catalog_freeze_device_id')::uuid
   )->'operations'->0->>'estado'),
   'sincronizada',
   'offline visit start synchronizes with the catalog version downloaded before the edit'
+);
+select is(
+  (select started_at from public.visitas_servicio where id = current_setting('app.catalog_freeze_visit_id')::uuid),
+  now() - interval '5 minutes',
+  'an offline start records the device time as started_at'
+);
+select is(
+  (select e.ventana = tstzrange(v.starts_at, v.ends_at, '[)')
+   from public.visita_equipos e join public.visitas_servicio v on v.id = e.visita_id
+   where e.visita_id = current_setting('app.catalog_freeze_visit_id')::uuid limit 1),
+  true,
+  'starting keeps the scheduled equipment reservation [starts_at, ends_at)'
 );
 select is(
   (select replacement_catalog_version_id::text from public.visitas_servicio where id = current_setting('app.catalog_freeze_visit_id')::uuid),

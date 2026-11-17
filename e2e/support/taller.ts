@@ -291,7 +291,51 @@ export async function capturarYCerrar(page: Page, visitaId: string, tag: string,
   if (cierre.representante) await firmarCliente(page, tarjeta, cierre.representante)
   else await omitirFirmaCliente(tarjeta)
   const seccion = await firmarTecnico(page, tarjeta)
-  await seccion.getByRole("button", { name: "Completar visita" }).click()
+  await completarVisita(page, seccion)
   await expect(estadoVisita(page).first()).toContainText("Visita completada", { timeout: 30_000 })
   return tarjeta
+}
+
+/** Pulsa «Completar visita» y confirma el diálogo de confirmación (el cierre es irreversible). */
+export async function completarVisita(page: Page, seccion: Locator) {
+  await seccion.getByRole("button", { name: "Completar visita" }).click()
+  const dialogo = page.getByRole("alertdialog")
+  await expect(dialogo).toBeVisible()
+  await dialogo.getByRole("button", { name: "Completar visita" }).click()
+  await expect(dialogo).toBeHidden({ timeout: 30_000 })
+}
+
+
+/** Diálogo «Agregar válvula» de la visita (A1/A3). */
+export const dialogoAgregarValvula = (page: Page) => page.getByRole("dialog", { name: "Agregar válvula" })
+
+/** Busca una válvula del catálogo del Cliente y la agrega a la visita en curso. */
+export async function agregarValvulaExistente(page: Page, tarjeta: Locator, tag: string) {
+  await tarjeta.getByRole("button", { name: "Agregar válvula" }).click()
+  const dialogo = dialogoAgregarValvula(page)
+  await expect(dialogo).toBeVisible()
+  await dialogo.getByLabel("Buscar en el catálogo").fill(tag)
+  await dialogo.getByRole("button", { name: `Agregar ${tag}` }).click()
+  await expect(dialogo).toBeHidden({ timeout: 30_000 })
+  await expect(tarjetaOrden(page, tag)).toBeVisible({ timeout: 30_000 })
+  return tarjetaOrden(page, tag)
+}
+
+/** Da de alta una válvula nueva en un equipo existente desde la visita en curso (A2/A3). */
+export async function darDeAltaValvula(
+  page: Page,
+  tarjeta: Locator,
+  datos: { tag: string; equipo: string; planta: string; marca?: string },
+) {
+  await tarjeta.getByRole("button", { name: "Agregar válvula" }).click()
+  const dialogo = dialogoAgregarValvula(page)
+  await expect(dialogo).toBeVisible()
+  await dialogo.getByRole("tab", { name: "Nueva válvula" }).click()
+  await dialogo.getByLabel("Equipo").selectOption({ label: `${datos.equipo} · ${datos.planta}` })
+  await dialogo.getByLabel("TAG").fill(datos.tag)
+  if (datos.marca) await dialogo.getByLabel("Marca").fill(datos.marca)
+  await dialogo.getByRole("button", { name: "Crear" }).click()
+  await expect(dialogo).toBeHidden({ timeout: 30_000 })
+  await expect(tarjetaOrden(page, datos.tag)).toBeVisible({ timeout: 30_000 })
+  return tarjetaOrden(page, datos.tag)
 }

@@ -5,9 +5,13 @@ import type { OfflineMedia, OfflineStore, OperacionOffline, VisitaOffline } from
 import {
   OfflineSyncCoordinator,
   certificateCatalogsForVisit,
+  dependenciasDeOrden,
   esFirmaYaRegistrada,
+  esVisitaVencida,
+  ordenesConAltasLocales,
   pinVisitCertificateCatalogs,
   queueOfflineSignatureCapture,
+  reconcileWorkingSet,
   referenciasDeEvidencia,
   refreshedVisitCatalogs,
   resolverEvidencia,
@@ -160,6 +164,69 @@ describe("visit replacement catalog snapshots", () => {
       replacement_catalog_version_id: "catalog-monday",
       device_id: "device-1",
     })
+  })
+})
+
+describe("orden de sincronización: un taller atiende una visita a la vez", () => {
+  const guardarVisita = (store: MemoryStore, id: string) =>
+    store.saveVisit({
+      id,
+      context: {},
+      cachedAt: "2026-11-17T09:00:00.000Z",
+      estadoLocal: "en_curso_local",
+      synchronizationPending: true,
+    })
+
+  it("envía primero la visita completada sin conexión y después el inicio de la siguiente", async () => {
+    const store = new MemoryStore()
+    // «B» tiene un id menor pero se inició después de completar «A».
+    await guardarVisita(store, "a-visita")
+    await guardarVisita(store, "0-visita")
+    await store.saveOperation({
+      ...startOperation("a-visita"),
+      kind: "complete_visit",
+      operationId: "complete-a",
+      createdAt: "2026-11-17T11:00:00.000Z",
+    })
+    await store.saveOperation({
+      ...startOperation("0-visita"),
+      createdAt: "2026-11-17T12:00:00.000Z",
+    })
+    const order: string[] = []
+
+    await syncPendingVisitStartsBeforeRefresh(store, async (visitId) => {
+      order.push(visitId)
+      return (await store.listOperations(visitId)).map((operation) => ({
+        ...operation,
+        estado: "sincronizada" as const,
+      }))
+    })
+
+    expect(order).toEqual(["a-visita", "0-visita"])
+  })
+
+  it("un inicio que quedó en conflicto (otra visita en curso) no bloquea el refresco", async () => {
+    const store = new MemoryStore()
+    await guardarVisita(store, "visit-b")
+    await store.saveOperation(startOperation("visit-b"))
+
+    await expect(
+      syncPendingVisitStartsBeforeRefresh(store, async (visitId) => [
+        { ...startOperation(visitId), estado: "conflicto" },
+      ]),
+    ).resolves.toBeUndefined()
+  })
+
+  it("un inicio sin confirmar sigue cortando el refresco", async () => {
+    const store = new MemoryStore()
+    await guardarVisita(store, "visit-c")
+    await store.saveOperation(startOperation("visit-c"))
+
+    await expect(
+      syncPendingVisitStartsBeforeRefresh(store, async (visitId) => [
+        { ...startOperation(visitId), estado: "fallida" },
+      ]),
+    ).rejects.toThrow("No se pudo confirmar el inicio offline")
   })
 })
 
@@ -956,5 +1023,315 @@ describe("firma ya registrada en el servidor", () => {
     const [firma] = await coordinator.sync(visitId, "device-1")
 
     expect(firma.estado).toBe("conflicto")
+  })
+})
+
+describe("válvulas agregadas en campo (A1)", () => {
+  const altaOperation = (overrides: Partial<OperacionOffline> = {}): OperacionOffline => ({
+    operationId: "add-1",
+    idempotencyKey: "add-1",
+    visitId: "visit-field",
+    kind: "add_work_order",
+    payload: {
+      work_order_id: "wo-local",
+      valvula_id: "valve-2",
+      valvula_nombre: "PSV-2",
+      equipo_nombre: "K-100",
+      valvula: { id: "valve-2", equipo_id: "equipo-1", nombre: "PSV-2" },
+    },
+    dependencies: [],
+    schemaVersion: 2,
+    createdAt: "2026-11-17T12:00:00.000Z",
+    deviceId: "device-1",
+    estado: "guardada_local",
+    attempts: 0,
+    ...overrides,
+  })
+
+  it("muestra al instante la orden encolada, con el id generado en el dispositivo", () => {
+    const ordenes = ordenesConAltasLocales(
+      [{ id: "wo-server", valvula_id: "valve-1", estado: "pendiente" as const }],
+      [altaOperation()],
+    )
+
+    expect(ordenes).toHaveLength(2)
+    expect(ordenes[1]).toMatchObject({
+      id: "wo-local",
+      valvula_id: "valve-2",
+      estado: "pendiente",
+      valvula_nombre: "PSV-2",
+      equipo_nombre: "K-100",
+      valvula: { nombre: "PSV-2" },
+      alta_local: true,
+    })
+  })
+
+  it("muestra al instante una válvula nueva (create_valve) con su equipo y sus datos", () => {
+    const [orden] = ordenesConAltasLocales(
+      [],
+      [
+        altaOperation({
+          kind: "create_valve",
+          payload: {
+            work_order_id: "wo-nueva",
+            valvula_id: "valve-nueva",
+            equipo_id: "equipo-1",
+            equipo_nombre: "K-100",
+            valvula: { nombre: "PSV-NUEVA", marca: "Crosby" },
+          },
+        }),
+      ],
+    )
+
+    expect(orden).toMatchObject({
+      id: "wo-nueva",
+      valvula_id: "valve-nueva",
+      valvula_nombre: "PSV-NUEVA",
+      equipo_nombre: "K-100",
+      valvula: { id: "valve-nueva", equipo_id: "equipo-1", nombre: "PSV-NUEVA", marca: "Crosby" },
+      alta_local: true,
+    })
+  })
+
+  it("no duplica la orden cuando el servidor ya la devuelve ni muestra las que quedaron en conflicto", () => {
+    expect(
+      ordenesConAltasLocales([{ id: "wo-local", valvula_id: "valve-2" }], [altaOperation()]),
+    ).toEqual([{ id: "wo-local", valvula_id: "valve-2" }])
+    expect(ordenesConAltasLocales([], [altaOperation({ estado: "conflicto" })])).toEqual([])
+  })
+
+  it("usa el recibo del servidor cuando la operación ya se sincronizó y se compactó", () => {
+    const sincronizada = altaOperation({
+      estado: "sincronizada",
+      payload: {},
+      receipt: {
+        serverStatus: "sincronizada",
+        serverResult: { work_order: { id: "wo-local", valvula_id: "valve-2", estado: "pendiente" } },
+        acknowledgedAt: "2026-11-17T12:01:00.000Z",
+      },
+    })
+
+    expect(ordenesConAltasLocales([], [sincronizada])).toEqual([
+      { id: "wo-local", valvula_id: "valve-2", estado: "pendiente" },
+    ])
+  })
+
+  it("las operaciones de una orden agregada dependen de su alta mientras no se sincronice", () => {
+    const operations = [altaOperation(), altaOperation({ operationId: "add-2", payload: { work_order_id: "wo-otra" } })]
+
+    expect(dependenciasDeOrden(operations, "wo-local")).toEqual(["add-1"])
+    expect(dependenciasDeOrden(operations, "wo-server")).toEqual([])
+    expect(dependenciasDeOrden([altaOperation({ estado: "sincronizada" })], "wo-local")).toEqual([])
+  })
+
+  it("sincroniza el alta antes que el resultado de la orden que depende de ella", async () => {
+    const store = new MemoryStore()
+    await store.saveVisit({
+      id: "visit-field",
+      context: {},
+      cachedAt: "2026-11-17T12:00:00.000Z",
+      estadoLocal: "en_curso_local",
+      synchronizationPending: false,
+    })
+    const batches: Array<Array<{ kind: string; payload: Record<string, unknown> }>> = []
+    const coordinator = new OfflineSyncCoordinator(
+      store,
+      {
+        syncVisit: async (_visitId, operations) => {
+          const sent = operations as Array<{
+            operation_id: string
+            kind: string
+            payload: Record<string, unknown>
+          }>
+          batches.push(sent.map(({ kind, payload }) => ({ kind, payload })))
+          return {
+            operations: sent.map((operation) => ({
+              operation_id: operation.operation_id,
+              estado: "sincronizada" as const,
+              result:
+                operation.kind === "add_work_order"
+                  ? { work_order: { id: operation.payload.work_order_id } }
+                  : { ok: true },
+            })),
+          }
+        },
+      },
+      clock,
+    )
+
+    const alta = await coordinator.queue("visit-field", "device-1", "add_work_order", {
+      work_order_id: "wo-local",
+      valvula_id: "valve-2",
+    })
+    await coordinator.queue(
+      "visit-field",
+      "device-1",
+      "work_order_outcome",
+      { work_order_id: "wo-local", outcome: "evaluada" },
+      dependenciasDeOrden(await store.listOperations("visit-field"), "wo-local"),
+    )
+    const remaining = await coordinator.sync("visit-field", "device-1")
+
+    expect(batches.map((batch) => batch.map(({ kind }) => kind))).toEqual([
+      ["add_work_order"],
+      ["work_order_outcome"],
+    ])
+    expect(batches[0][0].payload).toEqual({ work_order_id: "wo-local", valvula_id: "valve-2" })
+    expect(remaining.every((operation) => operation.estado === "sincronizada")).toBe(true)
+    expect(alta.idempotencyKey).toBe(alta.operationId)
+  })
+
+  it("el alta rechazada por el servidor queda en conflicto y no se reintenta sola", async () => {
+    const store = new MemoryStore()
+    let calls = 0
+    const coordinator = new OfflineSyncCoordinator(
+      store,
+      {
+        syncVisit: async (_visitId, operations) => {
+          calls += 1
+          const [operation] = operations as Array<{ operation_id: string }>
+          return {
+            operations: [
+              {
+                operation_id: operation.operation_id,
+                estado: "conflicto" as const,
+                error_message: "Válvulas can be added only while the visit is in progress",
+              },
+            ],
+          }
+        },
+      },
+      clock,
+    )
+    await coordinator.queue("visit-field", "device-1", "add_work_order", {
+      work_order_id: "wo-local",
+      valvula_id: "valve-2",
+    })
+
+    const [operation] = await coordinator.sync("visit-field", "device-1")
+    await coordinator.sync("visit-field", "device-1")
+
+    expect(operation.estado).toBe("conflicto")
+    expect(calls).toBe(1)
+    expect(ordenesConAltasLocales([], [operation])).toEqual([])
+  })
+
+  it("conserva en el contexto el catálogo de yacimientos del Cliente al reconciliar el working set", async () => {
+    const store = new MemoryStore()
+    const arbol = {
+      yacimiento: { id: "yac-2", nombre: "Otro" },
+      plantas: [],
+      equipos: [],
+      valvulas: [{ id: "valve-9", equipo_id: "eq-9", nombre: "PSV-9" }],
+    }
+    await reconcileWorkingSet(
+      store,
+      {
+        visits: [
+          {
+            visit: { id: "visit-field", estado: "en_curso" },
+            work_orders: [],
+            context: {},
+            client_yacimientos: [arbol],
+          } as never,
+        ],
+      },
+      clock,
+    )
+
+    expect((await store.getVisit("visit-field"))?.context).toMatchObject({
+      client_yacimientos: [arbol],
+    })
+  })
+})
+
+describe("operaciones tardías sobre una visita en «Requiere finalización» (E3)", () => {
+  const motivo = "The visit was closed at the end of its day and requires finalization"
+
+  it("reconoce el motivo crudo, su traducción y un Error", () => {
+    expect(esVisitaVencida(motivo)).toBe(true)
+    expect(esVisitaVencida(new Error(motivo))).toBe(true)
+    expect(esVisitaVencida("La visita fue reasignada")).toBe(false)
+    expect(esVisitaVencida(undefined)).toBe(false)
+  })
+
+  it("deja cada operación en conflicto con el motivo, sin reintentar, y marca la visita vencida", async () => {
+    const store = new MemoryStore()
+    await store.saveVisit({
+      id: "visit-late",
+      context: {},
+      cachedAt: "2026-11-16T11:00:00.000Z",
+      estadoLocal: "completada_local",
+      backendStatus: "en_curso",
+      synchronizationPending: true,
+    })
+    let calls = 0
+    const coordinator = new OfflineSyncCoordinator(
+      store,
+      {
+        syncVisit: async (_visitId, operations) => {
+          calls += 1
+          return {
+            operations: (operations as Array<{ operation_id: string }>).map(({ operation_id }) => ({
+              operation_id,
+              estado: "conflicto" as const,
+              error_code: "55000",
+              error_message: motivo,
+            })),
+          }
+        },
+      },
+      clock,
+    )
+    await coordinator.queue("visit-late", "device-1", "work_order_outcome", {
+      work_order_id: "wo-1",
+      outcome: "evaluada",
+    })
+    await coordinator.queue("visit-late", "device-1", "complete_visit", {})
+
+    const remaining = await coordinator.sync("visit-late", "device-1")
+    await coordinator.sync("visit-late", "device-1")
+
+    expect(calls).toBe(1)
+    expect(remaining.map((operation) => operation.estado)).toEqual(["conflicto", "conflicto"])
+    expect(remaining.every((operation) => esVisitaVencida(operation.lastError))).toBe(true)
+    expect((await store.getVisit("visit-late"))?.backendStatus).toBe("requiere_finalizacion")
+  })
+
+  it("toma el estado de la visita del reconocimiento del lote", async () => {
+    const store = new MemoryStore()
+    await store.saveVisit({
+      id: "visit-ack",
+      context: {},
+      cachedAt: "2026-11-16T11:00:00.000Z",
+      estadoLocal: "en_curso_local",
+      synchronizationPending: true,
+      backendStatus: "en_curso",
+    })
+    const coordinator = new OfflineSyncCoordinator(
+      store,
+      {
+        syncVisit: async (_visitId, operations) => ({
+          operations: (operations as Array<{ operation_id: string }>).map(({ operation_id }) => ({
+            operation_id,
+            estado: "conflicto" as const,
+            error_message: motivo,
+          })),
+          visit_acknowledgement: {
+            visit_id: "visit-ack",
+            estado: "conflicto",
+            backend_status: "requiere_finalizacion",
+            server_received_at: "2026-11-17T12:00:00.000Z",
+            server_acknowledged_at: "2026-11-17T12:00:00.000Z",
+          },
+        }),
+      },
+      clock,
+    )
+    await coordinator.queue("visit-ack", "device-1", "set_part_diario", { codigo: "PD1" })
+
+    await coordinator.sync("visit-ack", "device-1")
+
+    expect((await store.getVisit("visit-ack"))?.backendStatus).toBe("requiere_finalizacion")
   })
 })

@@ -403,6 +403,7 @@ const legacyOperationStatus: Record<OperationSummary["estado"], TareaResumen["es
   programada: "pendiente",
   aceptada: "asignada",
   en_curso: "en_curso",
+  requiere_finalizacion: "requiere_finalizacion",
   completada: "completada",
   cancelada: "cancelada",
 }
