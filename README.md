@@ -70,4 +70,4 @@ src/
 
 ## Backend Supabase
 
-La API autenticada está documentada en [`supabase/README.md`](supabase/README.md). Las operaciones pasan por la Edge Function propietaria de cada capacidad (`identity-admin`, `asset-access`, `service-workflow`, `certificate-field` u `offline-sync`). El navegador no llama tablas, RPCs, Data API ni Storage directamente; Supabase Auth es la única excepción para gestionar la sesión. RLS y privilegios de base de datos conservan la autorización final.
+La API autenticada está documentada en [`supabase/README.md`](supabase/README.md). Las operaciones pasan por la Edge Function propietaria de cada capacidad (`identity-admin`, `asset-access`, `service-workflow`, `certificate-field` u `offline-sync`). El navegador no llama tablas, RPCs, Data API ni Storage directamente; Supabase Auth es la única excepción para gestionar la sesión. RLS y privilegios de base de datos conservan la autorización final. 
