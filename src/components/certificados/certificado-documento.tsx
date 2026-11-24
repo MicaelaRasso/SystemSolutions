@@ -294,13 +294,20 @@ export function CertificadoDocumento({
   )
 }
 
-function MarcaRequiereFirma() {
+/**
+ * Leyenda "REQUIERE FIRMA". En pantalla se repite tres veces a lo alto de la hoja; con `unica`
+ * muestra una sola, centrada, como en cada hoja impresa (la usa el PDF para estamparla por hoja).
+ */
+export function MarcaRequiereFirma({ unica = false }: { unica?: boolean }) {
   return (
     <div
       data-certificado-marca
-      className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-around overflow-hidden"
+      className={cn(
+        "pointer-events-none absolute inset-0 z-10 flex flex-col items-center overflow-hidden",
+        unica ? "justify-center" : "justify-around",
+      )}
     >
-      {[0, 1, 2].map((i) => (
+      {(unica ? [0] : [0, 1, 2]).map((i) => (
         <span
           key={i}
           aria-hidden={i > 0 || undefined}

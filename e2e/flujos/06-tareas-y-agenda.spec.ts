@@ -87,6 +87,19 @@ test.describe("Tareas y agenda del Administrador", () => {
     await dialogo.getByRole("button", { name: "Crear" }).click()
     await expect(combo).toContainText(nombre, { timeout: 30_000 })
 
+    // Decisión (d) del cliente: no hay tarea sobre un equipo sin válvulas. Se avisa, se bloquea y
+    // la válvula se carga desde el mismo formulario.
+    const aviso = page.getByRole("alert").filter({ hasText: "Este equipo no tiene válvulas cargadas" })
+    await expect(aviso).toBeVisible()
+    await expect(page.getByRole("button", { name: "Crear tarea" })).toBeDisabled()
+    await aviso.getByRole("button", { name: "Cargar válvulas" }).click()
+    const alta = page.getByRole("dialog", { name: "Nueva válvula de seguridad" })
+    await alta.getByLabel("TAG").fill(nombreUnico("PSV"))
+    await alta.getByRole("button", { name: "Crear" }).click()
+    await expect(aviso).toBeHidden({ timeout: 30_000 })
+    // El formulario queda bajo el diálogo modal hasta que se cierra: recién ahí se completa.
+    await expect(alta).toBeHidden({ timeout: 30_000 })
+
     await completarDatosTarea(page, { conTaller: false, horario: "15:40" })
     await page.getByRole("button", { name: "Crear tarea" }).click()
     await expect(page.getByText(/Solicitud N° \d+/).first()).toBeVisible({ timeout: 45_000 })

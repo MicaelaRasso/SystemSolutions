@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import type { VisitaOffline } from "@/lib/offline/sync"
 
 import {
+  avisoDeCierreSinTarjeta,
   otraVisitaEnCurso,
   visitaEnCurso,
   visitaIniciada,
@@ -73,5 +74,22 @@ describe("una visita en curso por taller", () => {
     const lista = [abierta, visita("b", "disponible", "aceptada")]
     expect(otraVisitaEnCurso(lista, "b")).toBe(abierta)
     expect(otraVisitaEnCurso(lista, "a")).toBeUndefined()
+  })
+})
+
+describe("avisoDeCierreSinTarjeta", () => {
+  const aviso = { visitId: "v1", texto: "Visita completada y enviada al backend." }
+
+  it("muestra el aviso cuando la visita completada ya salió de la agenda", () => {
+    expect(avisoDeCierreSinTarjeta(aviso, [{ id: "v2" }])).toBe(aviso.texto)
+    expect(avisoDeCierreSinTarjeta(aviso, [])).toBe(aviso.texto)
+  })
+
+  it("no lo repite mientras la tarjeta de la visita siga a la vista", () => {
+    expect(avisoDeCierreSinTarjeta(aviso, [{ id: "v1" }, { id: "v2" }])).toBeUndefined()
+  })
+
+  it("sin aviso no muestra nada", () => {
+    expect(avisoDeCierreSinTarjeta(undefined, [])).toBeUndefined()
   })
 })

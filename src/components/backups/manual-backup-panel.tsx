@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { AlertTriangle, CheckCircle2, Download, ShieldAlert } from "lucide-react"
 
+import { MarcaObligatoria } from "@/components/common/etiqueta-obligatoria"
 import { PageHeader } from "@/components/common/page-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -104,19 +105,27 @@ export function ManualBackupPanel() {
           {scope === "date_range" ? (
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label htmlFor="backup-from">Desde (Argentina, inclusivo)</Label>
+                <Label htmlFor="backup-from">
+                  Desde (Argentina, inclusivo)
+                  <MarcaObligatoria />
+                </Label>
                 <Input
                   id="backup-from"
                   type="date"
+                  aria-required
                   value={from}
                   onChange={(event) => setFrom(event.target.value)}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="backup-to">Hasta (Argentina, inclusivo)</Label>
+                <Label htmlFor="backup-to">
+                  Hasta (Argentina, inclusivo)
+                  <MarcaObligatoria />
+                </Label>
                 <Input
                   id="backup-to"
                   type="date"
+                  aria-required
                   value={to}
                   onChange={(event) => setTo(event.target.value)}
                 />

@@ -1,7 +1,7 @@
 "use client"
 import { FileJson } from "lucide-react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useSearchParams } from "next/navigation"
 import { PageHeader } from "@/components/common/page-header"
 import { EmptyState, ErrorState } from "@/components/common/states"
 import { CertificadoAdmin } from "@/components/certificados/certificado-admin"
@@ -12,6 +12,8 @@ import { useState } from "react"
 import { fmtFechaHoraArgentina } from "@/lib/format"
 export default function Page() {
   const params = useParams<{ id: string }>()
+  // El historial abre el detalle con ?descargar=1 para descargar el PDF directamente.
+  const descargarAlAbrir = useSearchParams().get("descargar") === "1"
   const query = useEdgeAdminCertificate(params.id)
   const [downloadError, setDownloadError] = useState<string | null>(null)
   if (query.isLoading) return <div className="h-48 animate-pulse rounded-xl bg-muted" />
@@ -54,6 +56,7 @@ export default function Page() {
       )}
       <CertificadoAdmin
         certificate={query.data.certificate}
+        descargarAlAbrir={descargarAlAbrir}
         acciones={
           <Button variant="outline" onClick={() => void download()}>
             <FileJson />

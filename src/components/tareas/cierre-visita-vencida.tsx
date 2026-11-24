@@ -3,14 +3,15 @@
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Lock } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { useForm } from "react-hook-form"
+import { useForm, useWatch } from "react-hook-form"
 import { toast } from "sonner"
 
+import { EtiquetaCampo } from "@/components/common/etiqueta-obligatoria"
 import { CampoTexto, FormDialog } from "@/components/common/form-dialog"
 import { SelectNativo } from "@/components/common/select-nativo"
 import { Button } from "@/components/ui/button"
 import { DialogFooter } from "@/components/ui/dialog"
-import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Field, FieldError, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { horaFinPropuesta } from "@/lib/domain/rules"
@@ -143,32 +144,43 @@ function CierreVisitaVencidaForm({
     { invalidar: INVALIDAR_TAREAS },
   )
   const { errors } = form.formState
+  // La visita de seguimiento es opcional; si se elige taller o fecha, pasan a ser obligatorios
+  // taller, fecha y horario (refinamientos de `cierreVisitaVencidaSchema`).
+  const [tallerElegido, fechaElegida] = useWatch({
+    control: form.control,
+    name: ["tallerId", "fecha"],
+  })
+  const seguimiento = !!tallerElegido || !!fechaElegida
 
   return (
     <form
       noValidate
-      onSubmit={form.handleSubmit((datos) =>
-        cierre.mutate(datos, {
-          onSuccess: (resultado) => {
-            const borradores = resultado.incomplete_certificate_ids.length
-            toast.success(
-              borradores
-                ? `Visita cerrada. ${borradores} borrador(es) incompleto(s) quedaron sin emitir.`
-                : "Visita cerrada.",
-            )
-            cerrar()
-            if (resultado.follow_up_visit_id)
-              router.push(`/admin/tareas/${resultado.follow_up_visit_id}`)
-          },
-        }),
-      )}
+      onSubmit={form.handleSubmit(async (datos) => {
+        // `mutateAsync` y no los callbacks de `mutate`: al invalidar, la visita ya figura completada
+        // y esta sección se desmonta antes de que corran, así que no había aviso ni se abría la
+        // visita de seguimiento. El error ya lo informa `useServiceMutation`.
+        const resultado = await cierre.mutateAsync(datos).catch(() => undefined)
+        if (!resultado) return
+        const borradores = resultado.incomplete_certificate_ids.length
+        toast.success(
+          borradores
+            ? `Visita cerrada. ${borradores} borrador(es) incompleto(s) quedaron sin emitir.`
+            : "Visita cerrada.",
+        )
+        cerrar()
+        if (resultado.follow_up_visit_id)
+          router.push(`/admin/tareas/${resultado.follow_up_visit_id}`)
+      })}
     >
       <FieldGroup>
         <Field data-invalid={!!errors.motivo}>
-          <FieldLabel htmlFor="motivo">Motivo del cierre</FieldLabel>
+          <EtiquetaCampo htmlFor="motivo" requerido>
+            Motivo del cierre
+          </EtiquetaCampo>
           <Textarea
             id="motivo"
             aria-invalid={!!errors.motivo}
+            aria-required
             maxLength={1000}
             autoFocus
             {...form.register("motivo")}
@@ -183,10 +195,13 @@ function CierreVisitaVencidaForm({
               : "Si alguna válvula quedó sin evaluar, elegí el taller, el día y el horario estimado de la visita de seguimiento."}
           </p>
           <Field data-invalid={!!errors.tallerId}>
-            <FieldLabel htmlFor="tallerId">Taller Móvil</FieldLabel>
+            <EtiquetaCampo htmlFor="tallerId" requerido={seguimiento}>
+              Taller Móvil
+            </EtiquetaCampo>
             <SelectNativo
               id="tallerId"
               aria-invalid={!!errors.tallerId}
+              aria-required={seguimiento || undefined}
               {...form.register("tallerId")}
             >
               <option value="">Sin visita de seguimiento</option>
@@ -201,13 +216,22 @@ function CierreVisitaVencidaForm({
             <FieldError errors={[errors.tallerId]} />
           </Field>
           <div className="grid gap-3 sm:grid-cols-3">
-            <CampoTexto form={form} name="fecha" label="Fecha" type="date" />
+            <CampoTexto
+              form={form}
+              name="fecha"
+              label="Fecha"
+              type="date"
+              requerido={seguimiento}
+            />
             <Field data-invalid={!!errors.hora}>
-              <FieldLabel htmlFor="hora">Hora de inicio</FieldLabel>
+              <EtiquetaCampo htmlFor="hora" requerido={seguimiento}>
+                Hora de inicio
+              </EtiquetaCampo>
               <Input
                 id="hora"
                 type="time"
                 aria-invalid={!!errors.hora}
+                aria-required={seguimiento || undefined}
                 {...form.register("hora", {
                   // Al cambiar el inicio se vuelve a proponer el fin estimado (inicio + 1 h).
                   onChange: (event: { target: { value: string } }) =>
@@ -218,7 +242,13 @@ function CierreVisitaVencidaForm({
               />
               <FieldError errors={[errors.hora]} />
             </Field>
-            <CampoTexto form={form} name="horaFin" label="Hora de fin estimada" type="time" />
+            <CampoTexto
+              form={form}
+              name="horaFin"
+              label="Hora de fin estimada"
+              type="time"
+              requerido={seguimiento}
+            />
           </div>
         </fieldset>
       </FieldGroup>

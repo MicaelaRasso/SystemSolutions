@@ -377,3 +377,22 @@ export function ventanaVisita(fecha: string, horaInicio: string, horaFin?: strin
   if (!finEstimadoValido(horaInicio, fin)) throw new Error(MENSAJE_FIN_ESTIMADO)
   return { startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString() }
 }
+
+type DatosContacto = { contacto: string; telefono: string }
+
+/**
+ * Al elegir el cliente de una tarea se proponen su contacto y teléfono de la ficha, solo en los
+ * campos que siguen vacíos: lo que el Administrador ya escribió no se pisa.
+ */
+export function contactoPropuesto(
+  cliente: DatosContacto | undefined,
+  actuales: DatosContacto,
+): Partial<DatosContacto> {
+  const propuesta: Partial<DatosContacto> = {}
+  if (!cliente) return propuesta
+  for (const campo of ["contacto", "telefono"] as const) {
+    const valor = cliente[campo]?.trim()
+    if (valor && !actuales[campo].trim()) propuesta[campo] = valor
+  }
+  return propuesta
+}

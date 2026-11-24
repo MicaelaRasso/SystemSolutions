@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { MutationObserver, QueryClient, onlineManager } from "@tanstack/react-query"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const { edgeApi } = vi.hoisted(() => ({
   edgeApi: {
@@ -31,6 +32,7 @@ import {
   cerrarVisitaVencida,
   consultaEmpresa,
   guardarSolicitudYVisita,
+  opcionesMutacionServicio,
   reasignarVisita,
   type OperationRead,
 } from "./queries"
@@ -350,5 +352,26 @@ describe("cerrarVisitaVencida (E4)", () => {
       startsAt: null,
       endsAt: null,
     })
+  })
+})
+
+describe("opcionesMutacionServicio: trabajo sin conexión", () => {
+  afterEach(() => onlineManager.setOnline(true))
+
+  it("una mutación del taller marcada sin conexión se ejecuta aunque no haya red", async () => {
+    onlineManager.setOnline(false)
+    const fn = vi.fn(async (valor: string) => `encolada ${valor}`)
+    const observador = new MutationObserver(
+      new QueryClient(),
+      opcionesMutacionServicio(new QueryClient(), fn, { sinConexion: true }),
+    )
+
+    await expect(observador.mutate("PSV-1")).resolves.toBe("encolada PSV-1")
+    expect(fn).toHaveBeenCalledTimes(1)
+  })
+
+  it("las demás mutaciones siguen esperando la conexión", () => {
+    const opciones = opcionesMutacionServicio(new QueryClient(), async () => undefined)
+    expect(opciones.networkMode).toBeUndefined()
   })
 })

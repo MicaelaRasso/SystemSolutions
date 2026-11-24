@@ -69,7 +69,7 @@ export async function iniciarBorrador(page: Page, tag: string, opciones: { offli
       )
   await expect(async () => {
     await orden.getByRole("button", { name: "Evaluada", exact: true }).click({ timeout: 5_000 })
-    await expect(orden.getByText("Estado: evaluada")).toBeVisible({ timeout: 8_000 })
+    await expect(orden.getByText("Estado: Evaluada", { exact: true })).toBeVisible({ timeout: 8_000 })
   }).toPass({ timeout: 45_000 })
   const fecha = orden.locator('[id="certificate-execution-date"]')
   await expect(async () => {
@@ -183,10 +183,11 @@ export async function guardarBorrador(page: Page, orden: Locator) {
 
 export async function marcarNoEvaluada(page: Page, tag: string, motivo: string) {
   const orden = tarjetaOrden(page, tag)
+  await orden.getByRole("button", { name: "No evaluada", exact: true }).click()
   await orden.getByPlaceholder("Motivo si no fue evaluada").fill(motivo)
   await expect(async () => {
-    await orden.getByRole("button", { name: "No evaluada", exact: true }).click({ timeout: 5_000 })
-    await expect(orden.getByText("Estado: no_evaluada")).toBeVisible({ timeout: 8_000 })
+    await orden.getByRole("button", { name: "Confirmar no evaluada" }).click({ timeout: 5_000 })
+    await expect(orden.getByText("Estado: No evaluada")).toBeVisible({ timeout: 8_000 })
   }).toPass({ timeout: 45_000 })
 }
 

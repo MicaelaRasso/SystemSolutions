@@ -198,14 +198,21 @@ function PatronForm({ patron, cerrar }: { patron?: Patron; cerrar: () => void })
             form={form}
             name="nombre"
             label="Nombre"
+            requerido
             placeholder="KELLER LEO 1"
             autoFocus
           />
-          <CampoTexto form={form} name="nroSerie" label="N° de serie" placeholder="122330" />
+          <CampoTexto
+            form={form}
+            name="nroSerie"
+            label="N° de serie"
+            requerido
+            placeholder="122330"
+          />
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
           <div className="flex-1">
-            <CampoTexto form={form} name="vencimiento" label="Vencimiento" type="date" />
+            <CampoTexto form={form} name="vencimiento" label="Vencimiento" requerido type="date" />
           </div>
           <Button type="button" variant="outline" onClick={renovar}>
             <CalendarPlus />

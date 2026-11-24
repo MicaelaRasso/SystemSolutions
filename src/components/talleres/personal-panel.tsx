@@ -165,10 +165,17 @@ function PersonaForm({ persona, cerrar }: { persona?: Persona; cerrar: () => voi
     <form noValidate onSubmit={form.handleSubmit((d) => guardar.mutate(d, { onSuccess: cerrar }))}>
       <FieldGroup>
         <div className="grid gap-4 sm:grid-cols-2">
-          <CampoTexto form={form} name="nombre" label="Nombre" autoFocus />
-          <CampoTexto form={form} name="apellido" label="Apellido" />
+          <CampoTexto form={form} name="nombre" label="Nombre" requerido autoFocus />
+          <CampoTexto form={form} name="apellido" label="Apellido" requerido />
         </div>
-        <CampoTexto form={form} name="dni" label="DNI" inputMode="numeric" placeholder="35123456" />
+        <CampoTexto
+          form={form}
+          name="dni"
+          label="DNI"
+          requerido
+          inputMode="numeric"
+          placeholder="35123456"
+        />
         <Controller
           control={form.control}
           name="activo"

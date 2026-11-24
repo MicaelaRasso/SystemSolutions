@@ -20,6 +20,7 @@ import {
   type EstadoFotoEvidencia,
 } from "@/components/certificados/certificate-capture-form"
 import { ConfirmDialog } from "@/components/common/confirm-dialog"
+import { MarcaObligatoria } from "@/components/common/etiqueta-obligatoria"
 import { SelectNativo } from "@/components/common/select-nativo"
 import { ErrorState } from "@/components/common/states"
 import { Badge } from "@/components/ui/badge"
@@ -72,7 +73,13 @@ import {
   resumenGuardado,
 } from "./resumenes-visitas"
 import { tituloDeVisita, type ResumenVisita, type TituloVisita } from "./visita-titulo"
-import { otraVisitaEnCurso, visitaIniciada, visitaRequiereFinalizacion } from "./estado-visita"
+import {
+  avisoDeCierreSinTarjeta,
+  otraVisitaEnCurso,
+  visitaIniciada,
+  visitaRequiereFinalizacion,
+  type AvisoCierreVisita,
+} from "./estado-visita"
 import { nombreDeTecnico, type TecnicoAsignado } from "./tecnicos"
 import { AgregarValvula } from "./agregar-valvula"
 import { fmtFechaHoraArgentina } from "@/lib/format"
@@ -129,6 +136,12 @@ function findEquipo(context: StoredVisitContext, equipoId: string | undefined) {
   if (!equipoId) return undefined
   const tree = context.context as { equipos?: Record<string, unknown>[] } | undefined
   return tree?.equipos?.find((equipo) => equipo.id === equipoId)
+}
+
+const ESTADO_ORDEN_LABEL: Record<string, string> = {
+  pendiente: "Pendiente",
+  evaluada: "Evaluada",
+  no_evaluada: "No evaluada",
 }
 
 export function findValve(
@@ -287,6 +300,8 @@ export function VisitasPanel() {
   const [acceptMessage, setAcceptMessage] = useState<string>()
   const [connection, setConnection] = useState<"online" | "offline" | "loading" | "error">("loading")
   const [error, setError] = useState<string>()
+  // Aviso del último cierre: la tarjeta de una visita completada sale de la agenda al refrescar.
+  const [avisoCierre, setAvisoCierre] = useState<AvisoCierreVisita>()
 
   const loadLocal = useCallback(async () => {
     const store = new IndexedDbOfflineStore()
@@ -512,6 +527,11 @@ export function VisitasPanel() {
       </section>
       <section className="space-y-3" aria-labelledby="scheduled-visits-title">
         <h2 id="scheduled-visits-title" className="text-lg font-semibold">Visitas Programadas</h2>
+        {avisoDeCierreSinTarjeta(avisoCierre, visits) ? (
+          <p role="status" className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+            {avisoDeCierreSinTarjeta(avisoCierre, visits)}
+          </p>
+        ) : null}
         {visits.length === 0 && connection !== "loading" ? (
           <p className="rounded-lg border border-dashed px-4 py-5 text-center text-sm text-muted-foreground">
             Las visitas aceptadas aparecerán aquí cuando estén dentro de los próximos dos días.
@@ -532,6 +552,7 @@ export function VisitasPanel() {
               open={selectedId === visit.id}
               onOpen={() => setSelectedId(selectedId === visit.id ? undefined : visit.id)}
               onChanged={refresh}
+              onClosed={(texto) => setAvisoCierre({ visitId: visit.id, texto })}
             />
             )
           })}
@@ -550,6 +571,7 @@ function VisitCard({
   open,
   onOpen,
   onChanged,
+  onClosed,
 }: {
   visit: VisitaOffline
   resumen?: ResumenVisita
@@ -559,6 +581,8 @@ function VisitCard({
   open: boolean
   onOpen: () => void
   onChanged: () => Promise<void>
+  /** Avisa al panel que la visita se cerró, para mostrarlo aunque la tarjeta salga de la agenda. */
+  onClosed?: (texto: string) => void
 }) {
   const store = useMemo(() => new IndexedDbOfflineStore(), [])
   const rotulo = visitLabel(visit, resumen)
@@ -742,6 +766,7 @@ function VisitCard({
             store={store}
             pdSugerido={codigoPdSugerido(resumen ?? resumenGuardado(visit.context))}
             onChanged={onChanged}
+            onClosed={onClosed}
           />
         ) : null}
       </CardContent>
@@ -756,6 +781,7 @@ function VisitEditor({
   store,
   pdSugerido = "",
   onChanged,
+  onClosed,
 }: {
   visit: VisitaOffline
   /** Título de otra visita del taller que sigue en curso: bloquea el inicio de esta. */
@@ -766,6 +792,7 @@ function VisitEditor({
   /** PD/RTO de la tarea, normalizado: se ofrece mientras la visita no tenga un PD guardado (D12). */
   pdSugerido?: string
   onChanged: () => Promise<void>
+  onClosed?: (texto: string) => void
 }) {
   // Un único aviso con role="status"; se muestra junto al paso que lo originó (firma del Cliente o
   // cierre) para que se vea al lado del botón, y al pie para el resto.
@@ -778,6 +805,12 @@ function VisitEditor({
     setAviso({ texto, lugar: "cliente", error })
   const avisarCierre = (texto: string, error = false) =>
     setAviso({ texto, lugar: "cierre", error })
+  // Un cierre exitoso se avisa también al panel: al refrescar, la visita completada sale de la
+  // agenda de campo y su tarjeta (con este aviso) desaparece.
+  const avisarCierreExitoso = (texto: string) => {
+    avisarCierre(texto)
+    onClosed?.(texto)
+  }
   const [completing, setCompleting] = useState(false)
   const [clientSigner, setClientSigner] = useState("")
   const [clientSignature, setClientSignature] = useState<string>()
@@ -1242,8 +1275,11 @@ function VisitEditor({
     }
   }
 
-  /** Completa la visita; devuelve `true` solo si quedó completada (en el servidor o localmente). */
-  const complete = async (): Promise<boolean> => {
+  /**
+   * Completa la visita; devuelve `true` solo si quedó completada (en el servidor o localmente).
+   * `exito` arma el aviso de éxito (con o sin conexión) y se muestra antes de refrescar la agenda.
+   */
+  const complete = async (exito?: (enLinea: boolean) => string): Promise<boolean> => {
     if (!clientSignatureStepDone) {
       avisarCierre("Registrá la firma del Cliente o indicá que no hay un representante presente.", true)
       return false
@@ -1294,6 +1330,7 @@ function VisitEditor({
           // Si la visita ya figura completada (se perdió la respuesta de un intento previo), es éxito.
           if (!(await visitaYaCompletada(visit.id))) throw caught
         }
+        await coordinator.markVisitCompletedOnServer(visit.id)
       } else {
         const { signatureOperation } = await queueOfflineSignatureCapture({
           store,
@@ -1322,10 +1359,12 @@ function VisitEditor({
         )
         await coordinator.markVisitLocallyComplete(visit.id)
       }
-      avisarCierre(
-        navigator.onLine
-          ? "Visita completada y enviada al backend."
-          : "Visita completada localmente; queda pendiente de sincronización.",
+      avisarCierreExitoso(
+        exito
+          ? exito(navigator.onLine)
+          : navigator.onLine
+            ? "Visita completada y enviada al backend."
+            : "Visita completada localmente; queda pendiente de sincronización.",
       )
       await onChanged()
       return true
@@ -1371,11 +1410,13 @@ function VisitEditor({
       }
       setTechnicianSignatureUploaded(true)
       if (!completada) completada = await visitaYaCompletada(visit.id)
-      avisarCierre(
-        completada
-          ? "Firma registrada: la visita quedó completada."
-          : "Firma registrada. La visita queda para que el Administrador la cierre (faltan resultados o borradores por resolver).",
-      )
+      if (completada) {
+        await coordinator.markVisitCompletedOnServer(visit.id)
+        avisarCierreExitoso("Firma registrada: la visita quedó completada.")
+      } else
+        avisarCierre(
+          "Firma registrada. La visita queda para que el Administrador la cierre (faltan resultados o borradores por resolver).",
+        )
       await onChanged()
     } catch (caught) {
       avisarCierre(textoDeError(caught, "No se pudo registrar la firma del Técnico"), true)
@@ -1438,10 +1479,10 @@ function VisitEditor({
           )
         }
       }
-      // Si el cierre falla, `complete` ya dejó el motivo junto al botón: no se lo pisa con un éxito.
-      if (!(await complete())) return
-      avisarCierre(
-        navigator.onLine
+      // Si el cierre falla, `complete` deja el motivo junto al botón; si sale bien, avisa este
+      // éxito antes de refrescar la agenda (la tarjeta de la visita cerrada puede desaparecer).
+      await complete((enLinea) =>
+        enLinea
           ? "Visita cerrada como no terminada. Las válvulas pendientes quedaron listas para reprogramar por el Administrador."
           : "Visita cerrada localmente como no terminada; al sincronizar se notificará al Administrador para reprogramar las válvulas pendientes.",
       )
@@ -1527,9 +1568,13 @@ function VisitEditor({
           <CardContent className="space-y-3">
             <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
               <div className="space-y-1">
-                <Label htmlFor={`parte-diario-code-${visit.id}`}>Número de Parte Diario (PD)</Label>
+                <Label htmlFor={`parte-diario-code-${visit.id}`}>
+                  Número de Parte Diario (PD)
+                  <MarcaObligatoria />
+                </Label>
                 <Input
                   id={`parte-diario-code-${visit.id}`}
+                  aria-required
                   value={pdValor}
                   onChange={(event) => {
                     setPdEditado(true)
@@ -1696,9 +1741,14 @@ function VisitEditor({
           ) : !clientSignatureStepDone ? (
             <section aria-label="Firma del Cliente" className="space-y-3 rounded-md border p-3">
               <h3 className="font-medium">Paso 1 · Firma opcional del Cliente o representante</h3>
-              <Label htmlFor={`client-signer-${visit.id}`}>Nombre y apellido</Label>
+              {/* Opcional el paso; si se registra la firma, el nombre es obligatorio. */}
+              <Label htmlFor={`client-signer-${visit.id}`}>
+                Nombre y apellido
+                <MarcaObligatoria />
+              </Label>
               <Input
                 id={`client-signer-${visit.id}`}
+                aria-required
                 value={clientSigner}
                 onChange={(event) => setClientSigner(event.target.value)}
                 placeholder="Nombre y apellido"
@@ -1743,11 +1793,15 @@ function VisitEditor({
           {clientSignatureStepDone && !(vencida && hasTechnicianSignature) ? (
             <section aria-label="Firma del Técnico" className="space-y-3 rounded-md border p-3">
               <h3 className="font-medium">Paso 2 · Firma del Técnico</h3>
-              <Label htmlFor={`technician-${visit.id}`}>Técnico ejecutor</Label>
+              <Label htmlFor={`technician-${visit.id}`}>
+                Técnico ejecutor
+                <MarcaObligatoria />
+              </Label>
               {technicians.length ? (
                 <div className="space-y-2">
                   <SelectNativo
                     id={`technician-${visit.id}`}
+                    aria-required
                     value={customTechnician ? "__otro__" : technician}
                     onChange={(event) => {
                       const val = event.target.value
@@ -1772,6 +1826,7 @@ function VisitEditor({
                   {customTechnician ? (
                     <Input
                       id={`technician-custom-${visit.id}`}
+                      aria-required
                       value={technician}
                       onChange={(event) => setTechnician(event.target.value)}
                       placeholder="Nombre y apellido del técnico reemplazante"
@@ -1782,6 +1837,7 @@ function VisitEditor({
               ) : (
                 <Input
                   id={`technician-${visit.id}`}
+                  aria-required
                   value={technician}
                   onChange={(event) => setTechnician(event.target.value)}
                   placeholder="Nombre del Técnico ejecutor"
@@ -1841,17 +1897,28 @@ function VisitEditor({
                     placeholder="Motivo para reprogramar las válvulas faltantes"
                     disabled={closed || !started || savingIncomplete || completing}
                   />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="max-sm:w-full"
-                    onClick={() => void completeIncompleteVisit()}
-                    disabled={closed || !started || savingIncomplete || completing}
-                  >
-                    {savingIncomplete
-                      ? "Cerrando visita…"
-                      : "Visita no terminada (reprogramar faltantes)"}
-                  </Button>
+                  <ConfirmDialog
+                    titulo="¿Cerrar la visita como no terminada?"
+                    descripcion={
+                      incompleteReason.trim()
+                        ? `Las válvulas pendientes quedan como no evaluadas con el motivo «${incompleteReason.trim()}» para que el Administrador las reprograme. No se puede deshacer.`
+                        : "Las válvulas pendientes quedan como no evaluadas para que el Administrador las reprograme. No se puede deshacer."
+                    }
+                    confirmar="Cerrar visita"
+                    onConfirm={completeIncompleteVisit}
+                    trigger={
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="max-sm:w-full"
+                        disabled={closed || !started || savingIncomplete || completing}
+                      >
+                        {savingIncomplete
+                          ? "Cerrando visita…"
+                          : "Visita no terminada (reprogramar faltantes)"}
+                      </Button>
+                    }
+                  />
                 </div>
                 </>
               )}
@@ -1893,6 +1960,8 @@ function WorkOrderEditor({
 }) {
   const [reason, setReason] = useState(order.no_evaluada_razon ?? "")
   const [outcome, setOutcome] = useState(order.estado ?? "pendiente")
+  // "No evaluada" pide el motivo antes de guardarse (el servidor lo exige).
+  const [pidiendoMotivo, setPidiendoMotivo] = useState(false)
   // Orden agregada en el dispositivo que el servidor todavía no creó: lo que se cargue sobre ella se
   // encola detrás de su alta, aunque haya conexión.
   const ordenLocal = (order as { alta_local?: boolean }).alta_local === true
@@ -2018,6 +2087,7 @@ function WorkOrderEditor({
         }, dependencies)
       }
       setOutcome(outcome)
+      setPidiendoMotivo(false)
       onMessage(
         outcome === "evaluada"
           ? "Orden de trabajo marcada como evaluada."
@@ -2179,31 +2249,61 @@ function WorkOrderEditor({
         <CardTitle className="text-sm">
           {workOrderName(order, contextOf(visit), currentCertificate)}
         </CardTitle>
-        <CardDescription>Estado: {outcome}</CardDescription>
+        <CardDescription>
+          Estado: {ESTADO_ORDEN_LABEL[outcome] ?? outcome}
+          {outcome === "no_evaluada" && order.no_evaluada_razon?.trim()
+            ? ` · ${order.no_evaluada_razon.trim()}`
+            : outcome === "no_evaluada" && reason.trim()
+              ? ` · ${reason.trim()}`
+              : ""}
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="grid grid-cols-2 gap-2 sm:flex">
           <Button
-            variant="outline"
+            variant={outcome === "evaluada" ? "default" : "outline"}
+            aria-pressed={outcome === "evaluada"}
             disabled={disabled}
             onClick={() => void updateOutcome("evaluada")}
           >
             Evaluada
           </Button>
           <Button
-            variant="outline"
+            variant={outcome === "no_evaluada" || pidiendoMotivo ? "default" : "outline"}
+            aria-pressed={outcome === "no_evaluada"}
             disabled={disabled}
-            onClick={() => void updateOutcome("no_evaluada")}
+            onClick={() => setPidiendoMotivo(true)}
           >
             No evaluada
           </Button>
         </div>
-        <Input
-          value={reason}
-          onChange={(event) => setReason(event.target.value)}
-          placeholder="Motivo si no fue evaluada"
-          disabled={disabled}
-        />
+        {pidiendoMotivo ? (
+          <div className="space-y-2 rounded-md border bg-background p-2 sm:p-3">
+            <Label htmlFor={`motivo-no-evaluada-${order.id}`}>
+              Motivo por el que no se evaluó <MarcaObligatoria />
+            </Label>
+            <Input
+              id={`motivo-no-evaluada-${order.id}`}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="Motivo si no fue evaluada"
+              aria-required="true"
+              disabled={disabled}
+              autoFocus
+            />
+            <div className="grid grid-cols-2 gap-2 sm:flex">
+              <Button
+                disabled={disabled || !reason.trim()}
+                onClick={() => void updateOutcome("no_evaluada")}
+              >
+                Confirmar no evaluada
+              </Button>
+              <Button variant="ghost" onClick={() => setPidiendoMotivo(false)}>
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        ) : null}
         {!certificateId ? (
           <Button
             variant="secondary"

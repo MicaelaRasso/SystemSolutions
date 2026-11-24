@@ -9,6 +9,7 @@ import { toast } from "sonner"
 
 import { ValvulaDialog } from "@/components/estructura/dialogs"
 import { DatePicker } from "@/components/common/date-picker"
+import { EtiquetaCampo } from "@/components/common/etiqueta-obligatoria"
 import { CampoTexto } from "@/components/common/form-dialog"
 import { useMotivo } from "@/components/common/motivo-dialog"
 import { Button } from "@/components/ui/button"
@@ -34,7 +35,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { abrirAdjunto } from "@/lib/adjuntos"
 import { TIPOS_TAREA } from "@/lib/domain/catalogos"
-import { ESTADO_TAREA_LABEL, horaFinPropuesta } from "@/lib/domain/rules"
+import { ESTADO_TAREA_LABEL, contactoPropuesto, horaFinPropuesta } from "@/lib/domain/rules"
 import { tareaSchema, type TareaInput } from "@/lib/domain/schemas"
 import type { Adjunto, EstadoTarea } from "@/lib/domain/types"
 import { hoyIso } from "@/lib/fechas"
@@ -47,6 +48,7 @@ import {
   usaSupabase,
   useArbol,
   useCatalogo,
+  useEmpresas,
   useServiceMutation,
   useTalleres,
 } from "@/lib/hooks/queries"
@@ -113,6 +115,8 @@ export function TareaForm({
   const { errors, isDirty } = form.formState
 
   const talleres = useTalleres()
+  // Misma consulta que la cascada de ubicación: comparte la caché y no suma pedidos.
+  const empresas = useEmpresas({ incluirInactivas: false })
   const condicionesCatalogo = useCatalogo("condicionesServicio")
 
   const [adjuntos, setAdjuntos] = useState<Adjunto[]>(tarea?.adjuntos ?? [])
@@ -196,8 +200,21 @@ export function TareaForm({
   }
 
   function setUbicacion(u: Ubicacion) {
+    const cambioCliente = u.empresaId !== form.getValues("empresaId")
     ;(Object.keys(u) as (keyof Ubicacion)[]).forEach((k) =>
       form.setValue(k, u[k], { shouldDirty: true, shouldValidate: form.formState.isSubmitted }),
+    )
+    if (!cambioCliente || !u.empresaId) return
+    const cliente = empresas.data?.find((e) => e.id === u.empresaId)
+    const propuesta = contactoPropuesto(cliente, {
+      contacto: form.getValues("contacto"),
+      telefono: form.getValues("telefono"),
+    })
+    ;(Object.keys(propuesta) as (keyof typeof propuesta)[]).forEach((k) =>
+      form.setValue(k, propuesta[k] ?? "", {
+        shouldDirty: true,
+        shouldValidate: form.formState.isSubmitted,
+      }),
     )
   }
 
@@ -282,8 +299,15 @@ export function TareaForm({
               name="fechaSolicitud"
               render={({ field, fieldState }) => (
                 <Field data-invalid={fieldState.invalid}>
-                  <FieldLabel htmlFor="fechaSolicitud">Fecha de solicitud</FieldLabel>
-                  <DatePicker id="fechaSolicitud" aria-invalid={fieldState.invalid} {...field} />
+                  <EtiquetaCampo htmlFor="fechaSolicitud" requerido>
+                    Fecha de solicitud
+                  </EtiquetaCampo>
+                  <DatePicker
+                    id="fechaSolicitud"
+                    aria-invalid={fieldState.invalid}
+                    aria-required
+                    {...field}
+                  />
                   <FieldError errors={[fieldState.error]} />
                 </Field>
               )}
@@ -293,12 +317,15 @@ export function TareaForm({
               name="fechaEjecucion"
               render={({ field, fieldState }) => (
                 <Field data-invalid={fieldState.invalid}>
-                  <FieldLabel htmlFor="fechaEjecucion">Fecha de ejecución</FieldLabel>
+                  <EtiquetaCampo htmlFor="fechaEjecucion" requerido>
+                    Fecha de ejecución
+                  </EtiquetaCampo>
                   {/* El esquema exige que no sea anterior a la fecha de solicitud. */}
                   <DatePicker
                     id="fechaEjecucion"
                     min={fechaSolicitud}
                     aria-invalid={fieldState.invalid}
+                    aria-required
                     {...field}
                   />
                   <FieldError errors={[fieldState.error]} />
@@ -382,16 +409,23 @@ export function TareaForm({
         <FieldSet>
           <FieldLegend>Solicitud</FieldLegend>
           <div className="grid gap-4 sm:grid-cols-2">
-            <CampoTexto form={form} name="contacto" label="Contacto que solicita" />
-            <CampoTexto form={form} name="telefono" label="Teléfono" type="tel" />
+            <CampoTexto form={form} name="contacto" label="Contacto que solicita" requerido />
+            <CampoTexto form={form} name="telefono" label="Teléfono" type="tel" requerido />
             <Controller
               control={form.control}
               name="tipo"
               render={({ field, fieldState }) => (
                 <Field data-invalid={fieldState.invalid}>
-                  <FieldLabel htmlFor="tipo">Tipo de tarea</FieldLabel>
+                  <EtiquetaCampo htmlFor="tipo" requerido>
+                    Tipo de tarea
+                  </EtiquetaCampo>
                   <Select value={field.value} onValueChange={(v) => v && field.onChange(v)}>
-                    <SelectTrigger id="tipo" className="w-full">
+                    <SelectTrigger
+                      id="tipo"
+                      className="w-full"
+                      aria-invalid={fieldState.invalid}
+                      aria-required
+                    >
                       <SelectValue placeholder="Seleccionar" />
                     </SelectTrigger>
                     <SelectContent>
@@ -412,11 +446,14 @@ export function TareaForm({
             </div>
           </div>
           <Field data-invalid={!!errors.detalle}>
-            <FieldLabel htmlFor="detalle">Detalle del trabajo</FieldLabel>
+            <EtiquetaCampo htmlFor="detalle" requerido>
+              Detalle del trabajo
+            </EtiquetaCampo>
             <Textarea
               id="detalle"
               rows={3}
               aria-invalid={!!errors.detalle}
+              aria-required
               {...form.register("detalle")}
             />
             <FieldError errors={[errors.detalle]} />

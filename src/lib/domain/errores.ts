@@ -132,6 +132,49 @@ const MENSAJES: Readonly<Record<string, string>> = {
   "A Parte diario image file is required": "Elegí la foto del Parte Diario antes de adjuntarla.",
   "A valid alphanumeric Parte diario code is required":
     "El número de Parte Diario debe ser alfanumérico (sin espacios ni símbolos).",
+  // Trabajo de campo del taller
+  "Every work order must have an explicit outcome before visit completion":
+    "Antes de completar la visita, marcá cada válvula como Evaluada o No evaluada.",
+  "A no evaluada work order requires a reason":
+    "Para marcar la válvula como No evaluada escribí el motivo.",
+  "A work order outcome must be evaluada or no_evaluada":
+    "El resultado de la válvula debe ser Evaluada o No evaluada.",
+  "Work orders can be updated only while the visit is in progress":
+    "Solo se puede cargar el resultado de las válvulas con la visita en curso.",
+  "Work order not found": "No se encontró la válvula de esta visita.",
+  "Only an evaluated work order can create a certificate draft":
+    "Para iniciar el borrador de certificado, primero marcá la válvula como Evaluada.",
+  "An unevaluated work order cannot have a certificate":
+    "Una válvula No evaluada no puede tener certificado.",
+  "Another device is already working on this visit":
+    "La visita está reservada en otro dispositivo: solo ese dispositivo puede trabajarla.",
+  "Only an active visit can be claimed": "Solo se puede reservar una visita aceptada o en curso.",
+  "The visit is not claimed by this device": "Esta visita no está reservada en este dispositivo.",
+  "Only an accepted visit can begin": "Solo se puede iniciar una visita aceptada.",
+  "Only the assigned Taller Móvil can accept this visit":
+    "Solo el taller móvil asignado puede aceptar esta visita.",
+  "Only the assigned Taller Móvil can reject this visit":
+    "Solo el taller móvil asignado puede rechazar esta visita.",
+  "Only the assigned Taller Móvil can execute this visit":
+    "Solo el taller móvil asignado puede trabajar en esta visita.",
+  "Only the assigned Taller Móvil can capture an in-person Cliente signature":
+    "Solo el taller móvil asignado puede registrar la firma del Cliente.",
+  "A Cliente signature requires first and last name":
+    "Ingresá el nombre y apellido del representante del Cliente.",
+  "A signature image and signer name are required": "Faltan la firma o el nombre de quien firma.",
+  "A Parte diario can only be changed while its visit is in progress":
+    "El Parte Diario solo se puede cambiar con la visita en curso.",
+  "Parte diario images can only be added while the visit is in progress":
+    "Las fotos del Parte Diario solo se pueden agregar con la visita en curso.",
+  "Certificate draft not found": "No se encontró el borrador de certificado.",
+  "Certificate capture is still open":
+    "El certificado todavía está en carga: se cierra al completar la visita.",
+  "Closed certificate data is immutable; create a replacement certificate":
+    "El certificado ya está cerrado y no se puede modificar.",
+  "A finalized certificate requires an execution date":
+    "Falta la fecha de ejecución del certificado.",
+  "No active certificate template exists":
+    "No hay una plantilla de certificado activa. Pedile al administrador que active una.",
   // Cuenta
   "Cuenta is not active": "Tu cuenta no está activa.",
 }

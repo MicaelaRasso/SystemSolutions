@@ -4,6 +4,7 @@ import { CATALOGO_SEMILLA } from "./catalogos"
 import {
   alcanceCliente,
   camposSinResolver,
+  contactoPropuesto,
   estadoFirma,
   estadoPatron,
   finEstimadoValido,
@@ -270,5 +271,30 @@ describe("horario de la visita (inicio y fin estimado)", () => {
     })
     expect(() => ventanaVisita("2026-11-20", "10:00", "09:00")).toThrow(/posterior/)
     expect(() => ventanaVisita("", "10:00", "11:00")).toThrow(/no es válido/)
+  })
+})
+
+describe("contactoPropuesto", () => {
+  const cliente = { contacto: "Ana Pérez", telefono: "299 555-0101" }
+
+  it("propone el contacto y el teléfono del cliente cuando los campos están vacíos", () => {
+    expect(contactoPropuesto(cliente, { contacto: "", telefono: "  " })).toEqual({
+      contacto: "Ana Pérez",
+      telefono: "299 555-0101",
+    })
+  })
+
+  it("no pisa lo que el admin ya escribió", () => {
+    expect(contactoPropuesto(cliente, { contacto: "Luis", telefono: "" })).toEqual({
+      telefono: "299 555-0101",
+    })
+    expect(contactoPropuesto(cliente, { contacto: "Luis", telefono: "111" })).toEqual({})
+  })
+
+  it("no propone nada si el cliente no tiene esos datos", () => {
+    expect(
+      contactoPropuesto({ contacto: "", telefono: "" }, { contacto: "", telefono: "" }),
+    ).toEqual({})
+    expect(contactoPropuesto(undefined, { contacto: "", telefono: "" })).toEqual({})
   })
 })

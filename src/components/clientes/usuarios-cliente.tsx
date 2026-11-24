@@ -6,6 +6,7 @@ import { useMemo, useState } from "react"
 import { Controller, useForm } from "react-hook-form"
 
 import { ConfirmDialog } from "@/components/common/confirm-dialog"
+import { EtiquetaCampo } from "@/components/common/etiqueta-obligatoria"
 import { EmptyState, ErrorState } from "@/components/common/states"
 import { TablaResponsive } from "@/components/common/tabla-responsive"
 import { Badge } from "@/components/ui/badge"
@@ -350,12 +351,16 @@ function UsuarioForm({
     },
   )
 
+  // Los tres campos son obligatorios en `usuarioClienteSchema`.
   const texto = (name: "nombre" | "apellido" | "email", label: string, type = "text") => (
     <Field data-invalid={!!errors[name]}>
-      <FieldLabel htmlFor={`u-${name}`}>{label}</FieldLabel>
+      <EtiquetaCampo htmlFor={`u-${name}`} requerido>
+        {label}
+      </EtiquetaCampo>
       <Input
         id={`u-${name}`}
         type={type}
+        aria-required
         readOnly={name === "email" && !!usuario}
         aria-invalid={!!errors[name]}
         {...form.register(name)}

@@ -11,9 +11,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Field, FieldError, FieldLabel } from "@/components/ui/field"
+import { Field, FieldError } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
 
+import { EtiquetaCampo } from "./etiqueta-obligatoria"
 import { normalizarMotivo } from "./motivo-dialog-utils"
 
 export type PedidoMotivo = {
@@ -61,7 +62,9 @@ function MotivoDialog({
         </DialogHeader>
         <form onSubmit={enviar} className="grid gap-4" noValidate>
           <Field data-invalid={error}>
-            <FieldLabel htmlFor="motivo-texto">{pedido.etiqueta}</FieldLabel>
+            <EtiquetaCampo htmlFor="motivo-texto" requerido>
+              {pedido.etiqueta}
+            </EtiquetaCampo>
             <Textarea
               id="motivo-texto"
               value={texto}

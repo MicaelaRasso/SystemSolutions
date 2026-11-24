@@ -59,7 +59,9 @@ test.describe("Flujo 4: visita no terminada y reprogramación agrupada", () => {
     await expect(formulario).toBeVisible({ timeout: 45_000 })
     await formulario.locator("select").selectOption({ index: 1 })
     await formulario.locator('input[type="date"]').fill(fechaArgentina(1))
-    await formulario.locator('input[type="time"]').fill("10:00")
+    await formulario.getByLabel("Inicio").fill("10:00")
+    // Fin estimado (#94): se propone inicio + 1 h y reserva el equipo hasta esa hora.
+    await expect(formulario.getByLabel("Hora de fin estimada")).toHaveValue("11:00")
     await formulario.getByRole("button", { name: "Crear visita de seguimiento" }).click()
 
     await expect(page).not.toHaveURL(new RegExp(visita.visitaId), { timeout: 15_000 })

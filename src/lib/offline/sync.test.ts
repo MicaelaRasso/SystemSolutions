@@ -296,6 +296,118 @@ describe("OfflineSyncCoordinator", () => {
     expect(sent).toEqual([[parent.operationId], ["layer-1"]])
   })
 
+  it("encola las sincronizaciones concurrentes de una visita aunque vengan de coordinadores distintos", async () => {
+    const store = new MemoryStore()
+    await store.saveOperation({
+      ...startOperation("visit-concurrente"),
+      kind: "work_order_outcome",
+      payload: { outcome: "evaluada" },
+    })
+    let enVuelo = 0
+    let maximoEnVuelo = 0
+    const enviados: string[] = []
+    let avisarEnvio: () => void = () => undefined
+    const primerEnvio = new Promise<void>((resolve) => (avisarEnvio = resolve))
+    const transport = {
+      syncVisit: async (_visitId: string, operations: unknown[]) => {
+        enVuelo += 1
+        maximoEnVuelo = Math.max(maximoEnVuelo, enVuelo)
+        avisarEnvio()
+        await new Promise((resolve) => setTimeout(resolve, 5))
+        enVuelo -= 1
+        const ids = (operations as { operation_id: string }[]).map(({ operation_id }) => operation_id)
+        enviados.push(...ids)
+        return { operations: ids.map((operation_id) => ({ operation_id, estado: "sincronizada" as const })) }
+      },
+    }
+
+    // La segunda sincronización arranca con el primer lote en vuelo (p. ej. otro refresco del panel).
+    const primera = new OfflineSyncCoordinator(store, transport).sync("visit-concurrente", "device-1")
+    await primerEnvio
+    const segunda = new OfflineSyncCoordinator(store, transport).sync("visit-concurrente", "device-1")
+    await Promise.all([primera, segunda])
+
+    expect(maximoEnVuelo).toBe(1)
+    expect(enviados).toEqual(["start-visit-concurrente"])
+    expect((await store.listOperations("visit-concurrente"))[0].estado).toBe("sincronizada")
+  })
+
+  it("con la visita vencida, lo que dependía del inicio en conflicto también se envía y queda en conflicto (E3)", async () => {
+    const store = new MemoryStore()
+    const lotes: string[][] = []
+    const coordinator = new OfflineSyncCoordinator(
+      store,
+      {
+        syncVisit: async (_visitId, operations) => {
+          const ids = (operations as { operation_id: string }[]).map(({ operation_id }) => operation_id)
+          lotes.push(ids)
+          return {
+            operations: ids.map((operation_id) => ({
+              operation_id,
+              estado: "conflicto" as const,
+              error_message: "The visit was closed at the end of its day and requires finalization",
+            })),
+          }
+        },
+      },
+      { now: () => "2026-11-17T12:00:00.000Z", id: (() => { let id = 0; return () => `vencida-${id++}` })() },
+    )
+    const inicio = await coordinator.queue("visit-vencida", "device-1", "start_visit", {})
+    const resultado = await coordinator.queue("visit-vencida", "device-1", "work_order_outcome", {}, [inicio.operationId])
+    await coordinator.queue("visit-vencida", "device-1", "complete_visit", {}, [resultado.operationId])
+
+    await coordinator.sync("visit-vencida", "device-1")
+
+    expect(lotes).toEqual([["vencida-0"], ["vencida-1"], ["vencida-2"]])
+    expect((await store.listOperations("visit-vencida")).map((op) => op.estado)).toEqual([
+      "conflicto",
+      "conflicto",
+      "conflicto",
+    ])
+  })
+
+  it("un conflicto que no es por vencimiento sigue frenando lo que depende de él", async () => {
+    const store = new MemoryStore()
+    const lotes: string[][] = []
+    const coordinator = new OfflineSyncCoordinator(
+      store,
+      {
+        syncVisit: async (_visitId, operations) => {
+          const ids = (operations as { operation_id: string }[]).map(({ operation_id }) => operation_id)
+          lotes.push(ids)
+          return {
+            operations: ids.map((operation_id) => ({
+              operation_id,
+              estado: "conflicto" as const,
+              error_message: "Another visit is already in progress",
+            })),
+          }
+        },
+      },
+      { now: () => "2026-11-17T12:00:00.000Z", id: (() => { let id = 0; return () => `otro-${id++}` })() },
+    )
+    const inicio = await coordinator.queue("visit-otro", "device-1", "start_visit", {})
+    await coordinator.queue("visit-otro", "device-1", "work_order_outcome", {}, [inicio.operationId])
+
+    await coordinator.sync("visit-otro", "device-1")
+
+    expect(lotes).toEqual([["otro-0"]])
+  })
+
+  it("registra la visita completada en el servidor para que deje de figurar en curso", async () => {
+    const store = new MemoryStore()
+    await store.saveVisit({
+      id: "visit-cerrada",
+      backendStatus: "en_curso",
+      estadoLocal: "disponible",
+    } as VisitaOffline)
+    const coordinator = new OfflineSyncCoordinator(store, { syncVisit: async () => ({ operations: [] }) })
+
+    await coordinator.markVisitCompletedOnServer("visit-cerrada")
+
+    expect((await store.getVisit("visit-cerrada"))?.backendStatus).toBe("completada")
+  })
+
   it("persists a network failure and retries with the same operation id", async () => {
     const store = new MemoryStore()
     const operation = {

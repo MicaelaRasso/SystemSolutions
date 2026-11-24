@@ -6,6 +6,7 @@ import { toast } from "sonner"
 
 import { edgeApi } from "@/lib/api"
 import { identityInvalidations } from "@/lib/api/identity"
+import { MarcaObligatoria } from "@/components/common/etiqueta-obligatoria"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -107,7 +108,10 @@ export function AdministradoresPanel() {
             }}
           >
             <div className="space-y-2">
-              <Label htmlFor="admin-email">Correo</Label>
+              <Label htmlFor="admin-email">
+                Correo
+                <MarcaObligatoria />
+              </Label>
               <Input
                 id="admin-email"
                 type="email"
@@ -128,7 +132,10 @@ export function AdministradoresPanel() {
               </SelectNativo>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="admin-name">Nombre</Label>
+              <Label htmlFor="admin-name">
+                Nombre
+                <MarcaObligatoria />
+              </Label>
               <Input
                 id="admin-name"
                 required
@@ -137,7 +144,10 @@ export function AdministradoresPanel() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="admin-lastname">Apellido</Label>
+              <Label htmlFor="admin-lastname">
+                Apellido
+                <MarcaObligatoria />
+              </Label>
               <Input
                 id="admin-lastname"
                 required

@@ -16,9 +16,11 @@ import { CertificadoVisor } from "./certificado-visor"
 export function CertificadoAdmin({
   certificate,
   acciones,
+  descargarAlAbrir,
 }: {
   certificate: Record<string, unknown>
   acciones?: React.ReactNode
+  descargarAlAbrir?: boolean
 }) {
   const id = String(certificate.id ?? "")
   const finalizado = certificate.estado === "finalizado"
@@ -50,7 +52,12 @@ export function CertificadoAdmin({
           con la leyenda de firma pendiente.
         </p>
       )}
-      <CertificadoVisor vista={vista} permiso={permiso} acciones={acciones} />
+      <CertificadoVisor
+        vista={vista}
+        permiso={permiso}
+        acciones={acciones}
+        descargarAlAbrir={descargarAlAbrir}
+      />
     </div>
   )
 }

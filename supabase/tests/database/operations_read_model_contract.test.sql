@@ -108,7 +108,7 @@ select is(
     from unnest(enum_range(null::public.estado_visita)) with ordinality as enum_values(enum_value, position)
     order by position
   ),
-  ARRAY['solicitada', 'programada', 'aceptada', 'en_curso', 'completada', 'cancelada']::text[],
+  ARRAY['solicitada', 'programada', 'aceptada', 'en_curso', 'requiere_finalizacion', 'completada', 'cancelada']::text[],
   'estado_visita retains the canonical values in order'
 );
 select has_index('public', 'visitas_servicio', 'visitas_servicio_starts_at_idx', 'visitas_servicio has an explicit starts_at index');

@@ -1,6 +1,6 @@
 "use client"
 
-import { FileDown, Lock, Maximize2, Minimize2 } from "lucide-react"
+import { FileDown, Loader2, Lock, Maximize2, Minimize2, Printer } from "lucide-react"
 import { useEffect, useId, useRef, useState } from "react"
 import { createPortal, flushSync } from "react-dom"
 
@@ -9,8 +9,9 @@ import type { PermisoImpresionCertificado } from "@/lib/domain/rules"
 
 import { cn } from "@/lib/utils"
 
-import { CertificadoDocumento } from "./certificado-documento"
+import { CertificadoDocumento, MarcaRequiereFirma } from "./certificado-documento"
 import { ANCHO_HOJA_A4_PX, escalaParaAncho } from "./certificado-escala"
+import { descargarPdfCertificado } from "./certificado-pdf"
 import type { CertificadoVista } from "./certificado-vista"
 
 /**
@@ -86,22 +87,32 @@ function HojaAjustada({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Vista previa A4 del certificado con la descarga en PDF por el diálogo de impresión del
- * navegador. Mientras se imprime monta una copia como hija directa de <body> (las reglas
- * de `globals.css` ocultan el resto) y usa el nombre de archivo del certificado como
- * título del documento, que el navegador propone como nombre del PDF.
+ * Vista previa A4 del certificado con la descarga directa del PDF. Para generarlo monta fuera de
+ * la pantalla una copia a tamaño real (sin la reducción de la vista previa) y la convierte en
+ * hojas A4 (`certificado-pdf.ts`). "Imprimir" sigue usando el diálogo del navegador: mientras se
+ * imprime monta una copia como hija directa de <body> (las reglas de `globals.css` ocultan el
+ * resto) y usa el nombre de archivo del certificado como título del documento.
  */
 export function CertificadoVisor({
   vista,
   permiso,
   acciones,
+  descargarAlAbrir = false,
 }: {
   vista: CertificadoVista
   permiso: PermisoImpresionCertificado
   acciones?: React.ReactNode
+  /** Descarga el PDF apenas el certificado está listo (enlace "Descargar PDF" del historial). */
+  descargarAlAbrir?: boolean
 }) {
   const [imprimiendo, setImprimiendo] = useState(false)
+  const [generando, setGenerando] = useState(false)
+  const [errorPdf, setErrorPdf] = useState<string | null>(null)
+  const copiaPdf = useRef<HTMLDivElement>(null)
+  const marcaPdf = useRef<HTMLDivElement>(null)
+  const descargadoAlAbrir = useRef(false)
   const motivoId = useId()
+  const errorId = useId()
   const { puedeImprimir, requiereFirma, motivo } = permiso
 
   useEffect(() => {
@@ -126,25 +137,62 @@ export function CertificadoVisor({
     }
   }, [puedeImprimir, vista.nombreArchivo])
 
+  async function descargarPdf() {
+    if (!puedeImprimir || generando) return
+    flushSync(() => {
+      setErrorPdf(null)
+      setGenerando(true)
+    })
+    try {
+      const hoja = copiaPdf.current?.querySelector<HTMLElement>("[data-certificado-hoja]")
+      if (!hoja) throw new Error("No se encontró la hoja del certificado.")
+      await descargarPdfCertificado({
+        hoja,
+        marca: requiereFirma ? marcaPdf.current : null,
+        nombreArchivo: vista.nombreArchivo,
+      })
+    } catch (error) {
+      console.error(error)
+      setErrorPdf(
+        "No se pudo generar el PDF. Revise la conexión y vuelva a intentarlo, o use «Imprimir».",
+      )
+    } finally {
+      setGenerando(false)
+    }
+  }
+
+  // Sin limpieza que cancele: en modo estricto el efecto corre dos veces y la guarda alcanza.
+  useEffect(() => {
+    if (!descargarAlAbrir || !puedeImprimir || descargadoAlAbrir.current) return
+    descargadoAlAbrir.current = true
+    // Fuera del ciclo de render: `descargarPdf` usa flushSync para montar la copia.
+    setTimeout(() => void descargarPdf(), 0)
+  })
+
   return (
     <section aria-label="Vista del certificado" className="min-w-0 space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <Button
-          onClick={() => window.print()}
-          disabled={!puedeImprimir}
-          aria-describedby={motivo ? motivoId : undefined}
+          onClick={() => void descargarPdf()}
+          disabled={!puedeImprimir || generando}
+          aria-busy={generando || undefined}
+          aria-describedby={motivo ? motivoId : errorPdf ? errorId : undefined}
         >
-          <FileDown />
-          Descargar PDF
+          {generando ? <Loader2 className="animate-spin" /> : <FileDown />}
+          {generando ? "Generando PDF…" : "Descargar PDF"}
+        </Button>
+        <Button variant="outline" onClick={() => window.print()} disabled={!puedeImprimir}>
+          <Printer />
+          Imprimir
         </Button>
         {acciones}
-        {puedeImprimir && (
-          <p className="text-xs text-muted-foreground">
-            En el diálogo de impresión, elija «Guardar como PDF». Nombre sugerido:{" "}
-            <span className="font-mono">{vista.nombreArchivo}.pdf</span>
-          </p>
-        )}
       </div>
+
+      {errorPdf && (
+        <p id={errorId} role="alert" className="text-sm text-destructive">
+          {errorPdf}
+        </p>
+      )}
 
       {motivo && (
         <p
@@ -167,6 +215,25 @@ export function CertificadoVisor({
         createPortal(
           <div data-certificado-impresion className="hidden print:block">
             <CertificadoDocumento vista={vista} requiereFirma={requiereFirma} />
+          </div>,
+          document.body,
+        )}
+
+      {generando &&
+        createPortal(
+          // Copia a tamaño real fuera de la pantalla, solo mientras se genera el PDF.
+          <div
+            ref={copiaPdf}
+            aria-hidden
+            inert
+            className="pointer-events-none fixed top-0 left-[-10000px] print:hidden"
+          >
+            <CertificadoDocumento vista={vista} requiereFirma={requiereFirma} />
+            {requiereFirma && (
+              <div ref={marcaPdf} className="relative h-[297mm] w-[210mm]">
+                <MarcaRequiereFirma unica />
+              </div>
+            )}
           </div>,
           document.body,
         )}

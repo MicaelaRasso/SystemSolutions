@@ -67,3 +67,23 @@ export function otraVisitaEnCurso<
 >(visitas: readonly T[], visitId: string): T | undefined {
   return visitas.find((visita) => visita.id !== visitId && visitaEnCurso(visita))
 }
+
+/** Aviso del cierre de una visita, guardado en el panel para que sobreviva a su tarjeta. */
+export interface AvisoCierreVisita {
+  visitId: string
+  texto: string
+}
+
+/**
+ * Texto del aviso de cierre que el panel muestra por su cuenta: solo cuando la tarjeta de la visita
+ * ya no está. Al completarse en el servidor la visita sale de la agenda de campo y su tarjeta (con
+ * el aviso junto al botón) desaparece; sin esto, el técnico no veía la confirmación del cierre.
+ * Mientras la tarjeta siga (p. ej. completada sin conexión), el aviso se ve en ella y no se repite.
+ */
+export function avisoDeCierreSinTarjeta(
+  aviso: AvisoCierreVisita | undefined,
+  visitas: readonly Pick<VisitaOffline, "id">[],
+): string | undefined {
+  if (!aviso) return undefined
+  return visitas.some((visita) => visita.id === aviso.visitId) ? undefined : aviso.texto
+}

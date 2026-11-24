@@ -6,6 +6,7 @@ import { Controller, useForm } from "react-hook-form"
 import { toast } from "sonner"
 
 import { EstadoActivoBadge } from "@/components/certificados/badges"
+import { EtiquetaCampo } from "@/components/common/etiqueta-obligatoria"
 import { CampoTexto, FormDialog, PieFormulario } from "@/components/common/form-dialog"
 import { EmptyState, ErrorState } from "@/components/common/states"
 import { Button } from "@/components/ui/button"
@@ -279,16 +280,20 @@ function TallerForm({
           form={form}
           name="nombre"
           label="Nombre"
+          requerido
           placeholder="Taller Móvil 4"
           autoFocus
         />
         {taller ? (
           <Field>
-            <FieldLabel htmlFor="taller-email">Email de la cuenta</FieldLabel>
+            <EtiquetaCampo htmlFor="taller-email" requerido={!!taller.usuarioId}>
+              Email de la cuenta
+            </EtiquetaCampo>
             <Input
               id="taller-email"
               type="email"
               disabled={!taller.usuarioId}
+              aria-required={!!taller.usuarioId || undefined}
               {...form.register("email")}
             />
             <FieldDescription>
@@ -302,6 +307,7 @@ function TallerForm({
             form={form}
             name="email"
             label="Email de la cuenta"
+            requerido
             type="email"
             placeholder="taller4@systemsrl.com.ar"
           />
@@ -311,10 +317,11 @@ function TallerForm({
           name="color"
           render={({ field, fieldState }) => (
             <Field data-invalid={fieldState.invalid}>
-              <FieldLabel>Color en agenda y cronograma</FieldLabel>
+              <EtiquetaCampo requerido>Color en agenda y cronograma</EtiquetaCampo>
               <div
                 role="radiogroup"
                 aria-label="Color"
+                aria-required
                 className="flex flex-wrap gap-2 pointer-coarse:gap-3"
               >
                 {COLORES_TALLER.map((c) => {

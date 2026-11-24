@@ -225,6 +225,7 @@ export interface DatePickerProps {
   className?: string
   "aria-invalid"?: boolean
   "aria-describedby"?: string
+  "aria-required"?: boolean
   ref?: React.Ref<HTMLButtonElement>
 }
 
@@ -286,6 +287,7 @@ export function DatePicker({
           onBlur={onBlur}
           aria-invalid={aria["aria-invalid"]}
           aria-describedby={aria["aria-describedby"]}
+          aria-required={aria["aria-required"]}
           data-placeholder={texto ? undefined : ""}
           className={cn(
             "flex h-8 w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-input bg-transparent pr-2 pl-2.5 text-left text-base whitespace-nowrap transition-colors outline-none select-none md:text-sm pointer-coarse:h-11",

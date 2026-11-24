@@ -195,7 +195,7 @@ select is(
 -- Lote offline: un inicio que llega con otra visita en curso queda en conflicto para el
 -- Administrador, que lo acepta cuando la otra ya no está en curso.
 reset role;
-update public.visitas_servicio set estado = 'completada' where id = current_setting('app.fe_v2')::uuid;
+update public.visitas_servicio set estado = 'cancelada' where id = current_setting('app.fe_v2')::uuid;
 set local role service_role;
 select set_config('request.jwt.claim.role', 'service_role', true);
 select public.test_estimated_end_set_actor('00000000-0000-0000-0000-00000000e102');

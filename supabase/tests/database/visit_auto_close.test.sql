@@ -157,7 +157,7 @@ select is(
   'the Solicitud of a visit that requires finalization stays accepted'
 );
 select is(
-  (select count(*) from public.asignaciones_servicio where solicitud_id = (select solicitud_id from public.visitas_servicio where id = current_setting('app.ac_a')::uuid) and estado = 'activa'),
+  (select count(*) from public.asignaciones_servicio a join public.visitas_servicio v on v.id = current_setting('app.ac_a')::uuid where a.yacimiento_id = v.yacimiento_id and a.taller_movil_id = v.taller_movil_id and a.estado = 'activa'),
   1::bigint,
   'the Taller keeps Yacimiento access to finish signatures'
 );

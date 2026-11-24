@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 
 import { edgeApi } from "@/lib/api"
 import { browserSupabase } from "@/lib/services/edge-transport"
+import { MarcaObligatoria } from "@/components/common/etiqueta-obligatoria"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -80,7 +81,10 @@ export function SeguridadCuenta({ verificationStatus }: { verificationStatus: st
           )}
           <form className="space-y-4" onSubmit={(event) => void requestChange(event)}>
             <div className="space-y-2">
-              <Label htmlFor="account-email">Nuevo email</Label>
+              <Label htmlFor="account-email">
+                Nuevo email
+                <MarcaObligatoria />
+              </Label>
               <Input
                 id="account-email"
                 type="email"

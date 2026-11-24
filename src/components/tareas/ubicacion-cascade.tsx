@@ -4,8 +4,9 @@ import { Plus } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
 import { EmpresaDialog } from "@/components/clientes/empresa-dialog"
+import { EtiquetaCampo } from "@/components/common/etiqueta-obligatoria"
 import { EquipoDialog, PlantaDialog, YacimientoDialog } from "@/components/estructura/dialogs"
-import { Field, FieldError, FieldLabel } from "@/components/ui/field"
+import { Field, FieldError } from "@/components/ui/field"
 import {
   Select,
   SelectContent,
@@ -136,7 +137,10 @@ export function UbicacionCascade({
           const crear = puedeCrear ? etiquetaCrear(clave, value) : null
           return (
             <Field key={clave} data-invalid={!!error}>
-              <FieldLabel htmlFor={id}>{label}</FieldLabel>
+              {/* Los cuatro niveles son obligatorios en `tareaSchema`. */}
+              <EtiquetaCampo htmlFor={id} requerido>
+                {label}
+              </EtiquetaCampo>
               <Select
                 value={value[clave]}
                 // Radix emite "" desde su <select> nativo oculto cuando el valor se fija por código
@@ -148,7 +152,7 @@ export function UbicacionCascade({
                 }}
                 disabled={disabled || !padre || cargando}
               >
-                <SelectTrigger id={id} className="w-full" aria-invalid={!!error}>
+                <SelectTrigger id={id} className="w-full" aria-invalid={!!error} aria-required>
                   <SelectValue placeholder={cargando ? "Cargando…" : placeholder} />
                 </SelectTrigger>
                 {/* Sin opciones, Radix no tiene un ítem contra el cual alinearse (item-aligned) y el

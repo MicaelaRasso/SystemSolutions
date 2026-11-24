@@ -1,6 +1,13 @@
 "use client"
 
-import { useMutation, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query"
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type MutationOptions,
+  type QueryClient,
+  type QueryKey,
+} from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { edgeApi } from "@/lib/api"
@@ -599,11 +606,32 @@ export const estructuraApi = {
  */
 export function useServiceMutation<TVars, TResult>(
   fn: (vars: TVars) => Promise<TResult>,
-  opciones: { exito?: string; invalidar?: QueryKey[] } = {},
+  opciones: OpcionesMutacionServicio = {},
 ) {
   const qc = useQueryClient()
-  return useMutation({
+  return useMutation(opcionesMutacionServicio(qc, fn, opciones))
+}
+
+export interface OpcionesMutacionServicio {
+  exito?: string
+  invalidar?: QueryKey[]
+  /**
+   * La mutación funciona sin conexión (encola en el dispositivo, p. ej. «Agregar válvula» del
+   * taller). TanStack Query pausa por defecto las mutaciones mientras no hay red, así que sin esto
+   * no se ejecutaban hasta reconectar y el diálogo quedaba abierto.
+   */
+  sinConexion?: boolean
+}
+
+/** Opciones de `useServiceMutation`: toast de éxito/error, invalidaciones y modo de red. */
+export function opcionesMutacionServicio<TVars, TResult>(
+  qc: QueryClient,
+  fn: (vars: TVars) => Promise<TResult>,
+  opciones: OpcionesMutacionServicio = {},
+): MutationOptions<TResult, Error, TVars> {
+  return {
     mutationFn: fn,
+    ...(opciones.sinConexion ? { networkMode: "always" as const } : {}),
     onSuccess: async () => {
       await Promise.all(
         (opciones.invalidar ?? []).map((k) => qc.invalidateQueries({ queryKey: k })),
@@ -611,7 +639,7 @@ export function useServiceMutation<TVars, TResult>(
       if (opciones.exito) toast.success(opciones.exito)
     },
     onError: (error) => toast.error(mensajeError(error)),
-  })
+  }
 }
 
 export const useEmpresas = (filtro: { q?: string; incluirInactivas?: boolean } = {}) =>

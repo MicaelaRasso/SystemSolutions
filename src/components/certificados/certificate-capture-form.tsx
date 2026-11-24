@@ -4,6 +4,7 @@
 import { useMemo, useState } from "react"
 
 import { Combobox } from "@/components/common/combobox"
+import { MarcaObligatoria } from "@/components/common/etiqueta-obligatoria"
 import { SelectNativo } from "@/components/common/select-nativo"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -386,15 +387,17 @@ function DynamicField({
   const id = `certificate-custom-${field.clave}`
   const options = field.opciones ?? []
   const type: CertificateTemplateFieldType = field.tipo
+  const requerido = field.obligatorio || undefined
   return (
     <div className="space-y-1">
       <Label htmlFor={id}>
         {field.etiqueta}
-        {field.obligatorio ? " *" : ""}
+        {field.obligatorio ? <MarcaObligatoria /> : null}
       </Label>
       {type === "textarea" ? (
         <Textarea
           id={id}
+          aria-required={requerido}
           value={textValue(value)}
           onChange={(event) => onChange(event.target.value)}
           disabled={disabled}
@@ -404,6 +407,7 @@ function DynamicField({
         <label className="flex items-center gap-2 text-sm pointer-coarse:min-h-11">
           <Checkbox
             id={id}
+          aria-required={requerido}
             checked={value === true}
             onCheckedChange={(checked) => onChange(checked === true)}
             disabled={disabled}
@@ -414,6 +418,7 @@ function DynamicField({
       {type === "select" ? (
         <SelectNativo
           id={id}
+          aria-required={requerido}
           value={textValue(value)}
           onChange={(event) => onChange(event.target.value)}
           disabled={disabled}
@@ -451,6 +456,7 @@ function DynamicField({
       {type !== "textarea" && type !== "boolean" && type !== "select" && type !== "multiselect" ? (
         <Input
           id={id}
+          aria-required={requerido}
           type={type === "number" ? "number" : type === "date" ? "date" : "text"}
           inputMode={type === "number" ? "decimal" : undefined}
           value={textValue(value)}
@@ -694,10 +700,14 @@ export function CertificateCaptureForm({
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
-            <Label htmlFor="certificate-execution-date">Fecha de ejecución *</Label>
+            <Label htmlFor="certificate-execution-date">
+              Fecha de ejecución
+              <MarcaObligatoria />
+            </Label>
             <Input
               id="certificate-execution-date"
               type="date"
+              aria-required
               value={form.fecha_ejecucion}
               onChange={(event) =>
                 setForm((current) => ({ ...current, fecha_ejecucion: event.target.value }))
@@ -706,11 +716,15 @@ export function CertificateCaptureForm({
             />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="certificate-technician">Técnico ejecutor *</Label>
+            <Label htmlFor="certificate-technician">
+              Técnico ejecutor
+              <MarcaObligatoria />
+            </Label>
             {technicians.length ? (
               <div className="space-y-2">
                 <SelectNativo
                   id="certificate-technician"
+                  aria-required
                   value={
                     customTechnician
                       ? "__otro__"
@@ -743,6 +757,7 @@ export function CertificateCaptureForm({
                 {customTechnician ? (
                   <Input
                     id="certificate-technician-custom"
+                    aria-required
                     value={form.tecnico_ejecutor}
                     onChange={(event) =>
                       setForm((current) => ({ ...current, tecnico_ejecutor: event.target.value }))
@@ -755,6 +770,7 @@ export function CertificateCaptureForm({
             ) : (
               <Input
                 id="certificate-technician"
+                aria-required
                 value={form.tecnico_ejecutor}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, tecnico_ejecutor: event.target.value }))
@@ -987,9 +1003,13 @@ export function CertificateCaptureForm({
           <div className="grid gap-3 sm:grid-cols-3">
             {(["sp_inicial", "sp_apertura", "presion_cierre"] as const).map((key) => (
               <div key={key} className="space-y-1">
-                <Label htmlFor={`certificate-test-${key}`}>{sectionTitle(key)} *</Label>
+                <Label htmlFor={`certificate-test-${key}`}>
+                  {sectionTitle(key)}
+                  <MarcaObligatoria />
+                </Label>
                 <Input
                   id={`certificate-test-${key}`}
+                  aria-required
                   type="number"
                   inputMode="decimal"
                   step="any"
@@ -1013,9 +1033,13 @@ export function CertificateCaptureForm({
             ))}
           </div>
           <div className="space-y-1">
-            <Label htmlFor="certificate-standard">Patrón de referencia *</Label>
+            <Label htmlFor="certificate-standard">
+              Patrón de referencia
+              <MarcaObligatoria />
+            </Label>
             <SelectNativo
               id="certificate-standard"
+              aria-required
               value={form.tests.patron?.id ?? ""}
               onChange={(event) =>
                 setForm((current) => ({

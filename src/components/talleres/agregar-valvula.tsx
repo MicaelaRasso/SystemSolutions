@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form"
 import { Plus, Search } from "lucide-react"
 import { toast } from "sonner"
 
+import { EtiquetaCampo } from "@/components/common/etiqueta-obligatoria"
 import { FormDialog, PieFormulario } from "@/components/common/form-dialog"
 import { SelectNativo } from "@/components/common/select-nativo"
 import {
@@ -15,7 +16,7 @@ import {
 } from "@/components/estructura/dialogs"
 import { Button } from "@/components/ui/button"
 import { DialogFooter } from "@/components/ui/dialog"
-import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Field, FieldError, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -217,7 +218,7 @@ function NuevaValvula({
     })
     await onChanged()
     return { destino, nombre: valvula.nombre }
-  })
+  }, { sinConexion: true })
 
   if (equipos.length === 0)
     return (
@@ -245,11 +246,14 @@ function NuevaValvula({
     >
       <FieldGroup>
         <Field data-invalid={!!errorEquipo}>
-          <FieldLabel htmlFor={`equipo-valvula-${visit.id}`}>Equipo</FieldLabel>
+          <EtiquetaCampo htmlFor={`equipo-valvula-${visit.id}`} requerido>
+            Equipo
+          </EtiquetaCampo>
           <SelectNativo
             id={`equipo-valvula-${visit.id}`}
             value={equipoId}
             aria-invalid={!!errorEquipo}
+            aria-required
             onChange={(event) => {
               setEquipoId(event.target.value)
               setErrorEquipo(undefined)
@@ -321,7 +325,7 @@ function BuscadorDeValvulas({
     })
     await onChanged()
     return destino
-  })
+  }, { sinConexion: true })
 
   return (
     <div className="space-y-3">

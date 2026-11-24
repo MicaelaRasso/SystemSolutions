@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 
+import { EtiquetaCampo } from "@/components/common/etiqueta-obligatoria"
 import { Button } from "@/components/ui/button"
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { browserSupabase } from "@/lib/services/edge-transport"
 
@@ -170,7 +171,9 @@ export function ResetPasswordForm() {
         {isRecoveryFlow || confirmActiveSession ? (
           <>
             <Field>
-              <FieldLabel htmlFor="new-password">Contraseña nueva</FieldLabel>
+              <EtiquetaCampo htmlFor="new-password" requerido>
+                Contraseña nueva
+              </EtiquetaCampo>
               <Input
                 id="new-password"
                 type="password"
@@ -182,7 +185,9 @@ export function ResetPasswordForm() {
               />
             </Field>
             <Field>
-              <FieldLabel htmlFor="confirm-password">Repetir contraseña</FieldLabel>
+              <EtiquetaCampo htmlFor="confirm-password" requerido>
+                Repetir contraseña
+              </EtiquetaCampo>
               <Input
                 id="confirm-password"
                 type="password"

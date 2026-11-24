@@ -1006,7 +1006,13 @@ export async function cargarDatosDemo(opciones: OpcionesCarga = {}): Promise<Inf
   const solicitudDe = (tag: string) =>
     solicitudes.find((s) => s.selected_valves?.some((v) => v.name === tag))
 
-  for (const escenario of ESCENARIOS) {
+  // Un Taller Móvil solo puede tener una visita en curso: QA-06 deja la suya abierta, así que se
+  // carga al final para no bloquear a los escenarios de Taller Norte que inician y completan visitas.
+  const ordenCarga = [
+    ...ESCENARIOS.filter((e) => e.clave !== "06"),
+    ...ESCENARIOS.filter((e) => e.clave === "06"),
+  ]
+  for (const escenario of ordenCarga) {
     const etiqueta = `QA-${escenario.clave} ${escenario.titulo}`
     const previa = solicitudDe(tagValvula(escenario.clave, 0))
     if (previa) {

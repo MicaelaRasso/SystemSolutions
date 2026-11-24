@@ -10,7 +10,6 @@ import { TablaResponsive } from "@/components/common/tabla-responsive"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useEdgeAdminCertificates } from "@/lib/api/hooks"
-import { edgeApi } from "@/lib/api"
 import type { AdminCertificateFilters } from "@/lib/api/observability"
 import { fmtFechaHora } from "@/lib/format"
 
@@ -41,7 +40,6 @@ function resolveCertificatePd(certificate: Record<string, unknown>): string {
 export function CertificateHistory() {
   const [draft, setDraft] = useState<AdminCertificateFilters>({})
   const [filters, setFilters] = useState<AdminCertificateFilters>(initialFilters)
-  const [downloadError, setDownloadError] = useState<string | null>(null)
   const query = useEdgeAdminCertificates(filters)
 
   const set = <Key extends keyof AdminCertificateFilters>(
@@ -51,24 +49,6 @@ export function CertificateHistory() {
     setDraft((current) => ({ ...current, [key]: value || undefined }))
   }
 
-  const download = async (id: string, label: string) => {
-    setDownloadError(null)
-    try {
-      const response = await edgeApi.observability.certificates.download(id)
-      if (!response.ok) throw new Error("No se pudo descargar el Certificado")
-      const blob = await response.blob()
-      const href = URL.createObjectURL(blob)
-      const anchor = document.createElement("a")
-      anchor.href = href
-      anchor.download = `certificado-${label}.json`
-      anchor.click()
-      URL.revokeObjectURL(href)
-    } catch (error) {
-      setDownloadError(
-        error instanceof Error ? error.message : "No se pudo descargar el Certificado",
-      )
-    }
-  }
 
   const pdTerm = filters.pd_code?.trim().toLowerCase()
   const visibleItems = (query.data?.items ?? []).filter((item) => {
@@ -199,11 +179,6 @@ export function CertificateHistory() {
 
       {query.isLoading && <div className="h-48 animate-pulse rounded-xl bg-muted" />}
       {query.isError && <ErrorState error={query.error} onRetry={() => void query.refetch()} />}
-      {downloadError && (
-        <p role="alert" className="text-sm text-destructive">
-          {downloadError}
-        </p>
-      )}
       {query.data && visibleItems.length === 0 && (
         <EmptyState
           titulo="No hay certificados"
@@ -280,15 +255,12 @@ export function CertificateHistory() {
                 >
                   Ver detalle
                 </Link>
-                <button
-                  type="button"
-                  className="text-primary underline pointer-coarse:min-h-11"
-                  onClick={() =>
-                    void download(certificate.id, String(certificate.numero ?? certificate.id))
-                  }
+                <Link
+                  className="inline-flex items-center text-primary underline pointer-coarse:min-h-11"
+                  href={`/admin/certificados/${certificate.id}?descargar=1`}
                 >
-                  Descargar
-                </button>
+                  Descargar PDF
+                </Link>
               </div>
             )}
           />

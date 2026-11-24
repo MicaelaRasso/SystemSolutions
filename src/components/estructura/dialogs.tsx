@@ -5,6 +5,7 @@ import { Info } from "lucide-react"
 import { Controller, useForm, type UseFormReturn } from "react-hook-form"
 
 import { Combobox } from "@/components/common/combobox"
+import { EtiquetaCampo } from "@/components/common/etiqueta-obligatoria"
 import { CampoTexto, FormDialog, PieFormulario as Pie } from "@/components/common/form-dialog"
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import {
@@ -122,15 +123,22 @@ function YacimientoForm({
       )}
     >
       <FieldGroup>
-        <CampoTexto form={form} name="nombre" label="Nombre" autoFocus />
+        <CampoTexto form={form} name="nombre" label="Nombre" requerido autoFocus />
         <Controller
           control={form.control}
           name="provincia"
           render={({ field, fieldState }) => (
             <Field data-invalid={fieldState.invalid}>
-              <FieldLabel htmlFor="provincia">Provincia</FieldLabel>
+              <EtiquetaCampo htmlFor="provincia" requerido>
+                Provincia
+              </EtiquetaCampo>
               <Select value={field.value} onValueChange={field.onChange}>
-                <SelectTrigger id="provincia" className="w-full" aria-invalid={fieldState.invalid}>
+                <SelectTrigger
+                  id="provincia"
+                  className="w-full"
+                  aria-invalid={fieldState.invalid}
+                  aria-required
+                >
                   <SelectValue placeholder="Seleccionar" />
                 </SelectTrigger>
                 <SelectContent>
@@ -149,6 +157,7 @@ function YacimientoForm({
           form={form}
           name="operadora"
           label="Operadora"
+          requerido
           placeholder="Empresa operadora del yacimiento"
         />
         <Pie pendiente={guardar.isPending} cerrar={cerrar} crear={!yacimiento} />
@@ -245,6 +254,7 @@ function PlantaForm({
           form={form}
           name="nombre"
           label="Nombre"
+          requerido
           placeholder="Ej. Planta Compresora N°8"
           autoFocus
         />
@@ -344,6 +354,7 @@ function EquipoForm({
           form={form}
           name="nombre"
           label="Identificación"
+          requerido
           placeholder="Ej. K52100"
           autoFocus
         />
@@ -575,7 +586,7 @@ export function CamposValvula({
   return (
     <>
       <div className="grid gap-4 sm:grid-cols-3">
-        <CampoTexto form={form} name="tag" label="TAG" placeholder="PSV-2752" autoFocus />
+        <CampoTexto form={form} name="tag" label="TAG" requerido placeholder="PSV-2752" autoFocus />
         <CampoTexto form={form} name="precinto" label="Precinto" />
         <CampoTexto form={form} name="servicio" label="Servicio" placeholder="GAS COMBUSTIBLE" />
         <CampoTexto form={form} name="marca" label="Marca" />

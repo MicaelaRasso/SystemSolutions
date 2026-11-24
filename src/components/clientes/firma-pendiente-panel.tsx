@@ -3,6 +3,8 @@
 import { useState } from "react"
 import { FileSignature, Upload } from "lucide-react"
 
+import { SignaturePad, dataUrlToFile } from "@/components/certificados/signature-pad"
+import { MarcaObligatoria } from "@/components/common/etiqueta-obligatoria"
 import { EmptyState, ErrorState } from "@/components/common/states"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -29,11 +31,20 @@ export function mensajeFirmaRecibida(estadoVisita: unknown, finalizados: number)
   return "Firma recibida. Los certificados elegibles se finalizarán en el backend."
 }
 
+/** Si el Cliente eligió una foto se sube la foto; si no, la firma dibujada en el panel. */
+export function archivoDeFirma(foto: File | undefined, dibujo: string | undefined) {
+  if (foto) return foto
+  return dibujo ? dataUrlToFile(dibujo, "firma-cliente.png") : undefined
+}
+
 export function FirmaPendientePanel() {
   const visits = useEdgePendingClientSignatureVisits()
   const upload = useUploadEdgeVisitSignature()
   const [names, setNames] = useState<Record<string, string>>({})
   const [files, setFiles] = useState<Record<string, File | undefined>>({})
+  const [drawings, setDrawings] = useState<Record<string, string | undefined>>({})
+  // Se incrementa al subir la firma para vaciar el panel de dibujo (se vuelve a montar).
+  const [padKey, setPadKey] = useState(0)
   const [message, setMessage] = useState<string>()
 
   if (visits.isError)
@@ -77,6 +88,8 @@ export function FirmaPendientePanel() {
             const name = visit.yacimiento.nombre || `Visita ${visit.visit.id}`
             const date = text(visitRecord.starts_at) ?? text(visitRecord.fecha_ejecucion)
             const file = files[visit.visit.id]
+            const drawing = drawings[visit.visit.id]
+            const signatureFile = archivoDeFirma(file, drawing)
             const signerName = names[visit.visit.id] ?? ""
             const hasFullName = signerName.trim().split(/\s+/).filter(Boolean).length >= 2
             return (
@@ -91,13 +104,15 @@ export function FirmaPendientePanel() {
                   </div>
                   <Badge variant="secondary">Certificado pendiente</Badge>
                 </div>
-                <div className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
-                  <div className="space-y-1">
+                <div className="mt-4 space-y-3">
+                  <div className="space-y-1 md:max-w-md">
                     <Label htmlFor={`signer-${visit.visit.id}`}>
                       Nombre y apellido de quien firma
+                      <MarcaObligatoria />
                     </Label>
                     <Input
                       id={`signer-${visit.visit.id}`}
+                      aria-required
                       value={signerName}
                       onChange={(event) =>
                         setNames((current) => ({
@@ -108,8 +123,17 @@ export function FirmaPendientePanel() {
                       placeholder="Nombre y apellido"
                     />
                   </div>
-                  <div className="space-y-1">
-                    <Label htmlFor={`file-${visit.visit.id}`}>Foto de firma</Label>
+                  <SignaturePad
+                    key={`${visit.visit.id}-${padKey}`}
+                    title="Dibujá tu firma"
+                    onChange={(dataUrl) =>
+                      setDrawings((current) => ({ ...current, [visit.visit.id]: dataUrl }))
+                    }
+                  />
+                  <div className="space-y-1 md:max-w-md">
+                    <Label htmlFor={`file-${visit.visit.id}`}>
+                      ¿Preferís subir una foto de la firma? (opcional)
+                    </Label>
                     <Input
                       id={`file-${visit.visit.id}`}
                       type="file"
@@ -123,14 +147,20 @@ export function FirmaPendientePanel() {
                       className="h-auto pointer-coarse:h-auto"
                     />
                   </div>
-                  <p className="text-xs text-muted-foreground md:col-span-2">
+                  {file ? (
+                    <p className="text-xs text-muted-foreground">
+                      Se va a usar la foto elegida en lugar del dibujo.
+                    </p>
+                  ) : null}
+                  <p className="text-xs text-muted-foreground">
                     La firma se asocia a la visita del Cliente titular del yacimiento. El nombre no
                     acredita ni reemplaza la autoridad de quien firma.
                   </p>
                   <Button
-                    disabled={!hasFullName || !file || upload.isPending}
+                    className="max-sm:w-full"
+                    disabled={!hasFullName || !signatureFile || upload.isPending}
                     onClick={() => {
-                      if (!file) return
+                      if (!signatureFile) return
                       upload.mutate(
                         {
                           visitId: visit.visit.id,
@@ -138,7 +168,7 @@ export function FirmaPendientePanel() {
                             party: "cliente",
                             captureMethod: "panel_cliente",
                             signerName,
-                            file,
+                            file: signatureFile,
                           },
                         },
                         {
@@ -150,6 +180,11 @@ export function FirmaPendientePanel() {
                               ),
                             )
                             setFiles((current) => ({ ...current, [visit.visit.id]: undefined }))
+                            setDrawings((current) => ({
+                              ...current,
+                              [visit.visit.id]: undefined,
+                            }))
+                            setPadKey((current) => current + 1)
                             await visits.refetch()
                           },
                           onError: (error) =>

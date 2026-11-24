@@ -4,22 +4,12 @@ import { Ban, ChevronLeft, RotateCcw } from "lucide-react"
 import Link from "next/link"
 
 import { ConfirmDialog } from "@/components/common/confirm-dialog"
-import { CertificateCaptureForm } from "@/components/certificados/certificate-capture-form"
 import { useMotivo } from "@/components/common/motivo-dialog"
 import { ErrorState } from "@/components/common/states"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Cargando } from "@/components/common/cargando"
 import { fmtFecha } from "@/lib/format"
-import {
-  useAddEdgeWorkOrder,
-  useEdgeCertificateCaptureCatalogs,
-  useEdgeCertificateDraft,
-  useEdgeVisits,
-  useStartEdgeCertificateDraft,
-  useUpdateEdgeCertificateDraft,
-  useUpdateEdgeWorkOrder,
-} from "@/lib/api/hooks"
+import { useEdgeVisits } from "@/lib/api/hooks"
 import {
   cancelarVisita,
   cambiarEstadoTarea,
@@ -29,17 +19,12 @@ import {
   useOperacion,
   useTarea,
 } from "@/lib/hooks/queries"
-import { useState } from "react"
 import type { OperationRead } from "@/lib/hooks/queries"
 
 import { EstadoTareaBadge, TallerChip } from "./badges"
 import { TareaForm } from "./tarea-form"
 import { convertirOperacionATarea } from "./tarea-sheet"
-import {
-  puedeCancelarVisitaAdministrativa,
-  puedeEditarProgramacion,
-  puedeEvaluarOrden,
-} from "./estado-operacion"
+import { puedeCancelarVisitaAdministrativa, puedeEditarProgramacion } from "./estado-operacion"
 import { CierreVisitaVencida } from "./cierre-visita-vencida"
 import { VisitaSeguimientoForm } from "./visita-seguimiento-form"
 
@@ -207,18 +192,16 @@ export function TareaDetalle({ id }: { id: string }) {
   )
 }
 
+/**
+ * Vista de solo lectura para el Administrador: el resultado de cada válvula y su borrador de
+ * certificado los carga el Taller Móvil asignado desde su panel (el servidor rechaza al resto).
+ */
 function OrdenesTrabajo({ operation }: { operation: OperationRead }) {
   const metadata = (operation.request?.request?.metadata ?? {}) as Record<string, unknown>
   const rawOt = typeof metadata.orden_trabajo === "string" ? metadata.orden_trabajo.trim() : ""
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawOt)
   const otGeneral = !isUuid && rawOt ? rawOt : undefined
 
-  const puedeEvaluar =
-    puedeEvaluarOrden(operation.operation.estado) &&
-    puedeEvaluarOrden(operation.visit.visit.estado)
-
-  const add = useAddEdgeWorkOrder()
-  const update = useUpdateEdgeWorkOrder()
   const visits = useEdgeVisits()
   const visitId = operation.visit.visit.id
   const hasSiblingVisits = (visits.data ?? []).some(
@@ -241,21 +224,8 @@ function OrdenesTrabajo({ operation }: { operation: OperationRead }) {
           Órdenes de trabajo
         </h2>
         <p className="text-sm text-muted-foreground">
-          Se administran dentro de la visita asociada.
+          El resultado de cada válvula y su certificado los carga el Taller Móvil desde su panel.
         </p>
-        {visits.isPending && (
-          <p className="text-sm text-muted-foreground">
-            Verificando las válvulas asignadas a otras visitas…
-          </p>
-        )}
-        {visits.isError && (
-          <p role="alert" className="text-sm text-destructive">
-            No se pudo verificar el alcance de esta visita. Reintenta antes de agregar órdenes.
-            <Button type="button" variant="link" size="sm" onClick={() => void visits.refetch()}>
-              Reintentar
-            </Button>
-          </p>
-        )}
       </div>
       {selectedValves.length === 0 ? (
         <p className="text-sm text-muted-foreground">
@@ -265,193 +235,29 @@ function OrdenesTrabajo({ operation }: { operation: OperationRead }) {
         <ul className="space-y-3">
           {selectedValves.map((valve) => {
             const entry = orderForValve(valve.id)
+            const estado = entry?.work_order.estado
+            const motivo =
+              estado === "no_evaluada"
+                ? String(entry?.work_order.no_evaluada_razon ?? "").trim()
+                : ""
             return (
-              <li
-                key={valve.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/40 p-3"
-              >
-                <div>
-                  <p className="text-sm font-medium">{valve.name}</p>
-                  {entry && (
-                    <p className="text-xs text-muted-foreground">
-                      {otGeneral ? `OT ${otGeneral} · ` : ""}
-                      <span className="capitalize">
-                        {entry.work_order.estado === "no_evaluada"
-                          ? "No evaluada"
-                          : entry.work_order.estado ?? "pendiente"}
-                      </span>
-                    </p>
-                  )}
-                </div>
-                {entry ? (
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap gap-2">
-                      {entry.work_order.estado !== "evaluada" && puedeEvaluar && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="pointer-coarse:h-11"
-                          disabled={update.isPending}
-                          onClick={() =>
-                            update.mutate({
-                              workOrderId: entry.work_order.id,
-                              input: { outcome: "evaluada" },
-                            })
-                          }
-                        >
-                          Marcar evaluada
-                        </Button>
-                      )}
-                      {entry.work_order.estado !== "no_evaluada" && puedeEvaluar && (
-                        <NoEvaluadaButton
-                          disabled={update.isPending}
-                          onSubmit={(reason) =>
-                            update.mutate({
-                              workOrderId: entry.work_order.id,
-                              input: { outcome: "no_evaluada", notEvaluatedReason: reason },
-                            })
-                          }
-                        />
-                      )}
-                    </div>
-                    {puedeEvaluar && (
-                      <CertificateDraft workOrderId={entry.work_order.id} valve={entry.valve} />
-                    )}
-                  </div>
-                ) : puedeEvaluar ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="pointer-coarse:h-11"
-                    disabled={add.isPending || visits.isPending || visits.isError}
-                    onClick={() => add.mutate({ visitId, valveId: valve.id })}
-                  >
-                    Agregar orden
-                  </Button>
-                ) : null}
+              <li key={valve.id} className="rounded-lg bg-muted/40 p-3">
+                <p className="text-sm font-medium">{valve.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {otGeneral ? `OT ${otGeneral} · ` : ""}
+                  {!entry
+                    ? "Sin orden en esta visita"
+                    : estado === "evaluada"
+                      ? "Evaluada"
+                      : estado === "no_evaluada"
+                        ? `No evaluada${motivo ? ` · ${motivo}` : ""}`
+                        : "Pendiente"}
+                </p>
               </li>
             )
           })}
         </ul>
       )}
-      {add.isError && (
-        <p role="alert" className="text-sm text-destructive">
-          {add.error.message}
-        </p>
-      )}
-      {update.isError && (
-        <p role="alert" className="text-sm text-destructive">
-          {update.error.message}
-        </p>
-      )}
     </section>
-  )
-}
-
-function CertificateDraft({
-  workOrderId,
-  valve,
-}: {
-  workOrderId: string
-  valve?: Record<string, unknown>
-}) {
-  const [certificateId, setCertificateId] = useState<string>()
-  const start = useStartEdgeCertificateDraft()
-  const draft = useEdgeCertificateDraft(certificateId)
-  const catalogs = useEdgeCertificateCaptureCatalogs()
-  const save = useUpdateEdgeCertificateDraft()
-
-  return (
-    <div className="space-y-1">
-      <Button
-        size="sm"
-        variant="ghost"
-        className="pointer-coarse:h-11"
-        disabled={start.isPending || draft.isFetching}
-        onClick={() => {
-          if (certificateId) {
-            void draft.refetch()
-          } else {
-            start.mutate(workOrderId, {
-              onSuccess: (result) => setCertificateId(result.certificate.id),
-            })
-          }
-        }}
-      >
-        {certificateId ? "Leer borrador" : "Iniciar borrador de certificado"}
-      </Button>
-      {start.isError && (
-        <p role="alert" className="text-xs text-destructive">
-          {start.error.message}
-        </p>
-      )}
-      {draft.data && (
-        <div className="max-w-xl space-y-2" aria-live="polite">
-          <p className="text-xs text-muted-foreground">
-            {draft.data.validation.complete
-              ? "Borrador completo según la validación del servidor."
-              : `Campos pendientes: ${draft.data.validation.missing_fields.join(", ") || "sin detalle"}`}
-          </p>
-          {catalogs.data ? (
-            <CertificateCaptureForm
-              key={`${certificateId}-${String(draft.data.certificate.updated_at ?? "loaded")}`}
-              template={catalogs.data.template}
-              catalogs={catalogs.data}
-              technicians={[]}
-              certificate={draft.data.certificate}
-              valve={valve}
-              disabled={
-                String((draft.data.certificate as Record<string, unknown>).estado_captura) ===
-                "cerrado"
-              }
-              onSave={(input) => save.mutate({ certificateId: certificateId!, input })}
-            />
-          ) : (
-            <Cargando variante="linea" texto="Cargando la plantilla y catálogos del certificado…" />
-          )}
-          {save.isError && (
-            <p role="alert" className="text-xs text-destructive">
-              {save.error.message}
-            </p>
-          )}
-          {save.isSuccess && <p className="text-xs text-muted-foreground">Borrador guardado.</p>}
-        </div>
-      )}
-      {draft.isError && (
-        <p role="alert" className="text-xs text-destructive">
-          {draft.error.message}
-        </p>
-      )}
-    </div>
-  )
-}
-
-function NoEvaluadaButton({
-  disabled,
-  onSubmit,
-}: {
-  disabled: boolean
-  onSubmit: (reason: string) => void
-}) {
-  const [reason, setReason] = useState("")
-  return (
-    <div className="flex flex-wrap gap-2">
-      <Input
-        aria-label="Motivo de no evaluación"
-        value={reason}
-        onChange={(event) => setReason(event.target.value)}
-        placeholder="Motivo requerido"
-        className="h-8 min-w-0 flex-1 sm:w-40 sm:flex-none"
-      />
-      <Button
-        size="sm"
-        variant="outline"
-        className="pointer-coarse:h-11"
-        disabled={disabled || !reason.trim()}
-        onClick={() => onSubmit(reason.trim())}
-      >
-        No evaluada
-      </Button>
-    </div>
   )
 }

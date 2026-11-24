@@ -5,8 +5,9 @@ import { Clock } from "lucide-react"
 import { useState } from "react"
 import { useForm } from "react-hook-form"
 
+import { EtiquetaCampo } from "@/components/common/etiqueta-obligatoria"
 import { Button } from "@/components/ui/button"
-import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Field, FieldError, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { useAuth } from "@/lib/auth/auth-provider"
 import { loginSchema, type LoginInput } from "@/lib/domain/schemas"
@@ -97,23 +98,29 @@ export function LoginForm({
             </div>
           )}
           <Field data-invalid={!!errors.email}>
-            <FieldLabel htmlFor="email">Email</FieldLabel>
+            <EtiquetaCampo htmlFor="email" requerido>
+              Email
+            </EtiquetaCampo>
             <Input
               id="email"
               type="email"
               autoComplete="username"
               aria-invalid={!!errors.email}
+              aria-required
               {...form.register("email")}
             />
             <FieldError errors={[errors.email]} />
           </Field>
           <Field data-invalid={!!errors.password}>
-            <FieldLabel htmlFor="password">Contraseña</FieldLabel>
+            <EtiquetaCampo htmlFor="password" requerido>
+              Contraseña
+            </EtiquetaCampo>
             <Input
               id="password"
               type="password"
               autoComplete="current-password"
               aria-invalid={!!errors.password}
+              aria-required
               {...form.register("password")}
             />
             <FieldError errors={[errors.password]} />

@@ -10,7 +10,10 @@ vi.mock("@/lib/api/hooks", () => ({
   useEdgeAdminCertificate: (...args: unknown[]) => useCertificate(...args),
   useEdgeFinalizedCertificate: (...args: unknown[]) => useFinalized(...args),
 }))
-vi.mock("next/navigation", () => ({ useParams: () => ({ id: "current-id" }) }))
+vi.mock("next/navigation", () => ({
+  useParams: () => ({ id: "current-id" }),
+  useSearchParams: () => new URLSearchParams(),
+}))
 
 import Page from "./page"
 

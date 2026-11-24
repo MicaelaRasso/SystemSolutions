@@ -206,8 +206,11 @@ test.describe("Historial y portal sin datos crudos", () => {
     await page.goto("/portal/certificados")
     await expect(page.getByRole("link", { name: "Ver certificado" }).first()).toBeVisible({ timeout: 45_000 })
     await page.waitForLoadState("networkidle")
-    // La suite deja decenas de Válvulas en el yacimiento del Cliente: entran en un solo lote.
-    expect(historiales).toEqual(["certificates/valve-histories"])
+    // La suite deja decenas de Válvulas en el yacimiento del Cliente (más de 100 si la base no se
+    // reinicia entre corridas): se piden en lotes de VALVULAS_POR_LOTE, nunca una por Válvula.
+    expect(historiales.length).toBeGreaterThan(0)
+    expect(historiales.filter((ruta) => ruta !== "certificates/valve-histories")).toEqual([])
+    expect(historiales.length).toBeLessThanOrEqual(5)
     expect(problemas.respuestas).toEqual([])
   })
 })

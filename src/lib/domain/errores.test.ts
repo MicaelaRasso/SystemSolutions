@@ -145,6 +145,21 @@ describe("traducirMensajeError", () => {
     ).toMatch(/otra visita en curso.*Completá/)
   })
 
+  it("traduce los errores del trabajo de campo del taller", () => {
+    expect(
+      traducirMensajeError(
+        "Every work order must have an explicit outcome before visit completion",
+      ),
+    ).toMatch(/Evaluada.*No evaluada/)
+    expect(traducirMensajeError("A no evaluada work order requires a reason")).toMatch(/motivo/)
+    expect(traducirMensajeError("Another device is already working on this visit")).toMatch(
+      /otro dispositivo/,
+    )
+    expect(
+      traducirMensajeError("Only an evaluated work order can create a certificate draft"),
+    ).toMatch(/Evaluada/)
+  })
+
   it("conserva los mensajes desconocidos y los que ya están en español", () => {
     expect(traducirMensajeError("Algo inesperado")).toBe("Algo inesperado")
     expect(traducirMensajeError("requestId must be a UUID")).toBe("requestId must be a UUID")

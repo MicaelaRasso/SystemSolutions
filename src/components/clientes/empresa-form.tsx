@@ -5,6 +5,7 @@ import { Info } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { Controller, useForm } from "react-hook-form"
 
+import { EtiquetaCampo } from "@/components/common/etiqueta-obligatoria"
 import { PieFormulario } from "@/components/common/form-dialog"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -92,11 +93,22 @@ export function EmpresaForm({
   const texto = (
     name: Exclude<keyof EmpresaInput, "avisoVencimiento" | "activo">,
     label: string,
-    props: React.ComponentProps<typeof Input> = {},
+    {
+      requerido = false,
+      ...props
+    }: React.ComponentProps<typeof Input> & { requerido?: boolean } = {},
   ) => (
     <Field data-invalid={!!errors[name]}>
-      <FieldLabel htmlFor={idDe(name)}>{label}</FieldLabel>
-      <Input id={idDe(name)} aria-invalid={!!errors[name]} {...props} {...form.register(name)} />
+      <EtiquetaCampo htmlFor={idDe(name)} requerido={requerido}>
+        {label}
+      </EtiquetaCampo>
+      <Input
+        id={idDe(name)}
+        aria-invalid={!!errors[name]}
+        aria-required={requerido || undefined}
+        {...props}
+        {...form.register(name)}
+      />
       <FieldError errors={[errors[name]]} />
     </Field>
   )
@@ -109,10 +121,16 @@ export function EmpresaForm({
     >
       <FieldGroup>
         <div className="grid gap-5 sm:grid-cols-2">
-          <div className="sm:col-span-2">{texto("razonSocial", "Razón social")}</div>
-          {texto("cuit", "CUIT", { placeholder: "30-12345678-9", inputMode: "numeric" })}
-          {texto("contacto", "Contacto")}
-          {texto("telefono", "Teléfono", { type: "tel" })}
+          <div className="sm:col-span-2">
+            {texto("razonSocial", "Razón social", { requerido: true })}
+          </div>
+          {texto("cuit", "CUIT", {
+            requerido: true,
+            placeholder: "30-12345678-9",
+            inputMode: "numeric",
+          })}
+          {texto("contacto", "Contacto", { requerido: true })}
+          {texto("telefono", "Teléfono", { requerido: true, type: "tel" })}
           {texto("email", "Email", { type: "email" })}
           <div className="sm:col-span-2">{texto("direccion", "Dirección")}</div>
         </div>

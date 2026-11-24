@@ -639,6 +639,22 @@ export async function queueOfflineSignatureCapture(input: {
   return { mediaId, mediaOperation, signatureOperation }
 }
 
+/**
+ * La dependencia ya no frena a las operaciones que la siguen: se sincronizó, o quedó en conflicto
+ * porque la visita venció (E3). En ese caso todo lo hecho sin conexión tiene que llegar al servidor
+ * para quedar también en conflicto y que el Administrador lo acepte en orden; si no, el resto
+ * (resultados, firmas, completar) quedaba en el dispositivo y el Administrador solo veía el inicio.
+ */
+function dependenciaResuelta(operation: OperacionOffline): boolean {
+  return (
+    operation.estado === "sincronizada" ||
+    (operation.estado === "conflicto" && esVisitaVencida(operation.lastError))
+  )
+}
+
+/** Última sincronización encolada de cada visita (compartida por todos los coordinadores). */
+const sincronizacionesPorVisita = new Map<string, Promise<void>>()
+
 export class OfflineSyncCoordinator {
   constructor(
     private readonly store: OfflineStore,
@@ -699,6 +715,19 @@ export class OfflineSyncCoordinator {
     await this.store.saveVisit(visit)
   }
 
+  /**
+   * Registra en el dispositivo que el servidor ya completó la visita. La visita completada sale de
+   * la agenda de campo y el refresco no vuelve a actualizarla: sin esto, si le quedaba algún cambio
+   * local, seguía con el último estado descargado (`en_curso`) y bloqueaba el inicio de la
+   * siguiente visita del taller.
+   */
+  async markVisitCompletedOnServer(visitId: string): Promise<void> {
+    const visit = await this.store.getVisit(visitId)
+    if (!visit) return
+    visit.backendStatus = "completada"
+    await this.store.saveVisit(visit)
+  }
+
   async claimVisit(visitId: string, deviceId: string): Promise<VisitaOffline> {
     const visit = await this.store.getVisit(visitId)
     if (!visit) throw new Error("La Visita de servicio no está disponible en el dispositivo")
@@ -716,10 +745,36 @@ export class OfflineSyncCoordinator {
     return visit
   }
 
+  /**
+   * Sincroniza las operaciones de la visita. Las sincronizaciones de una misma visita se encolan
+   * (también entre coordinadores distintos: el panel crea uno por refresco): dos lotes en paralelo
+   * leían copias viejas de las operaciones y una pisaba el recibo de la otra, dejando como
+   * «fallida» una operación ya registrada. Se reenviaba después del cierre, el servidor rechazaba
+   * el lote («Only an active visit can be claimed») y la visita seguía figurando en curso.
+   */
   async sync(
     visitId: string,
     deviceId: string,
     options: { respectBackoff?: boolean } = {},
+  ): Promise<OperacionOffline[]> {
+    const previa = sincronizacionesPorVisita.get(visitId) ?? Promise.resolve()
+    const actual = previa.then(() => this.syncExclusivo(visitId, deviceId, options))
+    const cola = actual.then(
+      () => undefined,
+      () => undefined,
+    )
+    sincronizacionesPorVisita.set(visitId, cola)
+    try {
+      return await actual
+    } finally {
+      if (sincronizacionesPorVisita.get(visitId) === cola) sincronizacionesPorVisita.delete(visitId)
+    }
+  }
+
+  private async syncExclusivo(
+    visitId: string,
+    deviceId: string,
+    options: { respectBackoff?: boolean },
   ): Promise<OperacionOffline[]> {
     const now = this.clock.now()
     const initial = (await this.store.listOperations(visitId)).map(migratePendingOperation)
@@ -758,7 +813,7 @@ export class OfflineSyncCoordinator {
             (!options.respectBackoff || isDue(operation, now)) &&
             operation.dependencies.every((dependency) =>
               current.some(
-                (candidate) => candidate.operationId === dependency && candidate.estado === "sincronizada",
+                (candidate) => candidate.operationId === dependency && dependenciaResuelta(candidate),
               ),
             ),
         )
@@ -964,7 +1019,8 @@ export class OfflineSyncCoordinator {
           operation.estado = "conflicto"
           operation.lastError = result.error_message ?? "Conflicto de sincronización"
           delete operation.nextRetryAt
-          if (esVisitaVencida(result.error_message)) visitaVencida = true
+          // Por vencimiento, lo que dependía de esta operación se envía en la capa siguiente.
+          if (esVisitaVencida(result.error_message)) visitaVencida = acknowledged = true
           await this.store.saveOperation(operation)
           continue
         }

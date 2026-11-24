@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { ArrowDown, ArrowUp, CheckCircle2, Plus, Save, Sparkles } from "lucide-react"
 
+import { MarcaObligatoria } from "@/components/common/etiqueta-obligatoria"
 import { SelectNativo } from "@/components/common/select-nativo"
 import { ErrorState } from "@/components/common/states"
 import { PageHeader } from "@/components/common/page-header"
@@ -248,9 +249,13 @@ export function CertificateTemplateEditor() {
             {selected ? (
               <>
                 <div className="space-y-1">
-                  <Label htmlFor="certificate-template-version">Identificador de versión</Label>
+                  <Label htmlFor="certificate-template-version">
+                    Identificador de versión
+                    <MarcaObligatoria />
+                  </Label>
                   <Input
                     id="certificate-template-version"
+                    aria-required
                     value={version}
                     onChange={(event) =>
                       selected &&

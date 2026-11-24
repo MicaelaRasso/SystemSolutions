@@ -69,6 +69,41 @@ Migraciones nuevas (9):
      con una visita en curso de ayer; debe pasar a «Requiere finalización». Después: firmar desde
      el taller, firmar el Cliente desde el portal, y probar el cierre administrativo desde la tarea.
 
+### Regresiones encontradas en la verificación local (17/11) y su corrección
+
+- **Cierre de visita sin confirmación (e2e 05 D2/D3/F1).** El cierre sí llegaba al servidor
+  (`/complete` 200, visita `completada`), pero el aviso «Visita completada…» vivía dentro de la
+  tarjeta: al refrescar la agenda, la visita completada sale del working set y la tarjeta (con el
+  aviso) desaparecía. Antes no se notaba porque el botón cerraba sin diálogo; con la confirmación
+  nueva el diálogo espera al refresco. Corrección: el panel guarda el aviso del último cierre y lo
+  muestra arriba de «Visitas Programadas» cuando la tarjeta ya no está
+  (`avisoDeCierreSinTarjeta` en `estado-visita.ts`, con test). Lo mismo para «cerrar como no
+  terminada» (antes el aviso se pisaba sobre un componente desmontado) y la firma de una visita
+  vencida que la completa.
+- **e2e 06 «equipo nuevo sin taller»:** el botón quedaba deshabilitado por la decisión (d) del
+  cliente (no hay tarea sobre un equipo sin válvulas). La prueba ahora verifica el aviso y el
+  bloqueo, carga una válvula con «Cargar válvulas» y espera a que cierre el diálogo antes de
+  completar el formulario.
+- **e2e 04 visita de seguimiento:** el formulario tiene ahora dos horas (inicio y fin estimado);
+  el selector usa las etiquetas y verifica que el fin propuesto sea inicio + 1 h.
+- **e2e 07 «Iniciar Visita» bloqueado tras cerrar otra (bug real, una visita a la vez):** los
+  refrescos del panel sincronizaban la misma visita en paralelo y uno pisaba el recibo del otro
+  (fotos ya registradas quedaban «fallida»); se reenviaban tras el cierre, el servidor rechazaba el
+  lote (409 «Only an active visit can be claimed») y la visita seguía local con `en_curso`,
+  bloqueando la siguiente. Corrección: `sync` se encola por visita entre coordinadores y el cierre
+  en línea marca la visita `completada` en el dispositivo (`markVisitCompletedOnServer`, tests en
+  `sync.test.ts`).
+- **e2e 10 «Agregar válvula» sin conexión no cerraba el diálogo (bug real):** TanStack Query pausa
+  las mutaciones sin red (`networkMode: "online"` por defecto), así que el encolado local nunca
+  corría. `useServiceMutation` acepta `sinConexion` (`networkMode: "always"`) y las dos mutaciones
+  de `agregar-valvula.tsx` lo usan (test en `queries.test.ts`).
+- **e2e 12 visita vencida (bugs reales; el spec estaba escrito sin ejecutar):** (1) el cliente
+  frenaba todo lo que dependía del inicio en conflicto, y el Administrador solo veía «Inicio de la
+  visita»: ahora un conflicto por vencimiento libera a sus dependientes, que llegan al servidor y
+  quedan también en conflicto (`dependenciaResuelta` en `sync.ts`, tests). (2) «Cerrar con motivo»
+  cerraba bien, pero la sección se desmontaba al invalidar y los callbacks de `mutate` no corrían
+  (sin aviso ni salto a la visita de seguimiento): usa `mutateAsync` (`cierre-visita-vencida.tsx`).
+
 ## 2. Publicar en producción
 
 Orden obligatorio: **base → Edge Functions → front**.
